@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Sonora AI"
+description = "A polished AI transcription workspace for recording, uploading, and turning conversations into searchable notes and shareable summaries."
+version = "1.0.0"
+id = "artifacts/sonora-ai"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25829
+
+[services.development]
+run = "pnpm --filter @workspace/sonora-ai run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/sonora-ai", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/sonora-ai/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25829"
+BASE_PATH = "/"
