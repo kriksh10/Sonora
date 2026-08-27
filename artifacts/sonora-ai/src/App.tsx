@@ -9,6 +9,30 @@ import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 
 const queryClient = new QueryClient();
 
+type DesktopState = {
+  visible: boolean;
+  alwaysOnTop: boolean;
+};
+
+type SonoraDesktopBridge = {
+  isDesktop: true;
+  platform: string;
+  shortcut: string;
+  show: () => Promise<DesktopState>;
+  hide: () => Promise<DesktopState>;
+  toggle: () => Promise<DesktopState>;
+  quit: () => Promise<void>;
+  getState: () => Promise<DesktopState>;
+  setAlwaysOnTop: (value: boolean) => Promise<DesktopState>;
+  onStateChange: (listener: (state: DesktopState) => void) => () => void;
+};
+
+declare global {
+  interface Window {
+    sonoraDesktop?: SonoraDesktopBridge;
+  }
+}
+
 const transcriptLines = [
   { time: '00:14', speaker: 'Maya', text: 'The real question is where the handoff starts to feel heavy.' },
   { time: '00:27', speaker: 'You', text: 'Exactly. We want the team to move without adding another inbox.' },
@@ -62,12 +86,102 @@ function Router() {
   );
 }
 
+function Home() {
+  const [desktopMode] = useState(() => Boolean(window.sonoraDesktop?.isDesktop));
+  return desktopMode ? <DesktopOverlay /> : <LandingHome />;
+}
+
+function DesktopOverlay() {
+  const bridge = window.sonoraDesktop;
+  const [recording, setRecording] = useState(false);
+  const [seconds, setSeconds] = useState(0);
+  const [alwaysOnTop, setAlwaysOnTop] = useState(true);
+  const [showHint, setShowHint] = useState(true);
+
+  useEffect(() => {
+    if (!bridge) return;
+    bridge.getState().then((state) => setAlwaysOnTop(state.alwaysOnTop));
+    return bridge.onStateChange((state) => setAlwaysOnTop(state.alwaysOnTop));
+  }, [bridge]);
+
+  useEffect(() => {
+    if (!recording) return;
+    const timer = window.setInterval(() => setSeconds((current) => current + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [recording]);
+
+  const formatTime = (value: number) => `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
+  const toggleRecording = () => {
+    setShowHint(false);
+    setRecording((current) => {
+      if (current) setSeconds(0);
+      return !current;
+    });
+  };
+  const togglePinned = async () => {
+    if (!bridge) return;
+    const state = await bridge.setAlwaysOnTop(!alwaysOnTop);
+    setAlwaysOnTop(state.alwaysOnTop);
+  };
+
+  return (
+    <main className="desktop-overlay-page">
+      <section className="desktop-overlay-card" aria-label="Sonora desktop assistant">
+        <div className="desktop-overlay-grip" />
+        <header className="desktop-overlay-header">
+          <Logo />
+          <div className="desktop-overlay-actions">
+            <button className={`desktop-icon-button ${alwaysOnTop ? 'is-active' : ''}`} onClick={togglePinned} aria-label={alwaysOnTop ? 'Unpin overlay' : 'Keep overlay on top'} title={alwaysOnTop ? 'Unpin overlay' : 'Keep overlay on top'}>
+              <span className="desktop-pin-dot" />
+            </button>
+            <button className="desktop-icon-button" onClick={() => bridge?.hide()} aria-label="Hide Sonora" title="Hide Sonora">
+              <X size={15} />
+            </button>
+          </div>
+        </header>
+
+        <div className="desktop-overlay-status">
+          <div className={`desktop-status-orb ${recording ? 'is-recording' : ''}`}>
+            {recording ? <Activity size={18} /> : <Mic size={18} />}
+          </div>
+          <div>
+            <div className="desktop-overlay-kicker">{recording ? 'Listening now' : 'Ready when you are'}</div>
+            <h1>{recording ? 'Sonora is with you.' : 'Keep the thread.'}</h1>
+          </div>
+          <span className={`desktop-live-dot ${recording ? 'is-recording' : ''}`} />
+        </div>
+
+        <div className="desktop-waveform" aria-hidden="true">
+          {Array.from({ length: 32 }).map((_, index) => (
+            <span key={index} style={{ height: `${18 + ((index * 13) % 48)}%`, animationDelay: `${-(index % 7) * 0.16}s` }} />
+          ))}
+        </div>
+
+        <div className="desktop-overlay-controls">
+          <button className={`desktop-record-button ${recording ? 'is-recording' : ''}`} onClick={toggleRecording}>
+            {recording ? <CircleStop size={17} /> : <Mic size={17} />}
+            {recording ? 'Stop capture' : 'Start capture'}
+          </button>
+          <span className="desktop-timer">{recording ? formatTime(seconds) : '00:00'}</span>
+        </div>
+
+        <div className="desktop-overlay-insight">
+          <Sparkles size={14} />
+          <span>{recording ? 'Live notes will appear here as your conversation unfolds.' : 'A quiet co-pilot for the moments that matter.'}</span>
+        </div>
+
+        {showHint && <div className="desktop-overlay-hint"><Command size={12} /> {bridge?.shortcut ?? 'Ctrl/Cmd + Shift + Space'} to hide</div>}
+      </section>
+    </main>
+  );
+}
+
 function RoutedErrorBoundary({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   return <ErrorBoundary resetKey={location}>{children}</ErrorBoundary>;
 }
 
-function Home() {
+function LandingHome() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
