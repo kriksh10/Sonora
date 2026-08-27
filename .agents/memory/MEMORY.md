@@ -1,0 +1,1 @@
+- [Electron desktop runtime](electron-desktop-runtime.md) — Electron shells need native Linux libraries here; GUI-window testing remains constrained by the headless workspace.
