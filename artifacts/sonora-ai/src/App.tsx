@@ -1,5 +1,5 @@
 import { type ChangeEvent, type ReactNode, useEffect, useRef, useState } from 'react';
-import { ArrowRight, ArrowUpRight, Activity, Calendar, Check, ChevronDown, CircleStop, Clock3, Command, FileAudio, Headphones, LockKeyhole, Menu, Mic, Pause, Play, Search, ShieldCheck, Sparkles, Upload, Wand2, X, Zap } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, Activity, Calendar, Check, ChevronDown, CircleStop, Clock3, Command, Download, FileAudio, Headphones, LockKeyhole, Menu, Mic, Pause, Play, Search, ShieldCheck, Sparkles, Upload, Wand2, X, Zap } from 'lucide-react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
@@ -181,7 +181,7 @@ function RoutedErrorBoundary({ children }: { children: ReactNode }) {
   return <ErrorBoundary resetKey={location}>{children}</ErrorBoundary>;
 }
 
-function LandingHome() {
+function LegacyLandingHome() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
@@ -468,6 +468,162 @@ function LandingHome() {
       <footer className="bg-[#173438] px-5 pb-8 pt-16 text-[#fffdf7] sm:px-8 lg:px-12">
         <div className="mx-auto max-w-[1240px]"><Reveal><div className="grid gap-12 border-b border-[#fffdf7]/12 pb-14 md:grid-cols-[1fr,1fr,.8fr]"><div><Logo light /><h2 className="sonora-display mt-8 max-w-[390px] text-5xl leading-[.94] tracking-[-.04em]">Make room for the good stuff.</h2><button className="sonora-button mt-7 flex items-center gap-2 rounded-xl bg-[#f0c76c] px-4 py-3 text-sm font-semibold text-[#19373a]" onClick={jumpToDemo} data-testid="button-footer-start">Try Sonora free <ArrowUpRight size={15} /></button></div><div className="grid grid-cols-2 gap-8 text-sm"><div><div className="eyebrow mb-4 text-[#fffdf7]/35">Explore</div><div className="space-y-3 text-[#fffdf7]/65"><a className="block transition hover:text-[#f0c76c]" href="#how-it-works" data-testid="link-footer-how">How it works</a><a className="block transition hover:text-[#f0c76c]" href="#use-cases" data-testid="link-footer-use">Use cases</a><a className="block transition hover:text-[#f0c76c]" href="#pricing" data-testid="link-footer-pricing">Pricing</a></div></div><div><div className="eyebrow mb-4 text-[#fffdf7]/35">Elsewhere</div><div className="space-y-3 text-[#fffdf7]/65"><a className="block transition hover:text-[#f0c76c]" href="mailto:hello@sonora.example" data-testid="link-footer-contact">Contact</a><a className="block transition hover:text-[#f0c76c]" href="#faq" data-testid="link-footer-faq">FAQ</a><a className="block transition hover:text-[#f0c76c]" href="#top" data-testid="link-footer-top">Back to top</a></div></div></div><div className="flex items-end text-sm text-[#fffdf7]/45"><p className="leading-6">The quiet advantage<br />in a noisy world.</p></div></div></Reveal><div className="flex flex-col justify-between gap-3 pt-6 text-[.65rem] text-[#fffdf7]/35 sm:flex-row"><span>© 2025 Sonora AI, Inc.</span><span>Made for conversations worth keeping.</span></div></div>
       </footer>
+    </main>
+  );
+}
+
+function LandingHome() {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [seconds, setSeconds] = useState(0);
+  const [selectedSession, setSelectedSession] = useState(0);
+  const [searchTerm, setSearchTerm] = useState('');
+  const timerRef = useRef<number | undefined>(undefined);
+
+  const sessions = [
+    { company: 'Anthropic', role: 'Software Developer', mode: 'Interview', duration: '11 mins 23 secs', credits: 'Free', date: 'May 12, 2026', state: 'Live', action: 'Join Session', mark: 'AI' },
+    { company: 'Microsoft', role: 'Software Developer', mode: 'Interview', duration: '—', credits: '—', date: 'Jun 3, 2026', state: 'Ready to Start', action: 'Start Session', mark: 'MS' },
+    { company: 'Apple', role: 'Systems Architect', mode: 'Interview', duration: '—', credits: '—', date: 'Jun 3, 2026', state: 'Ready to Start', action: 'Start Session', mark: 'A' },
+    { company: 'OpenAI', role: 'Machine Learning Engineer', mode: 'Interview', duration: '28 mins 12 secs', credits: '0.5', date: 'May 28, 2026', state: 'Ended', action: 'View Transcript', mark: 'O' },
+    { company: 'Google', role: 'Backend Engineer', mode: 'Interview', duration: '37 mins 41 secs', credits: '1.3', date: 'May 15, 2026', state: 'Ended', action: 'View Transcript', mark: 'G' },
+    { company: 'Meta', role: 'Product Designer', mode: 'Interview', duration: '46 mins 5 secs', credits: '2.5', date: 'Apr 28, 2026', state: 'Ended', action: 'View Transcript', mark: '∞' },
+  ];
+
+  const visibleSessions = sessions.filter((session) => `${session.company} ${session.role}`.toLowerCase().includes(searchTerm.toLowerCase()));
+
+  useEffect(() => {
+    if (!recording) {
+      window.clearInterval(timerRef.current);
+      return;
+    }
+    timerRef.current = window.setInterval(() => setSeconds((current) => current + 1), 1000);
+    return () => window.clearInterval(timerRef.current);
+  }, [recording]);
+
+  const formatTime = (value: number) => `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
+  const startSession = () => {
+    setRecording((current) => {
+      if (current) setSeconds(0);
+      return !current;
+    });
+    window.setTimeout(() => document.getElementById('session-preview')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 30);
+  };
+
+  return (
+    <main id="top" className="sonora-reference-page">
+      <div className="reference-ambient reference-ambient-one" />
+      <div className="reference-ambient reference-ambient-two" />
+      <nav className="reference-nav">
+        <Logo />
+        <div className="reference-nav-links">
+          <a href="#features" data-testid="link-features">Features</a>
+          <a href="#reviews" data-testid="link-reviews">Reviews</a>
+          <a href="#privacy" data-testid="link-privacy">Privacy</a>
+          <a href="#pricing" data-testid="link-pricing">Pricing</a>
+        </div>
+        <div className="reference-nav-actions">
+          <button onClick={startSession} data-testid="button-sign-in">Sign in</button>
+          <button className="reference-dark-button" onClick={startSession} data-testid="button-nav-start">Try for Free <ArrowRight size={14} /></button>
+        </div>
+        <button className="reference-menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label={menuOpen ? 'Close menu' : 'Open menu'} data-testid="button-mobile-menu">
+          {menuOpen ? <X size={20} /> : <Menu size={20} />}
+        </button>
+        {menuOpen && <div className="reference-mobile-menu">
+          {['features', 'reviews', 'privacy', 'pricing'].map((section) => <a key={section} href={`#${section}`} onClick={() => setMenuOpen(false)}>{section[0].toUpperCase() + section.slice(1)}</a>)}
+          <button className="reference-dark-button" onClick={startSession}>Try for Free <ArrowRight size={14} /></button>
+        </div>}
+      </nav>
+
+      <section className="reference-hero">
+        <div className="reference-proof-row" aria-label="Sonora highlights">
+          <div className="reference-proof"><span className="reference-laurel">‹</span><div><strong>No. 1 Interview App</strong><small>for modern candidates</small></div><span className="reference-laurel flip">›</span></div>
+          <div className="reference-proof"><div className="reference-avatar-stack"><span>JM</span><span>AS</span><span>LK</span></div><div><strong>Trusted by 1.5M+ people</strong><small><span className="reference-stars">★★★★★</span> 4.86 from 340k+ reviews</small></div></div>
+          <div className="reference-proof"><span className="reference-signal-mark"><span /><span /></span><div><strong>#1 AI Interview Assistant</strong><small>for your next conversation</small></div></div>
+        </div>
+
+        <div className="reference-headline">
+          <h1>Your <span>Real-Time</span><br />AI Interview Assistant</h1>
+          <p>Get the right answer while you're still talking, through interviews, sales calls, client meetings, or any conversation where freezing up isn't an option.</p>
+          <div className="reference-hero-actions">
+            <button className="reference-green-button" onClick={startSession} data-testid="button-hero-start">Get 10 Free Sessions <ArrowRight size={16} /></button>
+            <button className="reference-video-button" onClick={startSession} data-testid="button-demo-video"><Play size={14} fill="currentColor" /> Demo Video</button>
+          </div>
+        </div>
+
+        <div className="reference-integrations" aria-hidden="true">
+          <span className="integration-chip integration-zoom">zoom</span>
+          <span className="integration-chip integration-teams">T<span>eams</span></span>
+          <span className="integration-chip integration-meet">meet</span>
+          <span className="integration-chip integration-hire">H<span>ire</span></span>
+          <span className="integration-chip integration-cobalt">◢</span>
+          <span className="integration-chip integration-ring">◉</span>
+          <span className="integration-chip integration-spark">✦</span>
+        </div>
+
+        <div id="session-preview" className="reference-product-window">
+          <aside className="reference-sidebar">
+            <div className="reference-product-logo"><Logo /><span className="reference-ai-tag">AI</span></div>
+            <div className="reference-side-heading">Workspace</div>
+            <button className="reference-side-link is-active"><Activity size={14} /> Call Sessions <span className="reference-live-label"><i /> Call Live</span></button>
+            <button className="reference-side-link"><Calendar size={14} /> CVs &amp; Resumes</button>
+            <button className="reference-side-link"><FileAudio size={14} /> Documents</button>
+            <div className="reference-side-heading reference-side-support">Support</div>
+            <button className="reference-side-link"><Play size={13} /> Tutorials</button>
+            <button className="reference-side-link"><span className="reference-help-icon">?</span> Support Chat</button>
+          </aside>
+          <div className="reference-session-area">
+            <div className="reference-session-header">
+              <div><h2>Call Sessions</h2><p>Prepare for calls and review past sessions.</p></div>
+              <button className="reference-create-button" onClick={startSession}><span>＋</span> Create Session</button>
+            </div>
+            <div className="reference-desktop-promo">
+              <div className="reference-promo-copy"><div className="reference-promo-kicker">DESKTOP APP</div><h3>Make sure you're getting the most from Sonora AI.</h3><p>The desktop app runs quietly in the background, listening to your call and surfacing the best answers in real time. No tab switching.</p><div className="reference-promo-actions"><button onClick={startSession}><Download size={13} /> Download for Mac</button><button onClick={startSession}>Browser vs App</button></div></div>
+              <div className="reference-promo-screen"><div className="reference-promo-toolbar"><span /><span /><span /><b>Answer&nbsp; ⌘↵</b><b>Screenshot&nbsp; ⌘⇧</b><b>Chat&nbsp; ⌘↵</b></div><div className="reference-promo-lines"><i /><i /><i /><i /><i /></div></div>
+            </div>
+            <div className="reference-tabs"><button className="is-active">All</button><button>Active</button><button>Ended</button><span>{visibleSessions.length || sessions.length} Sessions</span></div>
+            <div className="reference-session-toolbar">
+              <div className="reference-search"><Search size={14} /><input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search by title or description" aria-label="Search sessions" /></div>
+              <span className="reference-sort">↑↓</span>
+              <div className="reference-view-toggle"><span>▦</span><span className="is-active">☷</span></div>
+            </div>
+            <div className="reference-table-wrap">
+              <div className="reference-table-head"><span>Session</span><span>Mode</span><span>Duration</span><span>Credits Used</span><span>Created</span><span>Save Transcript</span><span>State</span><span /></div>
+              {visibleSessions.map((session, index) => (
+                <div key={session.company} className={`reference-table-row ${index === selectedSession ? 'is-selected' : ''}`}>
+                  <button className="reference-session-name" onClick={() => setSelectedSession(index)}><span className={`reference-company-mark mark-${index}`}>{session.mark}</span><span><strong>{session.company}</strong><small>{session.role}</small></span></button>
+                  <span>{session.mode}</span><span>{session.duration}</span><span>{session.credits}</span><span>{session.date}</span><span>{index === 0 || index === 1 || index === 2 || index === 3 ? 'Yes' : 'No'}</span>
+                  <span><em className={`reference-state state-${session.state.replaceAll(' ', '-').toLowerCase()}`}><i />{session.state}</em></span>
+                  <button className={`reference-row-action ${session.state === 'Live' ? 'is-dark' : ''}`} onClick={session.state === 'Ended' ? () => setSelectedSession(index) : startSession}>{session.action}</button>
+                </div>
+              ))}
+            </div>
+            <div className="reference-session-footer"><span>{recording ? <><i className="reference-recording-dot" /> Session live · {formatTime(seconds)}</> : 'Sessions are private by default'}</span><span><ShieldCheck size={13} /> Sonora never records without your permission</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="features" className="reference-lower-section">
+        <div className="reference-section-kicker">THE SONORA ADVANTAGE</div>
+        <h2>Stay sharp when<br /><span>the stakes are high.</span></h2>
+        <p>Sonora quietly follows the conversation, so you can focus on being present, prepared, and yourself.</p>
+        <div className="reference-feature-grid">
+          {[
+            ['01', 'Live guidance', 'Get concise prompts and answer frameworks while the conversation is still happening.'],
+            ['02', 'Every detail, remembered', 'Leave the call with a transcript, clear next steps, and nothing important left behind.'],
+            ['03', 'Your privacy, first', 'You decide when Sonora listens. Every session is visible, controllable, and yours.'],
+          ].map(([number, title, body]) => <article key={number}><span>{number}</span><h3>{title}</h3><p>{body}</p><ArrowRight size={17} /></article>)}
+        </div>
+      </section>
+
+      <section id="reviews" className="reference-quote-section">
+        <div><div className="reference-section-kicker">WHAT CANDIDATES SAY</div><h2>Confidence,<br /><span>on demand.</span></h2></div>
+        <blockquote>“I stopped worrying about forgetting the perfect answer and started having a real conversation.”<cite>— Maya R., Product Designer</cite></blockquote>
+      </section>
+
+      <section id="privacy" className="reference-privacy-section"><ShieldCheck size={25} /><div><div className="reference-section-kicker">BUILT WITH CARE</div><h2>The assistant that never takes over.</h2><p>Sonora is visible when it is active, silent when you want it to be, and always under your control.</p></div></section>
+
+      <section id="pricing" className="reference-cta-section"><div className="reference-section-kicker">READY WHEN YOU ARE</div><h2>Walk into your<br /><span>next interview ready.</span></h2><button className="reference-green-button" onClick={startSession}>Try Sonora free <ArrowRight size={16} /></button></section>
+      <footer className="reference-footer"><Logo light /><span>© 2026 Sonora AI</span><span>Made for conversations worth winning.</span></footer>
     </main>
   );
 }
