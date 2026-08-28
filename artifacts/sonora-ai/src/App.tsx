@@ -478,8 +478,8 @@ function LandingHome() {
   const [seconds, setSeconds] = useState(0);
   const [selectedSession, setSelectedSession] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
-  const [createSessionOpen, setCreateSessionOpen] = useState(false);
-  const [sessionType, setSessionType] = useState<'interview' | 'call'>('interview');
+  const [createSessionOpen, setCreateSessionOpen] = useState(() => new URLSearchParams(window.location.search).get('modal') === 'create');
+  const [sessionType, setSessionType] = useState<'interview' | 'call'>(() => new URLSearchParams(window.location.search).get('type') === 'call' ? 'call' : 'interview');
   const [company, setCompany] = useState('');
   const [interviewDescription, setInterviewDescription] = useState('');
   const [callTitle, setCallTitle] = useState('');

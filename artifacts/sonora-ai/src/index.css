@@ -869,14 +869,14 @@
 .reference-headline {
   position: relative;
   z-index: 2;
-  max-width: 720px;
+  max-width: 920px;
   margin: 63px auto 0;
   text-align: center;
 }
 .reference-headline h1 {
   margin: 0;
   color: #111316;
-  font-size: clamp(3.25rem, 6vw, 5.3rem);
+  font-size: clamp(3.25rem, 5.2vw, 5rem);
   font-weight: 500;
   letter-spacing: -.07em;
   line-height: .97;
@@ -1114,6 +1114,6 @@
 }
 @media (max-width: 680px) {
   .reference-nav { width: calc(100% - 24px); margin-top: 12px; padding: 0 12px 0 14px; }.reference-nav-links, .reference-nav-actions { display: none; }.reference-menu-button { display: block; }.reference-mobile-menu { position: absolute; top: 59px; right: 0; left: 0; display: grid; gap: 4px; padding: 10px; border: 1px solid #dfe2df; border-radius: 15px; background: #fff; box-shadow: 0 12px 24px rgba(0,0,0,.12); }.reference-mobile-menu a { padding: 10px; color: #292c2e; font-size: .84rem; }.reference-mobile-menu .reference-dark-button { justify-content: center; margin-top: 4px; }
-  .reference-hero { min-height: 870px; padding: 48px 12px 26px; }.reference-proof-row { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; max-width: 370px; }.reference-proof:last-child { grid-column: 1 / -1; justify-content: center; }.reference-proof strong { font-size: .67rem; }.reference-proof small { font-size: .6rem; }.reference-headline { margin-top: 42px; }.reference-headline h1 { font-size: clamp(2.65rem, 12vw, 4rem); }.reference-headline p { font-size: .88rem; }.reference-hero-actions { flex-direction: column; max-width: 260px; margin-right: auto; margin-left: auto; }.reference-integrations { display: none; }.reference-product-window { display: block; margin-top: 34px; border-radius: 12px 12px 0 0; }.reference-sidebar { display: none; }.reference-session-header { padding: 0 14px; }.reference-session-header p { font-size: .62rem; }.reference-create-button { padding: 9px 11px; font-size: .63rem; }.reference-desktop-promo { min-height: 270px; }.reference-promo-copy { width: 100%; padding: 22px; }.reference-promo-screen { display: none; }.reference-tabs { margin: 0 10px; }.reference-session-toolbar { padding: 12px 10px; }.reference-table-wrap { padding: 0 10px; }.reference-session-footer { display: block; }.reference-session-footer span + span { margin-top: 8px; }
+  .reference-hero { min-height: 870px; padding: 48px 12px 26px; }.reference-proof-row { display: flex; max-width: 320px; }.reference-proof:first-child, .reference-proof:last-child { display: none; }.reference-proof strong { font-size: .67rem; }.reference-proof small { font-size: .6rem; }.reference-headline { margin-top: 42px; }.reference-headline h1 { font-size: clamp(2.65rem, 12vw, 4rem); }.reference-headline p { font-size: .88rem; }.reference-hero-actions { flex-direction: column; max-width: 260px; margin-right: auto; margin-left: auto; }.reference-integrations { display: none; }.reference-product-window { display: block; margin-top: 34px; border-radius: 12px 12px 0 0; }.reference-sidebar { display: none; }.reference-session-header { padding: 0 14px; }.reference-session-header p { font-size: .62rem; }.reference-create-button { padding: 9px 11px; font-size: .63rem; }.reference-desktop-promo { min-height: 270px; }.reference-promo-copy { width: 100%; padding: 22px; }.reference-promo-screen { display: none; }.reference-tabs { margin: 0 10px; }.reference-session-toolbar { padding: 12px 10px; }.reference-table-wrap { padding: 0 10px; }.reference-session-footer { display: block; }.reference-session-footer span + span { margin-top: 8px; }
   .reference-lower-section, .reference-quote-section, .reference-privacy-section, .reference-cta-section { padding: 80px 20px; }.reference-feature-grid, .reference-quote-section { grid-template-columns: 1fr; }.reference-feature-grid article { min-height: 190px; }.reference-feature-grid h3 { margin-top: 47px; }.reference-privacy-section { gap: 14px; }.reference-footer { flex-wrap: wrap; padding: 23px 20px; }.reference-create-modal { padding: 20px 16px; border-radius: 15px; }.reference-modal-help { display: none; }.reference-type-switch button { font-size: .82rem; }.reference-output-pills button { flex: 1; min-width: 145px; padding: 0 11px; font-size: .74rem; }.reference-modal-actions { margin-top: 26px; }.reference-modal-actions button { min-height: 48px; font-size: .85rem; }
 }
