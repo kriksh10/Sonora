@@ -478,6 +478,14 @@ function LandingHome() {
   const [seconds, setSeconds] = useState(0);
   const [selectedSession, setSelectedSession] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
+  const [createSessionOpen, setCreateSessionOpen] = useState(false);
+  const [sessionType, setSessionType] = useState<'interview' | 'call'>('interview');
+  const [company, setCompany] = useState('');
+  const [interviewDescription, setInterviewDescription] = useState('');
+  const [callTitle, setCallTitle] = useState('');
+  const [callDescription, setCallDescription] = useState('');
+  const [autoAnswer, setAutoAnswer] = useState(false);
+  const [saveTranscript, setSaveTranscript] = useState(true);
   const timerRef = useRef<number | undefined>(undefined);
 
   const sessions = [
@@ -507,6 +515,13 @@ function LandingHome() {
       return !current;
     });
     window.setTimeout(() => document.getElementById('session-preview')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 30);
+  };
+  const openCreateSession = () => setCreateSessionOpen(true);
+  const closeCreateSession = () => setCreateSessionOpen(false);
+  const handleCreateSession = () => {
+    setCreateSessionOpen(false);
+    setRecording(true);
+    setSeconds(0);
   };
 
   return (
@@ -574,7 +589,7 @@ function LandingHome() {
           <div className="reference-session-area">
             <div className="reference-session-header">
               <div><h2>Call Sessions</h2><p>Prepare for calls and review past sessions.</p></div>
-              <button className="reference-create-button" onClick={startSession}><span>＋</span> Create Session</button>
+              <button className="reference-create-button" onClick={openCreateSession}><span>＋</span> Create Session</button>
             </div>
             <div className="reference-desktop-promo">
               <div className="reference-promo-copy"><div className="reference-promo-kicker">DESKTOP APP</div><h3>Make sure you're getting the most from Sonora AI.</h3><p>The desktop app runs quietly in the background, listening to your call and surfacing the best answers in real time. No tab switching.</p><div className="reference-promo-actions"><button onClick={startSession}><Download size={13} /> Download for Mac</button><button onClick={startSession}>Browser vs App</button></div></div>
@@ -593,7 +608,7 @@ function LandingHome() {
                   <button className="reference-session-name" onClick={() => setSelectedSession(index)}><span className={`reference-company-mark mark-${index}`}>{session.mark}</span><span><strong>{session.company}</strong><small>{session.role}</small></span></button>
                   <span>{session.mode}</span><span>{session.duration}</span><span>{session.credits}</span><span>{session.date}</span><span>{index === 0 || index === 1 || index === 2 || index === 3 ? 'Yes' : 'No'}</span>
                   <span><em className={`reference-state state-${session.state.replaceAll(' ', '-').toLowerCase()}`}><i />{session.state}</em></span>
-                  <button className={`reference-row-action ${session.state === 'Live' ? 'is-dark' : ''}`} onClick={session.state === 'Ended' ? () => setSelectedSession(index) : startSession}>{session.action}</button>
+                  <button className={`reference-row-action ${session.state === 'Live' ? 'is-dark' : ''}`} onClick={session.state === 'Ended' ? () => setSelectedSession(index) : openCreateSession}>{session.action}</button>
                 </div>
               ))}
             </div>
@@ -624,6 +639,45 @@ function LandingHome() {
 
       <section id="pricing" className="reference-cta-section"><div className="reference-section-kicker">READY WHEN YOU ARE</div><h2>Walk into your<br /><span>next interview ready.</span></h2><button className="reference-green-button" onClick={startSession}>Try Sonora free <ArrowRight size={16} /></button></section>
       <footer className="reference-footer"><Logo light /><span>© 2026 Sonora AI</span><span>Made for conversations worth winning.</span></footer>
+      {createSessionOpen && <div className="reference-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeCreateSession(); }}>
+        <section className="reference-create-modal" role="dialog" aria-modal="true" aria-labelledby="create-session-title">
+          <div className="reference-modal-header"><h2 id="create-session-title">Create Session</h2><button onClick={closeCreateSession} aria-label="Close create session"><X size={21} /></button></div>
+          <div className="reference-modal-label">Session Type <span className="reference-info-dot">i</span><span className="reference-modal-help">{sessionType === 'interview' ? '' : 'Video Tutorial'}</span></div>
+          <div className="reference-type-switch">
+            <button className={sessionType === 'interview' ? 'is-selected' : ''} onClick={() => setSessionType('interview')}><span className="reference-suitcase">▣</span> Interview</button>
+            <button className={sessionType === 'call' ? 'is-selected' : ''} onClick={() => setSessionType('call')}><span className="reference-phone">⌕</span> Regular Call</button>
+          </div>
+          {sessionType === 'interview' ? <>
+            <div className="reference-modal-field-heading"><span><span className="reference-field-icon">▣</span> Company <span className="reference-info-dot">i</span></span><button onClick={() => setCompany('Example Company')}><Sparkles size={15} /> Fill fields from Interview Post URL <ArrowRight size={14} /></button></div>
+            <input className="reference-modal-input" value={company} onChange={(event) => setCompany(event.target.value)} placeholder="Acme..." />
+            <label className="reference-modal-field-heading"><span><span className="reference-field-icon">▤</span> Interview Description <span className="reference-info-dot">i</span></span></label>
+            <textarea className="reference-modal-input reference-modal-textarea" value={interviewDescription} onChange={(event) => setInterviewDescription(event.target.value)} placeholder="Software Engineer versed in Python, SQL, and AWS..." />
+          </> : <>
+            <label className="reference-modal-field-heading"><span><span className="reference-field-icon">▤</span> Call Title <small>(Optional)</small> <span className="reference-info-dot">i</span></span></label>
+            <input className="reference-modal-input" value={callTitle} onChange={(event) => setCallTitle(event.target.value)} placeholder="Feature request discussion..." />
+            <label className="reference-modal-field-heading"><span><span className="reference-field-icon">▤</span> Description <small>(Optional)</small> <span className="reference-info-dot">i</span></span></label>
+            <textarea className="reference-modal-input reference-modal-textarea" value={callDescription} onChange={(event) => setCallDescription(event.target.value)} placeholder="Discussing Q4 targets and partnership opportunities..." />
+          </>}
+          <div className="reference-modal-section-label">Context</div>
+          <div className="reference-context-pills">
+            {sessionType === 'interview' && <button className="is-filled"><span>＋</span> Resume</button>}
+            <button><span>＋</span> Documents</button>
+            <button><span>＋</span> Instructions</button>
+          </div>
+          <div className="reference-modal-section-label">Output Settings</div>
+          <div className="reference-output-pills">
+            <button className="is-filled"><span>▤</span> Answer Preferences <ChevronDown size={16} /></button>
+            <button><span className="reference-google-mark">G</span> Gemini 3.5 Flash Lite <ChevronDown size={16} /></button>
+            <button><span className="reference-globe">◎</span> English <ChevronDown size={16} /></button>
+          </div>
+          <div className="reference-modal-section-label">Behavior</div>
+          <div className="reference-behavior">
+            <label><input type="checkbox" checked={autoAnswer} onChange={(event) => setAutoAnswer(event.target.checked)} /><span className="reference-checkbox" /> Auto Answer (Beta) <span className="reference-info-dot">i</span></label>
+            <label><input type="checkbox" checked={saveTranscript} onChange={(event) => setSaveTranscript(event.target.checked)} /><span className="reference-checkbox" /> Save Transcript <span className="reference-info-dot">i</span></label>
+          </div>
+          <div className="reference-modal-actions"><button onClick={closeCreateSession}>Close</button><button className={sessionType === 'interview' ? 'is-ready' : 'is-ready'} onClick={handleCreateSession}>Create Session</button></div>
+        </section>
+      </div>}
     </main>
   );
 }
