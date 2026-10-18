@@ -1,0 +1,45 @@
+import {
+  boolean,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from "drizzle-orm/pg-core";
+
+export type TranscriptEntry = {
+  role: "user" | "assistant";
+  text: string;
+  source: "typed" | "microphone" | "ai";
+  createdAt: string;
+};
+
+export const callSessionsTable = pgTable("call_sessions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: text("user_id").notNull(),
+  sessionType: text("session_type").notNull(),
+  title: text("title").notNull(),
+  company: text("company"),
+  description: text("description"),
+  resumeText: text("resume_text").notNull().default(""),
+  documentsText: text("documents_text").notNull().default(""),
+  instructions: text("instructions").notNull().default(""),
+  answerPreference: text("answer_preference").notNull().default("concise"),
+  model: text("model").notNull().default("gemini-2.5-flash"),
+  language: text("language").notNull().default("English"),
+  autoAnswer: boolean("auto_answer").notNull().default(false),
+  saveTranscript: boolean("save_transcript").notNull().default(true),
+  status: text("status").notNull().default("ready"),
+  transcript: jsonb("transcript")
+    .$type<TranscriptEntry[]>()
+    .notNull()
+    .default([]),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  endedAt: timestamp("ended_at", { withTimezone: true }),
+});
+
+export type CallSession = typeof callSessionsTable.$inferSelect;
+export type NewCallSession = typeof callSessionsTable.$inferInsert;

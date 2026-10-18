@@ -1,13 +1,78 @@
 import { type ChangeEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import { ArrowRight, ArrowUpRight, Activity, Calendar, Check, ChevronDown, CircleStop, Clock3, Command, Download, FileAudio, Headphones, LockKeyhole, Menu, Mic, Pause, Play, Search, ShieldCheck, Sparkles, Upload, Wand2, X, Zap } from 'lucide-react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { ClerkProvider, SignIn, SignUp, useAuth, useClerk } from '@clerk/react';
+import { publishableKeyFromHost } from '@clerk/react/internal';
+import { shadcn } from '@clerk/themes';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
+import InterviewWorkspace from '@/pages/interview-workspace';
 
 const queryClient = new QueryClient();
+const clerkPubKey = publishableKeyFromHost(
+  window.location.hostname,
+  import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
+);
+const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
+const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
+
+function stripBase(path: string): string {
+  return basePath && path.startsWith(basePath)
+    ? path.slice(basePath.length) || '/'
+    : path;
+}
+
+const clerkAppearance = {
+  theme: shadcn,
+  cssLayerName: 'clerk',
+  options: {
+    logoPlacement: 'inside' as const,
+    logoLinkUrl: basePath || '/',
+    logoImageUrl: `${window.location.origin}${basePath}/logo.svg`,
+  },
+  variables: {
+    colorPrimary: '#75c853',
+    colorForeground: '#f2f3f4',
+    colorMutedForeground: '#a2a4aa',
+    colorDanger: '#f87171',
+    colorBackground: '#17181b',
+    colorInput: '#101113',
+    colorInputForeground: '#f2f3f4',
+    colorNeutral: '#3a3b40',
+    fontFamily: 'DM Sans, sans-serif',
+    borderRadius: '0.75rem',
+  },
+  elements: {
+    rootBox: 'w-full flex justify-center',
+    cardBox: 'bg-[#17181b] rounded-2xl w-[440px] max-w-full overflow-hidden border border-white/10',
+    card: '!shadow-none !border-0 !bg-transparent !rounded-none',
+    footer: '!shadow-none !border-0 !bg-transparent !rounded-none',
+    headerTitle: 'text-white',
+    headerSubtitle: 'text-white/65',
+    socialButtonsBlockButtonText: 'text-white',
+    formFieldLabel: 'text-white/80',
+    footerActionLink: 'text-emerald-300',
+    footerActionText: 'text-white/60',
+    dividerText: 'text-white/50',
+    identityPreviewEditButton: 'text-emerald-300',
+    formFieldSuccessText: 'text-emerald-300',
+    alertText: 'text-red-200',
+    logoBox: 'rounded-lg',
+    logoImage: 'rounded-lg',
+    socialButtonsBlockButton: 'bg-[#101113] border border-white/10 hover:bg-white/5',
+    formButtonPrimary: 'bg-[#257c3c] text-white hover:bg-[#2c9147]',
+    formFieldInput: 'bg-[#101113] text-white border border-white/10',
+    footerAction: 'text-white/60',
+    dividerLine: 'bg-white/10',
+    alert: 'bg-red-500/10 border border-red-400/20',
+    otpCodeFieldInput: 'bg-[#101113] text-white border border-white/10',
+    formFieldRow: 'text-white/80',
+    main: 'text-white',
+  },
+};
 
 type DesktopState = {
   visible: boolean;
@@ -63,15 +128,80 @@ function Reveal({ children, className = '', delay = 0 }: { children: ReactNode; 
 }
 
 function App() {
+  if (!clerkPubKey) {
+    throw new Error('Missing VITE_CLERK_PUBLISHABLE_KEY in the app environment');
+  }
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-          <Router />
-        </WouterRouter>
-        <Toaster />
-      </TooltipProvider>
-    </QueryClientProvider>
+    <WouterRouter base={basePath}>
+      <ClerkProviderWithRoutes />
+    </WouterRouter>
+  );
+}
+
+function ClerkProviderWithRoutes() {
+  const [, setLocation] = useLocation();
+  return (
+    <ClerkProvider
+      publishableKey={clerkPubKey}
+      proxyUrl={clerkProxyUrl}
+      appearance={clerkAppearance}
+      signInUrl={`${basePath}/sign-in`}
+      signUpUrl={`${basePath}/sign-up`}
+      localization={{
+        signIn: { start: { title: 'Welcome back', subtitle: 'Sign in to access your interview sessions' } },
+        signUp: { start: { title: 'Create your account', subtitle: 'Set up your private interview assistant' } },
+      }}
+      routerPush={(to) => setLocation(stripBase(to))}
+      routerReplace={(to) => setLocation(stripBase(to), { replace: true })}
+    >
+      <QueryClientProvider client={queryClient}>
+        <ClerkQueryClientCacheInvalidator />
+        <TooltipProvider>
+          <RoutedErrorBoundary>
+            <Switch>
+              <Route path="/sign-in/*?" component={SignInPage} />
+              <Route path="/sign-up/*?" component={SignUpPage} />
+              <Route path="/" component={HomeRedirect} />
+              <Route component={NotFound} />
+            </Switch>
+          </RoutedErrorBoundary>
+          <Toaster />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </ClerkProvider>
+  );
+}
+
+function ClerkQueryClientCacheInvalidator() {
+  const { addListener } = useClerk();
+  const cache = useQueryClient();
+  const previousUserId = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    const unsubscribe = addListener(({ user }) => {
+      const userId = user?.id ?? null;
+      if (previousUserId.current !== undefined && previousUserId.current !== userId) {
+        cache.clear();
+      }
+      previousUserId.current = userId;
+    });
+    return unsubscribe;
+  }, [addListener, cache]);
+  return null;
+}
+
+function SignInPage() {
+  return (
+    <div className="flex min-h-[100dvh] items-center justify-center bg-[#101113] px-4 py-8">
+      <SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} />
+    </div>
+  );
+}
+
+function SignUpPage() {
+  return (
+    <div className="flex min-h-[100dvh] items-center justify-center bg-[#101113] px-4 py-8">
+      <SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`} />
+    </div>
   );
 }
 
@@ -79,16 +209,19 @@ function Router() {
   return (
     <RoutedErrorBoundary>
       <Switch>
-        <Route path="/" component={Home} />
+        <Route path="/" component={HomeRedirect} />
         <Route component={NotFound} />
       </Switch>
     </RoutedErrorBoundary>
   );
 }
 
-function Home() {
+function HomeRedirect() {
+  const { isLoaded, isSignedIn } = useAuth();
   const [desktopMode] = useState(() => Boolean(window.sonoraDesktop?.isDesktop));
-  return desktopMode ? <DesktopOverlay /> : <LandingHome />;
+  if (!isLoaded) return <div className="min-h-screen bg-[#101113]" />;
+  if (desktopMode) return <DesktopOverlay />;
+  return isSignedIn ? <InterviewWorkspace /> : <LandingHome />;
 }
 
 function DesktopOverlay() {
@@ -473,9 +606,8 @@ function LegacyLandingHome() {
 }
 
 function LandingHome() {
+  const [, setLocation] = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [recording, setRecording] = useState(false);
-  const [seconds, setSeconds] = useState(0);
   const [selectedSession, setSelectedSession] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
   const [createSessionOpen, setCreateSessionOpen] = useState(() => new URLSearchParams(window.location.search).get('modal') === 'create');
@@ -486,7 +618,6 @@ function LandingHome() {
   const [callDescription, setCallDescription] = useState('');
   const [autoAnswer, setAutoAnswer] = useState(false);
   const [saveTranscript, setSaveTranscript] = useState(true);
-  const timerRef = useRef<number | undefined>(undefined);
 
   const sessions = [
     { company: 'Anthropic', role: 'Software Developer', mode: 'Interview', duration: '11 mins 23 secs', credits: 'Free', date: 'May 12, 2026', state: 'Live', action: 'Join Session', mark: 'AI' },
@@ -499,30 +630,11 @@ function LandingHome() {
 
   const visibleSessions = sessions.filter((session) => `${session.company} ${session.role}`.toLowerCase().includes(searchTerm.toLowerCase()));
 
-  useEffect(() => {
-    if (!recording) {
-      window.clearInterval(timerRef.current);
-      return;
-    }
-    timerRef.current = window.setInterval(() => setSeconds((current) => current + 1), 1000);
-    return () => window.clearInterval(timerRef.current);
-  }, [recording]);
-
-  const formatTime = (value: number) => `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
-  const startSession = () => {
-    setRecording((current) => {
-      if (current) setSeconds(0);
-      return !current;
-    });
-    window.setTimeout(() => document.getElementById('session-preview')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 30);
-  };
+  const startSession = () => setLocation('/sign-up');
+  const goToSignIn = () => setLocation('/sign-in');
   const openCreateSession = () => setCreateSessionOpen(true);
   const closeCreateSession = () => setCreateSessionOpen(false);
-  const handleCreateSession = () => {
-    setCreateSessionOpen(false);
-    setRecording(true);
-    setSeconds(0);
-  };
+  const handleCreateSession = () => setLocation('/sign-up');
 
   return (
     <main id="top" className="sonora-reference-page">
@@ -537,7 +649,7 @@ function LandingHome() {
           <a href="#pricing" data-testid="link-pricing">Pricing</a>
         </div>
         <div className="reference-nav-actions">
-          <button onClick={startSession} data-testid="button-sign-in">Sign in</button>
+          <button onClick={goToSignIn} data-testid="button-sign-in">Sign in</button>
           <button className="reference-dark-button" onClick={startSession} data-testid="button-nav-start">Try for Free <ArrowRight size={14} /></button>
         </div>
         <button className="reference-menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label={menuOpen ? 'Close menu' : 'Open menu'} data-testid="button-mobile-menu">
@@ -612,7 +724,7 @@ function LandingHome() {
                 </div>
               ))}
             </div>
-            <div className="reference-session-footer"><span>{recording ? <><i className="reference-recording-dot" /> Session live · {formatTime(seconds)}</> : 'Sessions are private by default'}</span><span><ShieldCheck size={13} /> Sonora never records without your permission</span></div>
+            <div className="reference-session-footer"><span>Product preview · Sign in to create a real session</span><span><ShieldCheck size={13} /> Sonora only listens after you enable the microphone</span></div>
           </div>
         </div>
       </section>
