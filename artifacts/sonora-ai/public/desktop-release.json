@@ -1,0 +1,22 @@
+{
+  "product": "sonora",
+  "version": "0.1.0",
+  "publishedAt": null,
+  "builds": [
+    {
+      "platform": "windows", "architecture": "x64", "label": "Sonora for Windows",
+      "status": "unavailable", "url": null, "sha256": null,
+      "signing": "Not built or signed", "minimumOs": "Windows 11 (Windows 10 2004+ capture exclusion is best effort)"
+    },
+    {
+      "platform": "mac", "architecture": "arm64", "label": "Sonora for Mac · Apple Silicon",
+      "status": "unavailable", "url": null, "sha256": null,
+      "signing": "Not built or notarized", "minimumOs": "macOS 14.2+ for system audio"
+    },
+    {
+      "platform": "mac", "architecture": "x64", "label": "Sonora for Mac · Intel",
+      "status": "unavailable", "url": null, "sha256": null,
+      "signing": "Not built or notarized", "minimumOs": "macOS 14.2+ for system audio"
+    }
+  ]
+}

@@ -16,3 +16,11 @@ The user wants a downloadable, working Sonora app for both Mac and Windows. By "
 **Why:** The user explicitly clarified both the target platforms and what "invisible during screen share" means.
 
 **How to apply:** Scope desktop delivery for both operating systems and distinguish supported capture exclusion from ordinary show/hide controls. Explain capture-method limitations and never promise universal invisibility.
+
+## Capture-exclusion feasibility
+
+Do not treat Electron's content-protection flag as evidence that a sharing application excludes the window. Modern macOS ScreenCaptureKit-based capture can ignore the legacy window flag entirely.
+
+**Why:** The user's central requirement is seeing suggestions locally while excluding them from screen sharing, and this is a platform limitation rather than a UI toggle implementation detail.
+
+**How to apply:** Require receiver-side checks for each OS, meeting-app version, and sharing mode. State the Mac limitation before promising parity or a release; use window-specific sharing as a fallback where appropriate.

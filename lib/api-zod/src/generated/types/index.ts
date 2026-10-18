@@ -9,6 +9,7 @@
 export * from './appendTranscriptRequest';
 export * from './appendTranscriptRequestRole';
 export * from './appendTranscriptRequestSource';
+export * from './audioTranscription';
 export * from './callSession';
 export * from './callSessionSessionType';
 export * from './callSessionStatus';
@@ -20,6 +21,8 @@ export * from './newCallSessionModel';
 export * from './newCallSessionSessionType';
 export * from './sessionAnswer';
 export * from './sessionAnswerRequest';
+export * from './sessionAudioChunk';
+export * from './sessionAudioChunkMimeType';
 export * from './sessionErrorResponse';
 export * from './transcriptEntry';
 export * from './transcriptEntryRole';

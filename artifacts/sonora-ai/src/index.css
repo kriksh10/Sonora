@@ -7,6 +7,10 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Native frameless title bar. Keep interactive children clickable. */
+.desktop-drag { -webkit-app-region: drag; }
+.desktop-drag button, .desktop-drag a, .desktop-drag input, .desktop-drag select { -webkit-app-region: no-drag; }
+
 @theme inline {
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));

@@ -244,3 +244,29 @@ export const GenerateSessionAnswerResponse = zod.object({
 })
 
 
+/**
+ * @summary Transcribe a short consented desktop audio chunk without retaining audio
+ */
+export const TranscribeSessionAudioParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const transcribeSessionAudioBodyAudioMin = 60;
+export const transcribeSessionAudioBodyAudioMax = 400000;
+
+
+
+export const TranscribeSessionAudioBody = zod.object({
+  "audio": zod.string().min(transcribeSessionAudioBodyAudioMin).max(transcribeSessionAudioBodyAudioMax).describe('Base64 PCM WAV, mono 16 kHz, at most eight seconds'),
+  "mimeType": zod.enum(['audio/wav'])
+})
+
+export const transcribeSessionAudioResponseTextMax = 8000;
+
+
+
+export const TranscribeSessionAudioResponse = zod.object({
+  "text": zod.string().max(transcribeSessionAudioResponseTextMax)
+})
+
+

@@ -21,11 +21,13 @@ import type {
 
 import type {
   AppendTranscriptRequest,
+  AudioTranscription,
   CallSession,
   HealthStatus,
   NewCallSession,
   SessionAnswer,
   SessionAnswerRequest,
+  SessionAudioChunk,
   SessionErrorResponse,
   UpdateCallSessionRequest
 } from './api.schemas';
@@ -574,5 +576,77 @@ export const useGenerateSessionAnswer = <TError = ErrorType<SessionErrorResponse
         TContext
       > => {
       return useMutation(getGenerateSessionAnswerMutationOptions(options));
+    }
+
+export const getTranscribeSessionAudioUrl = (id: string,) => {
+
+
+
+
+  return `/api/sessions/${id}/transcribe`
+}
+
+/**
+ * @summary Transcribe a short consented desktop audio chunk without retaining audio
+ */
+export const transcribeSessionAudio = async (id: string,
+    sessionAudioChunk: SessionAudioChunk, options?: Parameters<typeof customFetch>[1]): Promise<AudioTranscription> => {
+
+  return customFetch<AudioTranscription>(getTranscribeSessionAudioUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(sessionAudioChunk)
+  }
+);}
+
+
+
+
+
+export const getTranscribeSessionAudioMutationOptions = <TError = ErrorType<SessionErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof transcribeSessionAudio>>, TError,{id: string;data: BodyType<SessionAudioChunk>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof transcribeSessionAudio>>, TError,{id: string;data: BodyType<SessionAudioChunk>}, TContext> => {
+
+const mutationKey = ['transcribeSessionAudio'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof transcribeSessionAudio>>, {id: string;data: BodyType<SessionAudioChunk>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  transcribeSessionAudio(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type TranscribeSessionAudioMutationResult = NonNullable<Awaited<ReturnType<typeof transcribeSessionAudio>>>
+    export type TranscribeSessionAudioMutationBody = BodyType<SessionAudioChunk>
+    export type TranscribeSessionAudioMutationError = ErrorType<SessionErrorResponse>
+
+    /**
+ * @summary Transcribe a short consented desktop audio chunk without retaining audio
+ */
+export const useTranscribeSessionAudio = <TError = ErrorType<SessionErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof transcribeSessionAudio>>, TError,{id: string;data: BodyType<SessionAudioChunk>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof transcribeSessionAudio>>,
+        TError,
+        {id: string;data: BodyType<SessionAudioChunk>},
+        TContext
+      > => {
+      return useMutation(getTranscribeSessionAudioMutationOptions(options));
     }
 

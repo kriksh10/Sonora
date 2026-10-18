@@ -16,6 +16,13 @@ contextBridge.exposeInMainWorld('sonoraDesktop', {
   quit: () => ipcRenderer.invoke('overlay:quit'),
   getState: () => ipcRenderer.invoke('overlay:get-state'),
   setAlwaysOnTop: (value) => ipcRenderer.invoke('overlay:set-always-on-top', Boolean(value)),
+  setContentProtection: (value) => ipcRenderer.invoke('overlay:set-content-protection', Boolean(value)),
+  setCaptureActive: (value) => ipcRenderer.invoke('overlay:set-capture-active', Boolean(value)),
+  onStopCapture: (listener) => {
+    const handler = () => listener();
+    ipcRenderer.on('overlay:stop-capture', handler);
+    return () => ipcRenderer.removeListener('overlay:stop-capture', handler);
+  },
   onStateChange: (listener) => {
     stateListeners.add(listener);
     return () => stateListeners.delete(listener);

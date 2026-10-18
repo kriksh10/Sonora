@@ -17,6 +17,8 @@ import {
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
 import { useClerk, useUser } from "@clerk/react";
 import type { CallSession, TranscriptEntry } from "@workspace/api-client-react";
+import DesktopToolbar from "@/components/desktop-toolbar";
+import { createDesktopAudio, type AudioCapture } from "@/lib/desktop-audio";
 
 GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -154,6 +156,9 @@ export default function InterviewWorkspace() {
   const [now, setNow] = useState(Date.now());
   const [uploading, setUploading] = useState<"resume" | "documents" | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const desktopCaptureRef = useRef<AudioCapture | null>(null);
+  const [audioSource, setAudioSource] = useState<"microphone" | "system">("microphone");
+  const [compact, setCompact] = useState(Boolean(window.sonoraDesktop));
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const uploadTargetRef = useRef<"resume" | "documents">("resume");
@@ -279,17 +284,33 @@ export default function InterviewWorkspace() {
   const askRef = useRef(askGemini);
   askRef.current = askGemini;
 
+  const stopCapture = useCallback(() => {
+    captureTokenRef.current += 1;
+    desktopCaptureRef.current?.stop();
+    desktopCaptureRef.current = null;
+    recognitionRef.current?.stop();
+    recognitionRef.current = null;
+    streamRef.current?.getTracks().forEach(track => track.stop());
+    streamRef.current = null;
+    setListening(false);
+    setRequestingMic(false);
+    setInterimTranscript("");
+  }, []);
+
+  useEffect(() => {
+    const off = window.sonoraDesktop?.onStopCapture(stopCapture);
+    window.addEventListener("beforeunload", stopCapture);
+    return () => { off?.(); window.removeEventListener("beforeunload", stopCapture); };
+  }, [stopCapture]);
+
   useEffect(() => {
     setListening(false);
     setRequestingMic(false);
     setInterimTranscript("");
     return () => {
-      captureTokenRef.current += 1;
-      recognitionRef.current?.stop();
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
+      stopCapture();
     };
-  }, [selectedId]);
+  }, [selectedId, stopCapture]);
 
   const handleCreate = async (event: FormEvent) => {
     event.preventDefault();
@@ -351,13 +372,7 @@ export default function InterviewWorkspace() {
 
   const endSession = async () => {
     if (!selected) return;
-    captureTokenRef.current += 1;
-    recognitionRef.current?.stop();
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-    setListening(false);
-    setRequestingMic(false);
-    setInterimTranscript("");
+    stopCapture();
     try {
       const updated = await api<CallSession>(`/sessions/${selected.id}`, {
         method: "PATCH",
@@ -372,18 +387,58 @@ export default function InterviewWorkspace() {
 
   const toggleMicrophone = async () => {
     if (!selected) return;
-    if (listening) {
-      captureTokenRef.current += 1;
-      recognitionRef.current?.stop();
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-      setListening(false);
-      setInterimTranscript("");
-      setNotice("Microphone transcription stopped.");
+    if (listening || requestingMic) {
+      stopCapture();
+      setNotice("Audio transcription stopped. Any incomplete final chunk was discarded.");
       return;
     }
     if (selected.status === "ended") {
       setError("This session has ended. Create a new session to start microphone transcription.");
+      return;
+    }
+    if (window.sonoraDesktop) {
+      const captureToken = ++captureTokenRef.current;
+      setRequestingMic(true);
+      setError("");
+      const capture = createDesktopAudio({
+        source: audioSource,
+        sessionId: selected.id,
+        onText: text => {
+          if (captureToken !== captureTokenRef.current) return;
+          if (selected.autoAnswer && isLikelyQuestion(text) && !answerInFlightRef.current) {
+            void askRef.current(text, "microphone");
+          } else {
+            void saveTranscript(selected, "user", text, "microphone").catch(cause =>
+              setError(cause instanceof Error ? cause.message : "Could not save transcript."));
+          }
+        },
+        onNotice: text => { if (captureToken === captureTokenRef.current) setNotice(text); },
+        onError: cause => {
+          if (captureToken !== captureTokenRef.current) return;
+          stopCapture();
+          setError(cause.message);
+        },
+      });
+      desktopCaptureRef.current = capture;
+      try {
+        await capture.start();
+        if (captureToken !== captureTokenRef.current) { capture.stop(); return; }
+        if (selected.status === "ready") {
+          const updated = await api<CallSession>(`/sessions/${selected.id}`, {
+            method: "PATCH", body: JSON.stringify({ status: "active" }),
+          });
+          setSessions(items => items.map(item => item.id === updated.id ? updated : item));
+        }
+        if (captureToken !== captureTokenRef.current) { capture.stop(); return; }
+        setListening(true);
+        setNotice(`${audioSource === "system" ? "System audio" : "Microphone"} is on. Short audio chunks are sent to Gemini for transcription. Processing delay is expected; Stop is also available from the tray.`);
+      } catch (cause) {
+        if (captureToken !== captureTokenRef.current) return;
+        stopCapture();
+        setError(cause instanceof Error ? cause.message : "Could not start desktop audio.");
+      } finally {
+        if (captureToken === captureTokenRef.current) setRequestingMic(false);
+      }
       return;
     }
     const speechWindow = window as WindowWithSpeechRecognition;
@@ -518,13 +573,14 @@ export default function InterviewWorkspace() {
         className="hidden"
         onChange={handleUpload}
       />
-      <header className="flex h-[60px] items-center justify-between border-b border-white/10 bg-[#17181b] px-4 sm:px-6">
+      <header className={`${window.sonoraDesktop ? "desktop-drag" : ""} flex h-[60px] items-center justify-between border-b border-white/10 bg-[#17181b] px-4 sm:px-6`}>
         <a href={import.meta.env.BASE_URL} className="flex items-center gap-2 text-lg font-bold tracking-tight text-white">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#75c853] text-[#19321d]">✳</span>
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#75c853] text-[#19321d]"><Sparkles size={18} /></span>
           Sonora <span className="text-xs font-medium text-white/50">AI</span>
         </a>
         <div className="flex items-center gap-3 text-sm text-white/65">
           <span className="hidden sm:inline">{user?.primaryEmailAddress?.emailAddress}</span>
+          {!window.sonoraDesktop && <a href={`${import.meta.env.BASE_URL}download`} className="rounded-lg border border-white/10 px-3 py-2 text-xs hover:bg-white/5">Desktop downloads</a>}
           <button
             className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 hover:bg-white/5"
             onClick={() => void signOut({ redirectUrl: import.meta.env.BASE_URL })}
@@ -535,7 +591,12 @@ export default function InterviewWorkspace() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
+      <div className={`mx-auto max-w-[1440px] px-4 ${compact ? "py-3" : "py-6 sm:px-6 lg:px-8"}`}>
+        <DesktopToolbar captureActive={listening} onStop={stopCapture} />
+        {window.sonoraDesktop && <div className="mb-4 flex flex-wrap gap-2">
+          <select aria-label="Current desktop session" value={selectedId ?? ""} onChange={event => { setSelectedId(event.target.value || null); setAnswer(""); setError(""); }} className="min-w-0 flex-1 rounded-lg border border-white/10 bg-[#17181b] px-3 py-2 text-sm"><option value="">Choose a session</option>{sessions.map(item => <option key={item.id} value={item.id}>{item.title} · {item.status}</option>)}</select>
+          <button onClick={() => setCompact(value => !value)} className="rounded-lg border border-white/10 px-3 py-2 text-xs">{compact ? "Show session browser" : "Compact assistant"}</button>
+        </div>}
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>
             <div className="mb-1 text-xs font-semibold uppercase tracking-[.14em] text-white/40">Workspace</div>
@@ -562,8 +623,8 @@ export default function InterviewWorkspace() {
           </div>
         )}
 
-        <div className="grid min-h-[600px] gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
-          <aside className="flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#17181b]">
+        <div className={`grid min-h-[600px] gap-5 ${compact ? "" : "lg:grid-cols-[300px_minmax(0,1fr)]"}`}>
+          <aside className={`${compact ? "hidden" : "flex"} flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#17181b]`}>
             <div className="border-b border-white/10 p-4">
               <div className="relative">
                 <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/35" />
@@ -639,17 +700,21 @@ export default function InterviewWorkspace() {
                         <h3 className="text-sm font-semibold text-white">Live interview assistant</h3>
                         <p className="mt-1 max-w-[460px] text-xs leading-5 text-white/45">Ask a question to test Gemini, or turn on microphone transcription. Sonora only listens after you start it.</p>
                       </div>
+                      <div className="flex flex-wrap gap-2">
+                      {window.sonoraDesktop && <select aria-label="Audio source" value={audioSource} disabled={listening || requestingMic} onChange={event => setAudioSource(event.target.value as "microphone" | "system")} className="max-w-full rounded-lg border border-white/10 bg-[#17181b] px-2 py-2 text-xs text-white disabled:opacity-50"><option value="microphone">Microphone</option><option value="system">System / call audio</option></select>}
                       <button
                         onClick={() => void toggleMicrophone()}
                         disabled={selected.status === "ended" || requestingMic}
                         className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${listening ? "bg-red-500/15 text-red-200 ring-1 ring-red-400/30" : "bg-[#25272b] text-white hover:bg-[#303238]"}`}
                       >
-                        <Mic size={15} /> {requestingMic ? "Requesting mic…" : listening ? "Stop mic" : "Enable mic"}
+                        <Mic size={15} /> {requestingMic ? "Requesting audio…" : listening ? "Stop capture" : window.sonoraDesktop ? "Enable audio" : "Enable mic"}
                       </button>
+                      {requestingMic && <button onClick={stopCapture} className="rounded-lg border border-white/10 px-3 py-2 text-xs">Cancel request</button>}
+                      </div>
                     </div>
-                    {listening && <div className="mt-3 rounded-lg bg-white/5 px-3 py-2 text-xs text-emerald-100"><span className="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-emerald-400" />Microphone transcription is active in this browser.</div>}
-                    {!listening && selected.status === "active" && <p className="mt-3 text-[11px] text-white/35">Microphone access is off. Typed questions work without it.</p>}
-                    <p className="mt-3 text-xs leading-5 text-white/40">This version captures your microphone, not Zoom, Meet, or Teams system audio. When using headphones, type the interviewer’s question below.</p>
+                    {listening && <div className="mt-3 rounded-lg bg-white/5 px-3 py-2 text-xs text-emerald-100"><span className="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-emerald-400" />{window.sonoraDesktop ? `${audioSource === "system" ? "System audio" : "Microphone"} capture active · Gemini chunk transcription` : "Microphone transcription is active in this browser."}</div>}
+                    {!listening && selected.status === "active" && <p className="mt-3 text-[11px] text-white/35">Audio capture is off. Typed questions work without it.</p>}
+                    <p className="mt-3 text-xs leading-5 text-white/40">{window.sonoraDesktop ? "Choose microphone or explicitly share system audio. The latter can include other apps. Only audio—not screen video—is sent for transcription. Use assistance only where permitted." : "This browser version captures your microphone, not Zoom, Meet, or Teams system audio. When using headphones, type the interviewer’s question below."}</p>
                     {interimTranscript && <p className="mt-3 rounded-lg border border-white/5 bg-white/[.03] p-3 text-sm italic text-white/55">{interimTranscript}</p>}
                     <form
                       className="mt-4"
@@ -702,7 +767,7 @@ export default function InterviewWorkspace() {
                     )) : <div className="flex min-h-[250px] flex-col items-center justify-center px-4 text-center text-sm text-white/40"><FileText size={22} className="mb-3 text-white/25" />No transcript yet. Ask Gemini or enable the microphone.</div>}
                     {interimTranscript && <p className="rounded-lg bg-white/5 p-3 text-sm italic text-white/45">{interimTranscript}</p>}
                   </div>
-                  <p className="mt-3 text-xs leading-5 text-white/35">Speech recognition is provided by your browser. Sonora sends recognized text to Gemini only when it generates an answer.</p>
+                  <p className="mt-3 text-xs leading-5 text-white/35">{window.sonoraDesktop ? "Desktop audio is sent to Gemini in six-second chunks. Audio is not retained by Sonora; recognized text is saved only when Save Transcript is on. System audio may include other apps. Stopping discards the incomplete final chunk." : "Speech recognition is provided by your browser. Sonora sends recognized text to Gemini only when it generates an answer."}</p>
                 </div>
               </div>
             </section>

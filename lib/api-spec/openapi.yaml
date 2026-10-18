@@ -155,6 +155,33 @@ paths:
                 $ref: "#/components/schemas/SessionAnswer"
         default:
           $ref: "#/components/responses/SessionError"
+  /sessions/{id}/transcribe:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: transcribeSessionAudio
+      tags: [sessions]
+      summary: Transcribe a short consented desktop audio chunk without retaining audio
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionAudioChunk"
+      responses:
+        "200":
+          description: Recognized text; empty for silence
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AudioTranscription"
+        default:
+          $ref: "#/components/responses/SessionError"
 components:
   responses:
     SessionError:
@@ -168,6 +195,25 @@ components:
               error:
                 type: string
   schemas:
+    SessionAudioChunk:
+      type: object
+      required: [audio, mimeType]
+      properties:
+        audio:
+          type: string
+          minLength: 60
+          maxLength: 400000
+          description: Base64 PCM WAV, mono 16 kHz, at most eight seconds
+        mimeType:
+          type: string
+          enum: [audio/wav]
+    AudioTranscription:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          maxLength: 8000
     UpdateCallSessionRequest:
       type: object
       required: [status]

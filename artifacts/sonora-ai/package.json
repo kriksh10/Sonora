@@ -1,6 +1,6 @@
 {
   "name": "@workspace/sonora-ai",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "desktop/main.cjs",
@@ -10,7 +10,10 @@
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "desktop:dev": "node desktop/dev.cjs",
-    "desktop:run": "electron desktop/main.cjs"
+    "desktop:run": "node desktop/build-assets.cjs && electron desktop/main.cjs --dev",
+    "desktop:prepare": "node desktop/prepare-release.cjs",
+    "desktop:package": "node desktop/package-release.cjs",
+    "desktop:test": "node --test desktop/tests/*.test.cjs"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -57,7 +60,9 @@
     "cmdk": "^1.1.1",
     "date-fns": "^3.6.0",
     "electron": "^44.0.0",
+    "electron-builder": "^26.15.3",
     "embla-carousel-react": "^8.6.0",
+    "esbuild": "0.27.3",
     "framer-motion": "catalog:",
     "input-otp": "^1.4.2",
     "lucide-react": "catalog:",

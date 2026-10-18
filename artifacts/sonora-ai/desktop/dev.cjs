@@ -1,6 +1,7 @@
 const { spawn } = require('node:child_process');
 const http = require('node:http');
 const path = require('node:path');
+require('./build-assets.cjs').buildAssets();
 
 const appRoot = path.resolve(__dirname, '..');
 const port = Number(process.env.SONORA_WEB_PORT || 5173);

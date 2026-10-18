@@ -1,0 +1,54 @@
+name: Build Sonora desktop previews
+on:
+  workflow_dispatch:
+    inputs:
+      service_url:
+        description: Published HTTPS Sonora URL (not a development preview)
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+            arch: x64
+          - os: macos-14
+            platform: mac
+            arch: arm64
+          - os: macos-14
+            platform: mac
+            arch: x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.26.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @workspace/sonora-ai run desktop:test
+      - name: Build unsigned preview (not a verified release)
+        run: pnpm --filter @workspace/sonora-ai run desktop:package ${{ matrix.platform }} ${{ matrix.arch }}
+        env:
+          SONORA_RELEASE_URL: ${{ inputs.service_url }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Calculate checksums
+        shell: bash
+        run: node artifacts/sonora-ai/desktop/checksums.cjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sonora-preview-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            generated-artifacts/installers/*.exe
+            generated-artifacts/installers/*.dmg
+            generated-artifacts/installers/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14

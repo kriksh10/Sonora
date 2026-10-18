@@ -34,7 +34,7 @@ _Populate as you build — non-obvious choices a reader couldn't infer from the 
 - Signed-in users create Interview or Regular Call sessions with context and output settings, ask Gemini before microphone access, and reopen their own saved history.
 - PDF/TXT/Markdown context is extracted in the browser. Only extracted text is saved; original files and audio bytes are not retained.
 - Live speech recognition depends on browser support and permission. This version captures microphone input, not call-platform system audio. Typed questions remain available when speech recognition cannot run.
-- The offline Electron build does not connect to the hosted API; see `artifacts/sonora-ai/desktop/README.md` for current desktop limitations.
+- Desktop source targets Mac and Windows through the hosted HTTPS workspace. Installers are not released yet; see `artifacts/sonora-ai/desktop/README.md` and `desktop/VERIFICATION.md` for release requirements and native test blockers.
 
 ## User preferences
 

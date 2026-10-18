@@ -10,6 +10,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 import InterviewWorkspace from '@/pages/interview-workspace';
+import DesktopDownloads from '@/components/desktop-downloads';
 
 const queryClient = new QueryClient();
 const clerkPubKey = publishableKeyFromHost(
@@ -77,6 +78,10 @@ const clerkAppearance = {
 type DesktopState = {
   visible: boolean;
   alwaysOnTop: boolean;
+  contentProtection: boolean;
+  captureActive: boolean;
+  shortcutRegistered: boolean;
+  platform: string;
 };
 
 type SonoraDesktopBridge = {
@@ -89,6 +94,9 @@ type SonoraDesktopBridge = {
   quit: () => Promise<void>;
   getState: () => Promise<DesktopState>;
   setAlwaysOnTop: (value: boolean) => Promise<DesktopState>;
+  setContentProtection: (value: boolean) => Promise<DesktopState>;
+  setCaptureActive: (value: boolean) => Promise<DesktopState>;
+  onStopCapture: (listener: () => void) => () => void;
   onStateChange: (listener: (state: DesktopState) => void) => () => void;
 };
 
@@ -170,6 +178,7 @@ function ClerkProviderWithRoutes() {
         <TooltipProvider>
           <RoutedErrorBoundary>
             <Switch>
+              <Route path="/download">{() => <main className="min-h-screen bg-[#101113]"><DesktopDownloads /></main>}</Route>
               <Route path="/sign-in/*?" component={SignInPage} />
               <Route path="/sign-up/*?" component={SignUpPage} />
               <Route path="/" component={HomeRedirect} />
@@ -203,7 +212,10 @@ function ClerkQueryClientCacheInvalidator() {
 function SignInPage() {
   return (
     <div className="flex min-h-[100dvh] items-center justify-center bg-[#101113] px-4 py-8">
-      <SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} />
+      <div>
+        {window.sonoraDesktop && <p className="mx-auto mb-4 max-w-sm text-sm text-white/60">Use email and password here. Some social sign-in providers block embedded desktop browsers; browser sign-in does not automatically sign in this app.</p>}
+        <SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} />
+      </div>
     </div>
   );
 }
@@ -641,6 +653,7 @@ function LandingHome() {
 
   const startSession = () => setLocation('/sign-up');
   const goToSignIn = () => setLocation('/sign-in');
+  const goToDownloads = () => setLocation('/download');
   const openCreateSession = () => setLocation('/sign-up');
   const closeCreateSession = () => setCreateSessionOpen(false);
   const handleCreateSession = () => setLocation('/sign-up');
@@ -713,7 +726,7 @@ function LandingHome() {
               <button className="reference-create-button" onClick={openCreateSession}><span>＋</span> Create Session</button>
             </div>
             <div className="reference-desktop-promo">
-              <div className="reference-promo-copy"><div className="reference-promo-kicker">DESKTOP APP</div><h3>Make sure you're getting the most from Sonora AI.</h3><p>The desktop app runs quietly in the background, listening to your call and surfacing the best answers in real time. No tab switching.</p><div className="reference-promo-actions"><button onClick={startSession}><Download size={13} /> Download for Mac</button><button onClick={startSession}>Browser vs App</button></div></div>
+              <div className="reference-promo-copy"><div className="reference-promo-kicker">DESKTOP APP</div><h3>Sonora for Mac and Windows.</h3><p>Desktop release preparation is in progress. Check installer availability and platform limits before downloading.</p><div className="reference-promo-actions"><button onClick={goToDownloads}><Download size={13} /> Desktop downloads</button><button onClick={goToDownloads}>Availability &amp; requirements</button></div></div>
               <div className="reference-promo-screen"><div className="reference-promo-toolbar"><span /><span /><span /><b>Answer&nbsp; ⌘↵</b><b>Screenshot&nbsp; ⌘⇧</b><b>Chat&nbsp; ⌘↵</b></div><div className="reference-promo-lines"><i /><i /><i /><i /><i /></div></div>
             </div>
             <div className="reference-tabs"><button className="is-active">All</button><button>Active</button><button>Ended</button><span>{visibleSessions.length || sessions.length} Sessions</span></div>

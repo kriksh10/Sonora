@@ -5,6 +5,28 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export type SessionAudioChunkMimeType = typeof SessionAudioChunkMimeType[keyof typeof SessionAudioChunkMimeType];
+
+
+export const SessionAudioChunkMimeType = {
+  'audio/wav': 'audio/wav',
+} as const;
+
+export interface SessionAudioChunk {
+  /**
+     * Base64 PCM WAV, mono 16 kHz, at most eight seconds
+     * @minLength 60
+     * @maxLength 400000
+     */
+  audio: string;
+  mimeType: SessionAudioChunkMimeType;
+}
+
+export interface AudioTranscription {
+  /** @maxLength 8000 */
+  text: string;
+}
+
 export type UpdateCallSessionRequestStatus = typeof UpdateCallSessionRequestStatus[keyof typeof UpdateCallSessionRequestStatus];
 
 

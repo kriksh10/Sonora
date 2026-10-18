@@ -1,185 +1,191 @@
-const { app, BrowserWindow, globalShortcut, ipcMain, Menu, Tray, nativeImage, screen } = require('electron');
+const { app, BrowserWindow, globalShortcut, ipcMain, Menu, Tray, nativeImage, screen, dialog, desktopCapturer, shell } = require('electron');
 const path = require('node:path');
+const fs = require('node:fs');
+const { validateServiceUrl, isAllowedNavigation, isTrustedFrame } = require('./security.cjs');
 
-const isDevelopment = process.argv.includes('--dev') || !app.isPackaged;
-const developmentUrl = process.env.SONORA_DESKTOP_URL || 'http://127.0.0.1:5173/';
-
-let overlayWindow = null;
-let tray = null;
-let isQuitting = false;
+let win;
+let tray;
+let quitting = false;
 let alwaysOnTop = true;
+let contentProtection = ['win32', 'darwin'].includes(process.platform);
+let captureActive = false;
+let shortcutRegistered = false;
+let target;
+const shortcut = 'CommandOrControl+Shift+Space';
+const development = !app.isPackaged && process.argv.includes('--dev');
 
-function getProductionUrl() {
-  return `file://${path.join(__dirname, '..', 'dist', 'public', 'index.html')}`;
+function state() {
+  return { visible: win?.isVisible() ?? false, alwaysOnTop, contentProtection, captureActive, shortcutRegistered, platform: process.platform };
 }
-
-function broadcastState() {
-  if (!overlayWindow || overlayWindow.isDestroyed()) return;
-  overlayWindow.webContents.send('overlay:state-changed', {
-    visible: overlayWindow.isVisible(),
-    alwaysOnTop,
-  });
+function broadcast() {
+  if (win && !win.isDestroyed()) win.webContents.send('overlay:state-changed', state());
+  updateTray();
 }
-
-function showOverlay() {
-  if (!overlayWindow || overlayWindow.isDestroyed()) return;
-  if (!overlayWindow.isVisible()) {
-    const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-    const [width, height] = overlayWindow.getSize();
-    overlayWindow.setPosition(
-      Math.max(display.bounds.x + 24, display.bounds.x + display.bounds.width - width - 24),
-      Math.max(display.bounds.y + 24, display.bounds.y + display.bounds.height - height - 72),
-      false,
-    );
-  }
-  overlayWindow.show();
-  overlayWindow.focus();
-  broadcastState();
+function show() {
+  if (!win || win.isDestroyed()) return;
+  win.show();
+  win.focus();
+  broadcast();
 }
-
-function hideOverlay() {
-  if (!overlayWindow || overlayWindow.isDestroyed()) return;
-  overlayWindow.hide();
-  broadcastState();
+function hide() {
+  win?.hide();
+  broadcast();
 }
-
-function toggleOverlay() {
-  if (!overlayWindow || overlayWindow.isDestroyed()) return;
-  if (overlayWindow.isVisible()) hideOverlay();
-  else showOverlay();
+function toggle() { if (win?.isVisible()) hide(); else show(); }
+function stopCapture() {
+  win?.webContents.send('overlay:stop-capture');
+  // Renderer reports inactive only after releasing the tracks.
+  show();
 }
-
-function setPinState(value) {
-  alwaysOnTop = value;
-  if (overlayWindow && !overlayWindow.isDestroyed()) {
-    overlayWindow.setAlwaysOnTop(alwaysOnTop, 'floating');
-    broadcastState();
-  }
-}
-
-function createTray() {
-  const iconSvg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-      <rect width="32" height="32" rx="9" fill="#f0c76c"/>
-      <rect x="14.5" y="8" width="3" height="16" rx="1.5" fill="#19373a"/>
-      <rect x="8.5" y="11" width="3" height="10" rx="1.5" fill="#19373a" fill-opacity=".7"/>
-      <rect x="20.5" y="11" width="3" height="10" rx="1.5" fill="#19373a" fill-opacity=".7"/>
-    </svg>
-  `;
-  const icon = nativeImage.createFromDataURL(
-    `data:image/svg+xml;base64,${Buffer.from(iconSvg).toString('base64')}`,
-  );
-  tray = new Tray(icon);
-  tray.setToolTip('Sonora AI');
-  tray.on('click', toggleOverlay);
+function updateTray() {
+  if (!tray) return;
+  tray.setToolTip(captureActive ? 'Sonora — AUDIO CAPTURE ACTIVE' : 'Sonora AI — audio off');
   tray.setContextMenu(Menu.buildFromTemplate([
-    {
-      label: 'Show Sonora',
-      click: showOverlay,
-    },
-    {
-      label: 'Hide Sonora',
-      click: hideOverlay,
-    },
+    { label: captureActive ? 'Audio capture active' : 'Audio off', enabled: false },
+    { label: 'Show Sonora', click: show },
+    { label: 'Hide Sonora (audio continues if active)', click: hide },
+    { label: 'Stop audio capture', enabled: captureActive, click: stopCapture },
     { type: 'separator' },
-    {
-      label: 'Keep on top',
-      type: 'checkbox',
-      checked: alwaysOnTop,
-      click: (item) => setPinState(item.checked),
-    },
+    { label: 'Keep on top', type: 'checkbox', checked: alwaysOnTop, click: item => {
+      alwaysOnTop = item.checked; win?.setAlwaysOnTop(alwaysOnTop, 'floating'); broadcast();
+    } },
     { type: 'separator' },
-    {
-      label: 'Quit Sonora',
-      click: () => {
-        isQuitting = true;
-        app.quit();
-      },
-    },
+    { label: 'Quit Sonora and stop audio', click: () => { quitting = true; app.quit(); } },
   ]));
 }
-
-function createOverlayWindow() {
-  overlayWindow = new BrowserWindow({
-    width: 430,
-    height: 360,
-    minWidth: 360,
-    minHeight: 300,
-    show: false,
-    frame: false,
-    transparent: true,
-    resizable: true,
-    movable: true,
-    hasShadow: false,
-    skipTaskbar: true,
-    backgroundColor: '#00000000',
+function registerIpc() {
+  const handle = (name, fn) => ipcMain.handle(name, (event, ...args) => {
+    if (!isTrustedFrame(event, win?.webContents, target)) throw new Error('Untrusted desktop request.');
+    return fn(...args);
+  });
+  handle('overlay:get-state', state);
+  handle('overlay:show', () => { show(); return state(); });
+  handle('overlay:hide', () => { hide(); return state(); });
+  handle('overlay:toggle', () => { toggle(); return state(); });
+  handle('overlay:set-always-on-top', value => {
+    if (typeof value !== 'boolean') throw new Error('Expected boolean.');
+    alwaysOnTop = value; win.setAlwaysOnTop(value, 'floating'); broadcast(); return state();
+  });
+  handle('overlay:set-content-protection', value => {
+    if (typeof value !== 'boolean') throw new Error('Expected boolean.');
+    contentProtection = value && ['win32', 'darwin'].includes(process.platform);
+    win.setContentProtection(contentProtection); broadcast(); return state();
+  });
+  handle('overlay:set-capture-active', value => {
+    if (typeof value !== 'boolean') throw new Error('Expected boolean.');
+    captureActive = value; broadcast(); return state();
+  });
+  handle('overlay:quit', () => { quitting = true; app.quit(); });
+}
+function configurePermissions() {
+  const ses = win.webContents.session;
+  ses.setPermissionCheckHandler((contents, permission, origin, details) => {
+    if (contents !== win.webContents || !isAllowedNavigation(origin, target)) return false;
+    if (permission === 'display-capture') return true;
+    return permission === 'media' && details.mediaType === 'audio';
+  });
+  ses.setPermissionRequestHandler((contents, permission, callback, details) => {
+    const trusted = contents === win.webContents && isAllowedNavigation(details.requestingUrl, target);
+    if (!trusted || permission !== 'media' || !details.mediaTypes?.length ||
+        details.mediaTypes.some(type => type !== 'audio')) { callback(false); return; }
+    dialog.showMessageBox(win, {
+      type: 'question', title: 'Allow microphone?', buttons: ['Cancel', 'Allow microphone'],
+      defaultId: 0, cancelId: 0,
+      message: 'Allow Sonora to transcribe your microphone?',
+      detail: 'Audio chunks will be sent to the hosted Gemini transcription service while capture is active. You can stop from the assistant or tray.',
+    }).then(result => callback(result.response === 1), () => callback(false));
+  });
+  ses.setDisplayMediaRequestHandler(async (request, callback) => {
+    try {
+      if (request.frame !== win.webContents.mainFrame || !isAllowedNavigation(request.securityOrigin, target) ||
+          !request.audioRequested || !['win32', 'darwin'].includes(process.platform)) { callback({}); return; }
+      const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } });
+      if (!sources.length) { callback({}); return; }
+      const choices = sources.slice(0, 8);
+      const result = await dialog.showMessageBox(win, {
+        type: 'question', title: 'Share system audio with Sonora',
+        message: 'Transcribe audio playing on this computer?',
+        detail: 'System audio can include other applications, not just your interview. Screen access is used to establish the stream, but Sonora sends only audio to its transcription service. Stop capture from the app or tray. On Mac, allow system-audio access when prompted.',
+        buttons: ['Cancel', ...choices.map(source => `Share audio · ${source.name}`)],
+        defaultId: 0, cancelId: 0,
+      });
+      if (!result.response || win.isDestroyed()) { callback({}); return; }
+      callback({ video: choices[result.response - 1], audio: 'loopback' });
+    } catch { callback({}); }
+  }, { useSystemPicker: false });
+}
+function createWindow() {
+  const display = screen.getPrimaryDisplay().workAreaSize;
+  win = new BrowserWindow({
+    width: Math.min(640, display.width), height: Math.min(780, display.height),
+    minWidth: 390, minHeight: 460, show: false, frame: false,
+    backgroundColor: '#101113', alwaysOnTop: true,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
+      preload: path.join(__dirname, 'preload.cjs'), partition: 'persist:sonora',
+      contextIsolation: true, nodeIntegration: false, sandbox: true,
+      webSecurity: true, backgroundThrottling: false,
     },
   });
-
-  overlayWindow.setAlwaysOnTop(true, 'floating');
-  overlayWindow.setMenuBarVisibility(false);
-  overlayWindow.on('close', (event) => {
-    if (!isQuitting) {
-      event.preventDefault();
-      hideOverlay();
+  win.setContentProtection(contentProtection);
+  win.setMenuBarVisibility(false);
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!isAllowedNavigation(url, target)) event.preventDefault();
+  });
+  win.webContents.on('will-redirect', (event, url) => {
+    if (!isAllowedNavigation(url, target)) event.preventDefault();
+  });
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    // OAuth in embedded browsers is not assumed to work. Never attach the native bridge to external pages.
+    if (url.startsWith('https://')) {
+      dialog.showMessageBox(win, { type: 'question', message: 'Open this link in your browser?', detail: url,
+        buttons: ['Cancel', 'Open browser'], defaultId: 0, cancelId: 0,
+      }).then(result => { if (result.response === 1) void shell.openExternal(url); });
     }
+    return { action: 'deny' };
   });
-  overlayWindow.on('show', broadcastState);
-  overlayWindow.on('hide', broadcastState);
-
-  const target = isDevelopment ? developmentUrl : getProductionUrl();
-  if (isDevelopment) overlayWindow.loadURL(target);
-  else overlayWindow.loadFile(path.join(__dirname, '..', 'dist', 'public', 'index.html'));
+  win.on('close', event => { if (!quitting) { event.preventDefault(); hide(); } });
+  win.on('show', broadcast);
+  win.on('hide', broadcast);
+  win.webContents.on('render-process-gone', () => { captureActive = false; broadcast(); });
+  win.webContents.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => {
+    if (mainFrame && !inPlace) { captureActive = false; broadcast(); }
+  });
+  win.webContents.on('did-fail-load', async (_event, code, _description, url, mainFrame) => {
+    if (!mainFrame || code === -3 || !isAllowedNavigation(url, target)) return;
+    const result = await dialog.showMessageBox(win, { type: 'error', message: 'Sonora could not connect.',
+      detail: 'Check your internet connection and that the hosted Sonora service is available.',
+      buttons: ['Quit', 'Retry'], defaultId: 1, cancelId: 0,
+    });
+    if (result.response === 1) void win.loadURL(target).catch(() => {});
+    else { quitting = true; app.quit(); }
+  });
+  configurePermissions();
+  win.once('ready-to-show', show);
+  void win.loadURL(target).catch(() => {});
 }
 
-function registerDesktopIpc() {
-  ipcMain.handle('overlay:show', () => {
-    showOverlay();
-    return { visible: true, alwaysOnTop };
-  });
-  ipcMain.handle('overlay:hide', () => {
-    hideOverlay();
-    return { visible: false, alwaysOnTop };
-  });
-  ipcMain.handle('overlay:toggle', () => {
-    toggleOverlay();
-    return { visible: overlayWindow?.isVisible() ?? false, alwaysOnTop };
-  });
-  ipcMain.handle('overlay:get-state', () => ({
-    visible: overlayWindow?.isVisible() ?? false,
-    alwaysOnTop,
-  }));
-  ipcMain.handle('overlay:set-always-on-top', (_event, value) => {
-    setPinState(Boolean(value));
-    return { visible: overlayWindow?.isVisible() ?? false, alwaysOnTop };
-  });
-  ipcMain.handle('overlay:quit', () => {
-    isQuitting = true;
-    app.quit();
+if (!app.requestSingleInstanceLock()) app.quit();
+else {
+  app.on('second-instance', show);
+  app.whenReady().then(async () => {
+    try {
+      const bundled = JSON.parse(fs.readFileSync(path.join(__dirname, 'runtime-config.json'), 'utf8'));
+      target = validateServiceUrl(development ? process.env.SONORA_DESKTOP_URL : bundled.serviceUrl, development);
+    } catch {
+      dialog.showErrorBox('Sonora release configuration missing', 'This build has no valid hosted Sonora URL. Ask the publisher for a configured release. A local development server is not a production service.');
+      app.quit(); return;
+    }
+    registerIpc();
+    createWindow();
+    // PNG avoids platform-dependent support for SVG tray images.
+    const icon = nativeImage.createFromPath(path.join(__dirname, 'assets', 'tray.png'));
+    tray = new Tray(icon);
+    tray.on('click', toggle);
+    shortcutRegistered = globalShortcut.register(shortcut, toggle);
+    updateTray();
+    app.on('activate', show);
   });
 }
-
-app.whenReady().then(() => {
-  createOverlayWindow();
-  registerDesktopIpc();
-  createTray();
-
-  globalShortcut.register('CommandOrControl+Shift+Space', toggleOverlay);
-
-  app.on('activate', showOverlay);
-});
-
-app.on('will-quit', () => {
-  globalShortcut.unregisterAll();
-});
-
-app.on('window-all-closed', () => {
-  // The tray keeps Sonora alive on macOS and the overlay is intentionally
-  // hidden rather than closed when users click its close control.
-  if (process.platform !== 'darwin') app.quit();
-});
+app.on('before-quit', () => { quitting = true; win?.destroy(); });
+app.on('will-quit', () => globalShortcut.unregisterAll());
+app.on('window-all-closed', () => { if (quitting) app.quit(); });
