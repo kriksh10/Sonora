@@ -128,6 +128,17 @@ function Reveal({ children, className = '', delay = 0 }: { children: ReactNode; 
 }
 
 function App() {
+  if (window.sonoraDesktop && window.location.protocol === 'file:') {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#101113] p-6 text-white">
+        <section className="max-w-md rounded-2xl border border-white/10 bg-[#17181b] p-6">
+          <h1 className="text-lg font-semibold">Open the hosted Sonora workspace</h1>
+          <p className="mt-3 text-sm leading-6 text-white/60">This local desktop build is not connected to sign-in or the API server. It cannot capture call audio or generate answers. Open the hosted app in your browser, or run the desktop shell with SONORA_DESKTOP_URL set to the hosted app URL.</p>
+          <button className="mt-5 rounded-lg border border-white/15 px-4 py-2 text-sm" onClick={() => void window.sonoraDesktop?.hide()}>Hide window</button>
+        </section>
+      </main>
+    );
+  }
   if (!clerkPubKey) {
     throw new Error('Missing VITE_CLERK_PUBLISHABLE_KEY in the app environment');
   }
@@ -218,9 +229,7 @@ function Router() {
 
 function HomeRedirect() {
   const { isLoaded, isSignedIn } = useAuth();
-  const [desktopMode] = useState(() => Boolean(window.sonoraDesktop?.isDesktop));
   if (!isLoaded) return <div className="min-h-screen bg-[#101113]" />;
-  if (desktopMode) return <DesktopOverlay />;
   return isSignedIn ? <InterviewWorkspace /> : <LandingHome />;
 }
 
@@ -610,7 +619,7 @@ function LandingHome() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [selectedSession, setSelectedSession] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
-  const [createSessionOpen, setCreateSessionOpen] = useState(() => new URLSearchParams(window.location.search).get('modal') === 'create');
+  const [createSessionOpen, setCreateSessionOpen] = useState(false);
   const [sessionType, setSessionType] = useState<'interview' | 'call'>(() => new URLSearchParams(window.location.search).get('type') === 'call' ? 'call' : 'interview');
   const [company, setCompany] = useState('');
   const [interviewDescription, setInterviewDescription] = useState('');
@@ -632,7 +641,7 @@ function LandingHome() {
 
   const startSession = () => setLocation('/sign-up');
   const goToSignIn = () => setLocation('/sign-in');
-  const openCreateSession = () => setCreateSessionOpen(true);
+  const openCreateSession = () => setLocation('/sign-up');
   const closeCreateSession = () => setCreateSessionOpen(false);
   const handleCreateSession = () => setLocation('/sign-up');
 
@@ -779,7 +788,7 @@ function LandingHome() {
           <div className="reference-modal-section-label">Output Settings</div>
           <div className="reference-output-pills">
             <button className="is-filled"><span>▤</span> Answer Preferences <ChevronDown size={16} /></button>
-            <button><span className="reference-google-mark">G</span> Gemini 3.5 Flash Lite <ChevronDown size={16} /></button>
+            <button><span className="reference-google-mark">G</span> Gemini 2.5 Flash <ChevronDown size={16} /></button>
             <button><span className="reference-globe">◎</span> English <ChevronDown size={16} /></button>
           </div>
           <div className="reference-modal-section-label">Behavior</div>

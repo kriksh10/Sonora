@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import {
-  ArrowLeft,
   Check,
   CircleStop,
   Clock3,
@@ -17,39 +16,12 @@ import {
 } from "lucide-react";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
 import { useClerk, useUser } from "@clerk/react";
+import type { CallSession, TranscriptEntry } from "@workspace/api-client-react";
 
 GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
   import.meta.url,
 ).toString();
-
-type TranscriptEntry = {
-  role: "user" | "assistant";
-  text: string;
-  source: "typed" | "microphone" | "ai";
-  createdAt: string;
-};
-
-type CallSession = {
-  id: string;
-  sessionType: "interview" | "call";
-  title: string;
-  company: string | null;
-  description: string | null;
-  resumeText: string;
-  documentsText: string;
-  instructions: string;
-  answerPreference: string;
-  model: string;
-  language: string;
-  autoAnswer: boolean;
-  saveTranscript: boolean;
-  status: "ready" | "active" | "ended";
-  transcript: TranscriptEntry[];
-  createdAt: string;
-  startedAt: string | null;
-  endedAt: string | null;
-};
 
 type SpeechResult = {
   isFinal: boolean;
@@ -152,6 +124,15 @@ function formatDuration(startedAt: string | null, now: number) {
   return `${String(Math.floor(elapsed / 60)).padStart(2, "0")}:${String(elapsed % 60).padStart(2, "0")}`;
 }
 
+function isLikelyQuestion(text: string) {
+  return (
+    text.includes("?") ||
+    /^(what|how|why|when|where|which|who|can you|could you|would you|tell me|describe|explain|walk me|give me|write|implement|design)\b/i.test(
+      text.trim(),
+    )
+  );
+}
+
 export default function InterviewWorkspace() {
   const { user } = useUser();
   const { signOut } = useClerk();
@@ -166,6 +147,7 @@ export default function InterviewWorkspace() {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [listening, setListening] = useState(false);
+  const [requestingMic, setRequestingMic] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -175,7 +157,16 @@ export default function InterviewWorkspace() {
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const uploadTargetRef = useRef<"resume" | "documents">("resume");
+  const answerInFlightRef = useRef(false);
+  const captureTokenRef = useRef(0);
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
   const selected = sessions.find((session) => session.id === selectedId) ?? null;
+  const visibleAnswer = busy
+    ? ""
+    : answer ||
+      [...(selected?.transcript ?? [])].reverse().find((entry) => entry.role === "assistant")?.text ||
+      "";
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -201,14 +192,6 @@ export default function InterviewWorkspace() {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
-
-  const updateSelected = (updater: (session: CallSession) => CallSession) => {
-    setSessions((items) =>
-      items.map((session) =>
-        session.id === selectedId ? updater(session) : session,
-      ),
-    );
-  };
 
   const saveTranscript = useCallback(
     async (
@@ -252,6 +235,8 @@ export default function InterviewWorkspace() {
       if (!selected) return;
       const cleanQuestion = question.trim();
       if (!cleanQuestion) return;
+      if (answerInFlightRef.current) return;
+      answerInFlightRef.current = true;
       setBusy(true);
       setError("");
       setAnswer("");
@@ -264,7 +249,7 @@ export default function InterviewWorkspace() {
             body: JSON.stringify({ question: cleanQuestion }),
           },
         );
-        setAnswer(response.answer);
+        if (selectedIdRef.current === selected.id) setAnswer(response.answer);
         if (selected.saveTranscript) {
           await refreshSessions();
         } else {
@@ -285,6 +270,7 @@ export default function InterviewWorkspace() {
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "Gemini could not answer.");
       } finally {
+        answerInFlightRef.current = false;
         setBusy(false);
       }
     },
@@ -294,11 +280,16 @@ export default function InterviewWorkspace() {
   askRef.current = askGemini;
 
   useEffect(() => {
+    setListening(false);
+    setRequestingMic(false);
+    setInterimTranscript("");
     return () => {
+      captureTokenRef.current += 1;
       recognitionRef.current?.stop();
       streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
     };
-  }, []);
+  }, [selectedId]);
 
   const handleCreate = async (event: FormEvent) => {
     event.preventDefault();
@@ -335,9 +326,12 @@ export default function InterviewWorkspace() {
     try {
       const texts = await Promise.all(files.map(extractFileText));
       const joined = texts.join("\n\n").slice(0, 40_000);
+      if (!joined.trim()) {
+        throw new Error("No selectable text was found. Paste the resume or document text below instead.");
+      }
       setForm((current) => ({
         ...current,
-        [target]:
+        [target === "resume" ? "resumeText" : "documentsText"]:
           target === "resume"
             ? joined
             : [current.documentsText, joined].filter(Boolean).join("\n\n").slice(0, 40_000),
@@ -352,25 +346,17 @@ export default function InterviewWorkspace() {
 
   const startSession = async () => {
     if (!selected) return;
-    setError("");
-    try {
-      const updated = await api<CallSession>(`/sessions/${selected.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: "active" }),
-      });
-      setSessions((items) => items.map((item) => (item.id === updated.id ? updated : item)));
-      setNotice("Session started. You can ask Gemini directly or enable live microphone transcription.");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not start the session.");
-    }
+    await toggleMicrophone();
   };
 
   const endSession = async () => {
     if (!selected) return;
+    captureTokenRef.current += 1;
     recognitionRef.current?.stop();
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     setListening(false);
+    setRequestingMic(false);
     setInterimTranscript("");
     try {
       const updated = await api<CallSession>(`/sessions/${selected.id}`, {
@@ -385,13 +371,19 @@ export default function InterviewWorkspace() {
   };
 
   const toggleMicrophone = async () => {
+    if (!selected) return;
     if (listening) {
+      captureTokenRef.current += 1;
       recognitionRef.current?.stop();
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
       setListening(false);
       setInterimTranscript("");
       setNotice("Microphone transcription stopped.");
+      return;
+    }
+    if (selected.status === "ended") {
+      setError("This session has ended. Create a new session to start microphone transcription.");
       return;
     }
     const speechWindow = window as WindowWithSpeechRecognition;
@@ -405,9 +397,16 @@ export default function InterviewWorkspace() {
       setError("This browser cannot request microphone access. Type a question below to test Gemini.");
       return;
     }
+    const captureToken = ++captureTokenRef.current;
+    setRequestingMic(true);
     try {
       setError("");
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (captureToken !== captureTokenRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      streamRef.current = stream;
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
@@ -420,6 +419,7 @@ export default function InterviewWorkspace() {
               ? "de-DE"
               : "en-US";
       recognition.onresult = (event) => {
+        if (captureToken !== captureTokenRef.current) return;
         let interim = "";
         for (let index = event.resultIndex; index < event.results.length; index += 1) {
           const text = event.results[index][0]?.transcript?.trim() ?? "";
@@ -427,12 +427,13 @@ export default function InterviewWorkspace() {
           if (event.results[index].isFinal) {
             const activeSession = sessions.find((item) => item.id === selectedId);
             if (activeSession) {
-              void saveTranscript(activeSession, "user", text, "microphone").catch(
-                (cause) =>
-                  setError(cause instanceof Error ? cause.message : "Could not save transcript."),
-              );
-              if (activeSession.autoAnswer) {
+              if (activeSession.autoAnswer && isLikelyQuestion(text) && !answerInFlightRef.current) {
                 void askRef.current(text, "microphone");
+              } else {
+                void saveTranscript(activeSession, "user", text, "microphone").catch(
+                  (cause) =>
+                    setError(cause instanceof Error ? cause.message : "Could not save transcript."),
+                );
               }
             }
           } else {
@@ -442,22 +443,46 @@ export default function InterviewWorkspace() {
         setInterimTranscript(interim.trim());
       };
       recognition.onerror = (event) => {
+        stream.getTracks().forEach((track) => track.stop());
+        if (captureToken !== captureTokenRef.current) return;
         setError(
           event.error === "not-allowed"
             ? "Microphone permission was denied. Allow microphone access in your browser settings and try again."
             : `Speech recognition stopped (${event.error}). You can still type a question.`,
         );
         setListening(false);
-        stream.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
       };
-      recognition.onend = () => setListening(false);
-      streamRef.current = stream;
+      recognition.onend = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        if (captureToken !== captureTokenRef.current) return;
+        setListening(false);
+        setInterimTranscript("");
+        streamRef.current = null;
+      };
       recognitionRef.current = recognition;
+      if (selected.status === "ready") {
+        const updated = await api<CallSession>(`/sessions/${selected.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: "active" }),
+        });
+        setSessions((items) =>
+          items.map((item) => (item.id === updated.id ? updated : item)),
+        );
+      }
+      if (captureToken !== captureTokenRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       recognition.start();
       setListening(true);
-      setNotice("Microphone is on. Sonora is transcribing speech locally in your browser.");
+      setNotice("Microphone is on. Your browser’s speech recognition service is transcribing it.");
     } catch (cause) {
+      if (captureToken !== captureTokenRef.current) return;
+      recognitionRef.current?.stop();
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+      setListening(false);
       setError(
         cause instanceof DOMException && cause.name === "NotAllowedError"
           ? "Microphone permission was denied. Allow microphone access in your browser settings."
@@ -465,6 +490,8 @@ export default function InterviewWorkspace() {
             ? cause.message
             : "Could not start microphone transcription.",
       );
+    } finally {
+      if (captureToken === captureTokenRef.current) setRequestingMic(false);
     }
   };
 
@@ -504,6 +531,7 @@ export default function InterviewWorkspace() {
           >
             <LogOut size={15} /> <span className="hidden sm:inline">Log out</span>
           </button>
+          {window.sonoraDesktop && <button onClick={() => void window.sonoraDesktop?.hide()} aria-label="Hide desktop assistant" className="rounded-lg p-2 hover:bg-white/5"><X size={17} /></button>}
         </div>
       </header>
 
@@ -594,7 +622,7 @@ export default function InterviewWorkspace() {
                   <p className="mt-1 truncate text-sm text-white/45">{selected.description || selected.company || "No description added"}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  {selected.status === "ready" && <button onClick={() => void startSession()} className="rounded-lg bg-[#257c3c] px-3 py-2 text-sm font-semibold text-white hover:bg-[#2c9147]">Start Session</button>}
+                  {selected.status === "ready" && <button disabled={requestingMic} onClick={() => void startSession()} className="rounded-lg bg-[#257c3c] px-3 py-2 text-sm font-semibold text-white hover:bg-[#2c9147] disabled:opacity-50">{requestingMic ? "Waiting for permission…" : "Start Session"}</button>}
                   {selected.status === "active" && <>
                     <span className="flex items-center gap-2 rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-2 text-sm text-red-200"><i className="h-2 w-2 animate-pulse rounded-full bg-red-400" /><Clock3 size={14} /> {formatDuration(selected.startedAt, now)}</span>
                     <button onClick={() => void endSession()} className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm hover:bg-white/5"><CircleStop size={15} /> End</button>
@@ -613,13 +641,15 @@ export default function InterviewWorkspace() {
                       </div>
                       <button
                         onClick={() => void toggleMicrophone()}
+                        disabled={selected.status === "ended" || requestingMic}
                         className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${listening ? "bg-red-500/15 text-red-200 ring-1 ring-red-400/30" : "bg-[#25272b] text-white hover:bg-[#303238]"}`}
                       >
-                        <Mic size={15} /> {listening ? "Stop mic" : "Enable mic"}
+                        <Mic size={15} /> {requestingMic ? "Requesting mic…" : listening ? "Stop mic" : "Enable mic"}
                       </button>
                     </div>
                     {listening && <div className="mt-3 rounded-lg bg-white/5 px-3 py-2 text-xs text-emerald-100"><span className="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-emerald-400" />Microphone transcription is active in this browser.</div>}
                     {!listening && selected.status === "active" && <p className="mt-3 text-[11px] text-white/35">Microphone access is off. Typed questions work without it.</p>}
+                    <p className="mt-3 text-xs leading-5 text-white/40">This version captures your microphone, not Zoom, Meet, or Teams system audio. When using headphones, type the interviewer’s question below.</p>
                     {interimTranscript && <p className="mt-3 rounded-lg border border-white/5 bg-white/[.03] p-3 text-sm italic text-white/55">{interimTranscript}</p>}
                     <form
                       className="mt-4"
@@ -642,6 +672,7 @@ export default function InterviewWorkspace() {
                         <button disabled={busy || !answerInput.trim()} aria-label="Ask Gemini" className="self-end rounded-lg bg-[#257c3c] p-3 text-white disabled:cursor-not-allowed disabled:opacity-40"><Send size={17} /></button>
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-white/40"><Sparkles size={12} /> {selected.model} · {selected.answerPreference} answer · {selected.language}</div>
+                      {selected.transcript.some((entry) => entry.source === "microphone") && <button type="button" onClick={() => setAnswerInput([...selected.transcript].reverse().find((entry) => entry.source === "microphone")?.text ?? "")} className="mt-3 text-xs font-medium text-emerald-300 hover:text-emerald-200">Use latest microphone transcript as the question</button>}
                     </form>
                   </div>
                   <div className="rounded-xl border border-white/10 bg-[#101113] p-4">
@@ -649,8 +680,8 @@ export default function InterviewWorkspace() {
                       <h3 className="text-sm font-semibold text-white">Suggested answer</h3>
                       {busy && <span className="text-xs text-white/45">Gemini is thinking…</span>}
                     </div>
-                    {answer ? (
-                      <div className="whitespace-pre-wrap text-sm leading-6 text-white/85">{answer}</div>
+                    {visibleAnswer ? (
+                      <div className="whitespace-pre-wrap text-sm leading-6 text-white/85">{visibleAnswer}</div>
                     ) : (
                       <p className="text-sm leading-6 text-white/40">Ask a question above. Gemini will use this session’s description and context to draft a response; review it before answering.</p>
                     )}
@@ -715,6 +746,13 @@ export default function InterviewWorkspace() {
               {form.resumeText && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/10 px-3 py-2 text-xs text-emerald-200"><Check size={13} /> Resume text extracted</span>}
             </div>
             <p className="mb-4 text-xs leading-5 text-white/40">PDF, TXT, and Markdown are supported. Text is extracted in your browser and saved with this session; original files are not retained.</p>
+            <details className="mb-5 rounded-lg border border-white/10 p-3">
+              <summary className="cursor-pointer text-xs font-medium text-white/60">Review or paste context text</summary>
+              <div className="mt-3 space-y-3">
+                {form.sessionType === "interview" && <label className="block text-xs text-white/50">Resume text<textarea value={form.resumeText} onChange={(event) => setForm((current) => ({ ...current, resumeText: event.target.value.slice(0, 40_000) }))} className="mt-1.5 min-h-24 w-full rounded-lg border border-white/10 bg-[#191a1d] p-3 text-sm text-white outline-none" placeholder="Paste your resume text here…" /></label>}
+                <label className="block text-xs text-white/50">Document text<textarea value={form.documentsText} onChange={(event) => setForm((current) => ({ ...current, documentsText: event.target.value.slice(0, 40_000) }))} className="mt-1.5 min-h-24 w-full rounded-lg border border-white/10 bg-[#191a1d] p-3 text-sm text-white outline-none" placeholder="Paste reference document text here…" /></label>
+              </div>
+            </details>
             <label className="mb-2 block text-sm font-semibold" htmlFor="instructions">Instructions <span className="font-normal text-white/40">(Optional)</span></label>
             <textarea id="instructions" value={form.instructions} onChange={(event) => setForm((current) => ({ ...current, instructions: event.target.value }))} placeholder="Answer in a concise, confident, conversational tone…" className="mb-5 min-h-[70px] w-full rounded-lg border border-white/10 bg-[#191a1d] px-4 py-3 text-sm outline-none placeholder:text-white/35 focus:border-white/25" />
             <div className="mb-2 text-sm font-semibold">Output Settings</div>
@@ -724,7 +762,7 @@ export default function InterviewWorkspace() {
               <label className="text-xs text-white/45">Language<select value={form.language} onChange={(event) => setForm((current) => ({ ...current, language: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-white/10 bg-[#191a1d] px-3 py-2.5 text-sm text-white"><option>English</option><option>Spanish</option><option>French</option><option>German</option></select></label>
             </div>
             <div className="mb-6 flex flex-wrap gap-x-6 gap-y-3 text-sm text-white/75">
-              <label className="flex items-center gap-2"><input type="checkbox" checked={form.autoAnswer} onChange={(event) => setForm((current) => ({ ...current, autoAnswer: event.target.checked }))} className="accent-emerald-500" /> Auto-generate suggestions from microphone transcript</label>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={form.autoAnswer} onChange={(event) => setForm((current) => ({ ...current, autoAnswer: event.target.checked }))} className="accent-emerald-500" /> Auto-generate suggestions for detected questions</label>
               <label className="flex items-center gap-2"><input type="checkbox" checked={form.saveTranscript} onChange={(event) => setForm((current) => ({ ...current, saveTranscript: event.target.checked }))} className="accent-emerald-500" /> Save Transcript</label>
             </div>
             {error && <p className="mb-4 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-200">{error}</p>}

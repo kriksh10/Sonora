@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: sessions
+    description: Private interview and regular-call sessions
 paths:
   /healthz:
     get:
@@ -24,8 +26,286 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /sessions:
+    get:
+      operationId: listSessions
+      tags: [sessions]
+      summary: List the signed-in user's sessions
+      responses:
+        "200":
+          description: Sessions ordered newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CallSession"
+        default:
+          $ref: "#/components/responses/SessionError"
+    post:
+      operationId: createSession
+      tags: [sessions]
+      summary: Create a private session with context and output settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewCallSession"
+      responses:
+        "201":
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallSession"
+        default:
+          $ref: "#/components/responses/SessionError"
+  /sessions/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getSession
+      tags: [sessions]
+      summary: Reopen a private session
+      responses:
+        "200":
+          description: Session with saved transcript
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallSession"
+        default:
+          $ref: "#/components/responses/SessionError"
+    patch:
+      operationId: updateSession
+      tags: [sessions]
+      summary: Start or end a session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCallSessionRequest"
+      responses:
+        "200":
+          description: Updated session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallSession"
+        default:
+          $ref: "#/components/responses/SessionError"
+  /sessions/{id}/transcript:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: appendTranscript
+      tags: [sessions]
+      summary: Append a recognized or typed question when transcript saving is enabled
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppendTranscriptRequest"
+      responses:
+        "200":
+          description: Session with updated transcript
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallSession"
+        default:
+          $ref: "#/components/responses/SessionError"
+  /sessions/{id}/answer:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: generateSessionAnswer
+      tags: [sessions]
+      summary: Generate a Gemini suggestion using the session's context
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionAnswerRequest"
+      responses:
+        "200":
+          description: Generated answer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionAnswer"
+        default:
+          $ref: "#/components/responses/SessionError"
 components:
+  responses:
+    SessionError:
+      description: Sign-in, validation, ownership, or service error
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: string
   schemas:
+    UpdateCallSessionRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ready, active, ended]
+    AppendTranscriptRequest:
+      type: object
+      required: [text, role, source]
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 8000
+        role:
+          type: string
+          enum: [user, assistant]
+        source:
+          type: string
+          enum: [typed, microphone, ai]
+    SessionAnswerRequest:
+      type: object
+      required: [question]
+      properties:
+        question:
+          type: string
+          minLength: 1
+          maxLength: 8000
+    NewCallSession:
+      type: object
+      required: [sessionType]
+      properties:
+        sessionType:
+          type: string
+          enum: [interview, call]
+        title:
+          type: string
+          maxLength: 200
+        company:
+          type: string
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 8000
+        resumeText:
+          type: string
+          maxLength: 40000
+        documentsText:
+          type: string
+          maxLength: 40000
+        instructions:
+          type: string
+          maxLength: 8000
+        answerPreference:
+          type: string
+          enum: [concise, detailed, technical]
+        model:
+          type: string
+          enum: [gemini-2.5-flash, gemini-3-flash-preview]
+        language:
+          type: string
+          enum: [English, Spanish, French, German]
+        autoAnswer:
+          type: boolean
+        saveTranscript:
+          type: boolean
+    TranscriptEntry:
+      type: object
+      required: [role, text, source, createdAt]
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+        text:
+          type: string
+        source:
+          type: string
+          enum: [typed, microphone, ai]
+        createdAt:
+          type: string
+          format: date-time
+    CallSession:
+      type: object
+      required: [id, sessionType, title, company, description, resumeText, documentsText, instructions, answerPreference, model, language, autoAnswer, saveTranscript, status, transcript, createdAt, startedAt, endedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        sessionType:
+          type: string
+          enum: [interview, call]
+        title:
+          type: string
+        company:
+          type: [string, "null"]
+        description:
+          type: [string, "null"]
+        resumeText:
+          type: string
+        documentsText:
+          type: string
+        instructions:
+          type: string
+        answerPreference:
+          type: string
+        model:
+          type: string
+        language:
+          type: string
+        autoAnswer:
+          type: boolean
+        saveTranscript:
+          type: boolean
+        status:
+          type: string
+          enum: [ready, active, ended]
+        transcript:
+          type: array
+          items:
+            $ref: "#/components/schemas/TranscriptEntry"
+        createdAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: [string, "null"]
+          format: date-time
+        endedAt:
+          type: [string, "null"]
+          format: date-time
+    SessionAnswer:
+      type: object
+      required: [answer, model]
+      properties:
+        answer:
+          type: string
+        model:
+          type: string
     HealthStatus:
       type: object
       properties:
