@@ -59,7 +59,7 @@ pnpm --filter @workspace/sonora-ai run desktop:test
 
 ### Native CI
 
-`.github/workflows/desktop-build.yml` is manual-only. Run it on a connected GitHub repository with the published service URL. Its Windows/macOS jobs produce **unsigned preview** artifacts and checksums; they do not publish a GitHub release or change public download links. This workflow has not been executed here.
+`.github/workflows/desktop-build.yml` runs desktop checks on Windows and macOS when relevant code is pushed to `main`. These automatic checks do not produce installers. To build installers, run the workflow manually with the published service URL. Its Windows/macOS jobs produce **unsigned preview** artifacts and checksums; they do not publish a GitHub release or change public download links.
 
 For a signed release, use electron-builder's standard platform signing/notarization environment on a protected native runner. Windows requires an appropriate code-signing identity; macOS requires an Apple Developer signing identity and notarization credentials. Supply secrets only through the runner's secrets mechanism, never files, frontend code, or chat. The build configuration includes hardened runtime, microphone entitlements, and permission descriptions; it does not acquire certificates or approve publishing. Unsigned artifacts must remain labeled unsigned previews, not verified releases.
 

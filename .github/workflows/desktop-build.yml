@@ -1,5 +1,14 @@
-name: Build Sonora desktop previews
+name: Sonora desktop checks and preview builds
 on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/desktop-build.yml
+      - artifacts/sonora-ai/**
+      - artifacts/api-server/src/lib/audio-chunks.ts
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
   workflow_dispatch:
     inputs:
       service_url:
@@ -10,6 +19,7 @@ permissions:
   contents: read
 jobs:
   build:
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -17,10 +27,10 @@ jobs:
           - os: windows-latest
             platform: win
             arch: x64
-          - os: macos-14
+          - os: macos-latest
             platform: mac
             arch: arm64
-          - os: macos-14
+          - os: macos-latest
             platform: mac
             arch: x64
     runs-on: ${{ matrix.os }}
@@ -36,14 +46,17 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @workspace/sonora-ai run desktop:test
       - name: Build unsigned preview (not a verified release)
+        if: github.event_name == 'workflow_dispatch'
         run: pnpm --filter @workspace/sonora-ai run desktop:package ${{ matrix.platform }} ${{ matrix.arch }}
         env:
           SONORA_RELEASE_URL: ${{ inputs.service_url }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
       - name: Calculate checksums
+        if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: node artifacts/sonora-ai/desktop/checksums.cjs
       - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
         with:
           name: sonora-preview-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
