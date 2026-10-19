@@ -5,17 +5,22 @@ const { buildAssets } = require('./build-assets.cjs');
 const root = path.resolve(__dirname, '../../..');
 const stage = path.join(root, 'generated-artifacts/desktop-app');
 
-async function prepare({ arch = process.arch } = {}) {
+async function checkHostedService(value = process.env.SONORA_RELEASE_URL, fetcher = fetch) {
   // URL is a public release setting, never a credential. Do not use preview domains.
-  const serviceUrl = validateServiceUrl(process.env.SONORA_RELEASE_URL);
+  const serviceUrl = validateServiceUrl(value);
   const checks = await Promise.all([
-    fetch(new URL('/api/healthz', serviceUrl), { signal: AbortSignal.timeout(15_000) }),
-    fetch(new URL('desktop-release.json', serviceUrl), { signal: AbortSignal.timeout(15_000) }),
+    fetcher(new URL('/api/healthz', serviceUrl), { signal: AbortSignal.timeout(15_000) }),
+    fetcher(new URL('desktop-release.json', serviceUrl), { signal: AbortSignal.timeout(15_000) }),
   ]);
   if (!checks.every(response => response.ok)) throw new Error('Hosted Sonora health/release checks failed. Publish the service before building installers.');
   const health = await checks[0].json();
   const release = await checks[1].json();
   if (health.status !== 'ok' || release.product !== 'sonora') throw new Error('This URL did not identify a healthy Sonora service.');
+  return serviceUrl;
+}
+
+async function prepare({ arch = process.arch } = {}) {
+  const serviceUrl = await checkHostedService();
   const packageJson = require('../package.json');
   const binaryName = process.platform === 'win32' ? 'sonora-audio.exe' : 'sonora-audio';
   const nativeBinary = path.join(root, 'generated-artifacts/native', `${process.platform}-${arch}`, binaryName);
@@ -38,4 +43,4 @@ async function prepare({ arch = process.arch } = {}) {
   console.log('Desktop release staging prepared with a reachable hosted Sonora service.');
 }
 if (require.main === module) prepare().catch(error => { console.error(error.message); process.exitCode = 1; });
-module.exports = { prepare };
+module.exports = { prepare, checkHostedService };

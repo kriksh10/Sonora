@@ -13,6 +13,7 @@
     "desktop:run": "node desktop/build-assets.cjs && electron desktop/main.cjs --dev",
     "desktop:prepare": "node desktop/prepare-release.cjs",
     "desktop:build-native": "node desktop/build-native.cjs",
+    "desktop:windows": "node desktop/build-windows.cjs",
     "desktop:package": "node desktop/package-release.cjs",
     "desktop:test": "node --test desktop/tests/*.test.cjs"
   },

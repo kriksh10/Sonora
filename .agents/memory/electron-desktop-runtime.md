@@ -11,6 +11,12 @@ Electron can be added to a web artifact for desktop shell work, but its binary d
 
 ## Requested desktop scope
 
+Prioritize Windows first and use a release path that does not require GitHub.
+
+**Why:** The user chose Windows first after GitHub authorization remained blocked and asked to create downloadable apps without GitHub.
+
+**How to apply:** Work on local Windows packaging before Mac delivery; do not make GitHub reconnection a prerequisite for desktop progress.
+
 The user wants a downloadable, working Sonora app for both Mac and Windows. By "hide" during interviews, they mean the assistant stays visible to them but is excluded from screen sharing, not simply minimized.
 
 **Why:** The user explicitly clarified both the target platforms and what "invisible during screen share" means.

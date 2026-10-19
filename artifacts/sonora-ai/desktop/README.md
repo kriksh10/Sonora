@@ -8,6 +8,8 @@ The service has not been published at the time of this implementation. Desktop p
 
 ## Targets
 
+For a local Windows build without GitHub, see [WINDOWS.md](WINDOWS.md) and use `BUILD-WINDOWS.cmd` from the project root.
+
 - Windows x64: Windows 11 recommended. Electron's capture-exclusion API requires Windows 10 version 2004 or later for exclusion rather than a black rectangle; the sharing application can still behave differently.
 - macOS arm64 (Apple Silicon) and x64 (Intel): macOS 14.4 or later for native system-audio capture.
 - No Linux installer or Windows ARM installer in this release.

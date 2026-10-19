@@ -11,6 +11,8 @@ These are **incomplete original scope**, not a verified desktop release.
 
 ## Checks possible in this Linux workspace
 
+The GitHub-independent Windows launcher checks Node/pnpm/Rust/Git, MSVC and SDK availability, validates the hosted service before dependency downloads, and stops on failed build commands. Shared prerequisite and service gates are tested here; the `.cmd` launcher, Windows compiler, and NSIS output have not been exercised on Windows.
+
 Run `pnpm --filter @workspace/sonora-ai run desktop:test` for deterministic checks of service-URL/origin/IPC restrictions, no fictitious download links, PCM chunk format/limits, silence handling, rate gating, pending-permission cleanup, provider failure cleanup, and aborting late transcript results.
 
 Native integration checks additionally cover fixed helper executable/arguments, rejected or canceled consent, late-start cancellation, malformed protocol/WAV rejection, process exits, capture-state cleanup, stale-event filtering, and forwarding native chunks to the existing Gemini transcription route. These use simulated child processes, not real audio devices.
