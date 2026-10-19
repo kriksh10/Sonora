@@ -216,20 +216,34 @@ function ClerkQueryClientCacheInvalidator() {
 }
 
 function SignInPage() {
+  const { isLoaded, isSignedIn } = useAuth();
+  const [, setLocation] = useLocation();
+  useEffect(() => {
+    if (isLoaded && isSignedIn) setLocation('/', { replace: true });
+  }, [isLoaded, isSignedIn, setLocation]);
+  if (isLoaded && isSignedIn) return null;
   return (
     <div className="flex min-h-[100dvh] items-center justify-center bg-[#101113] px-4 py-8">
       <div>
         {window.sonoraDesktop && <p className="mx-auto mb-4 max-w-sm text-sm text-white/60">Use email and password here. Some social sign-in providers block embedded desktop browsers; browser sign-in does not automatically sign in this app.</p>}
-        <SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} />
+        <SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`}
+          forceRedirectUrl={`${basePath}/`} signUpForceRedirectUrl={`${basePath}/`} />
       </div>
     </div>
   );
 }
 
 function SignUpPage() {
+  const { isLoaded, isSignedIn } = useAuth();
+  const [, setLocation] = useLocation();
+  useEffect(() => {
+    if (isLoaded && isSignedIn) setLocation('/', { replace: true });
+  }, [isLoaded, isSignedIn, setLocation]);
+  if (isLoaded && isSignedIn) return null;
   return (
     <div className="flex min-h-[100dvh] items-center justify-center bg-[#101113] px-4 py-8">
-      <SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`} />
+      <SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`}
+        forceRedirectUrl={`${basePath}/`} signInForceRedirectUrl={`${basePath}/`} />
     </div>
   );
 }
