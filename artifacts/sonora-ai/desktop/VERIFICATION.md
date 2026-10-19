@@ -1,5 +1,16 @@
 # Session setup and answer preferences
 
+## Desktop and published-service audit — 2026-10-19
+
+- The public published service responds to `/api/healthz` with HTTP 200 and `{"status":"ok"}`; `/sign-in` serves HTML with HTTP 200. Serving a sign-in page does not establish successful authentication.
+- The published `/api/answer-preferences/defaults` returns HTTP 404, unlike the development endpoint's authenticated route. The hosted preferences update has not reached that published build.
+- The published download manifest lists Windows x64, Mac arm64, and Mac x64 as unavailable, with no download URLs. No current installer is being offered by the site.
+- The uploaded Windows archive contains a Windows installer and native audio helper. Its staged `main.cjs` differs from the current shell source and lacks the tray capture-exclusion checkbox. That older build cannot establish that the latest native controls work.
+- All desktop CommonJS scripts pass `node --check`. The Electron 44.0.0 executable starts in Node mode in this Linux workspace; this checks the runtime binary, not the native GUI.
+- The Rust helper's two PCM tests pass with `cargo test --locked` on Linux. They verify chunk encoding/resampling and silence/format handling, not Windows WASAPI capture or Mac audio permissions.
+- Existing JavaScript test/type-check/build evidence below remains applicable; no code in those paths changed during this audit.
+- Google browser sign-in still has no browser-to-desktop authentication handoff. Email/password success in the installed Windows application remains unverified. Do not describe either path, receiver-side screen-share exclusion, or the release as fully verified.
+
 The hosted app now has a Details → Preferences wizard and an editable session-preferences dialog. Format, length, tone, STAR method, and filler words are persisted per session and included in Gemini's system instructions. Set default writes owner-scoped settings for future sessions only. Existing legacy sessions receive compatible read-time defaults. Regular Call excludes resume context. Transcript writes check the current database flag at the write boundary.
 
 Verification: 40 deterministic JavaScript tests pass, including 10 preference/preview/route tests. The route tests use an in-memory database adapter and mocked Gemini; they do not establish an authenticated browser journey, real database concurrency, or a live Gemini answer. API/frontend type checks and the web build pass; the API workflow restarts and serves health checks. Anonymous defaults/settings requests return 401. No authenticated end-to-end pass was run while the full desktop release remains incomplete.
