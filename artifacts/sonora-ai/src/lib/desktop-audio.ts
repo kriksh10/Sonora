@@ -16,17 +16,21 @@ export function createDesktopAudio(options: Options): AudioCapture {
   let stream: MediaStream | null = null;
   let node: AudioWorkletNode | null = null;
   let active = false;
-  let pending: Float32Array[] = [];
+  let pending: string[] = [];
+  let nativeId: string | null = null;
+  let unsubscribeNative: (() => void) | undefined;
   const abort = new AbortController();
   const stop = () => {
     if (stopped) return;
     stopped = true;
     abort.abort();
     pending = [];
+    unsubscribeNative?.();
+    if (nativeId) void window.sonoraDesktop?.stopNativeCapture?.(nativeId).catch(() => {});
     if (node) { node.port.onmessage = null; node.disconnect(); }
     stream?.getTracks().forEach(track => track.stop());
     if (context && context.state !== "closed") void context.close().catch(() => {});
-    void window.sonoraDesktop?.setCaptureActive(false).catch(() => {});
+    if (!nativeId) void window.sonoraDesktop?.setCaptureActive(false).catch(() => {});
   };
   const fail = (error: unknown) => {
     if (stopped) return;
@@ -38,11 +42,11 @@ export function createDesktopAudio(options: Options): AudioCapture {
     active = true;
     try {
       while (pending.length && !stopped) {
-        const samples = pending.shift()!;
+        const audio = pending.shift()!;
         const response = await fetch(`/api/sessions/${options.sessionId}/transcribe`, {
           method: "POST", credentials: "include", signal: abort.signal,
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ audio: wavBase64(samples), mimeType: "audio/wav" }),
+          body: JSON.stringify({ audio, mimeType: "audio/wav" }),
         });
         const result = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(result.error || `Transcription failed (${response.status}).`);
@@ -51,10 +55,30 @@ export function createDesktopAudio(options: Options): AudioCapture {
     } catch (error) { fail(error); }
     finally { active = false; }
   };
+  const enqueue = (audio: string) => {
+    if (stopped) return;
+    if (pending.length >= 2) { fail(new Error("Transcription is falling behind. Capture stopped to avoid dropping speech. Retry or type your question.")); return; }
+    pending.push(audio);
+    void pump();
+  };
   return {
     stop,
     start: async () => {
       try {
+        const desktop = window.sonoraDesktop;
+        if (desktop?.startNativeCapture && desktop.onNativeAudio && desktop.stopNativeCapture) {
+          nativeId = crypto.randomUUID();
+          unsubscribeNative = desktop.onNativeAudio(event => {
+            if (stopped || event.captureId !== nativeId) return;
+            if (event.type === "error") fail(new Error(event.message || "Native audio stopped."));
+            else if (event.type === "audio" && event.audio) enqueue(event.audio);
+            else if (event.type === "silence" && event.prolonged) options.onNotice("No audible speech for 18 seconds. Check your source, volume, and OS audio permission.");
+          });
+          await desktop.startNativeCapture(nativeId, options.source);
+          if (stopped) { void desktop.stopNativeCapture(nativeId); return; }
+          options.onNotice("Native audio capture is active. Short audio chunks are sent to Gemini for transcription.");
+          return;
+        }
         stream = options.source === "system"
           ? await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true })
           : await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true }, video: false });
@@ -73,9 +97,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
           if (stopped) return;
           if (event.data.prolonged) options.onNotice("No audible speech for 18 seconds. Check your selected source, volume, and OS audio permission.");
           if (!event.data.samples) return;
-          if (pending.length >= 2) { fail(new Error("Transcription is falling behind. Capture stopped to avoid dropping speech. Retry or type your question.")); return; }
-          pending.push(event.data.samples);
-          void pump();
+          enqueue(wavBase64(event.data.samples));
         };
         await context.resume();
         if (stopped) return;

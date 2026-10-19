@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const vm = require('node:vm');
+const crypto = require('node:crypto').webcrypto;
 const { buildSync } = require('esbuild');
 function bundle(relative) {
   return buildSync({
@@ -113,4 +114,66 @@ test('stop aborts in-flight request and prevents late transcript callbacks', asy
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(texts, []);
   assert.equal(harness.track.stopped, true);
+});
+
+function nativeHarness({ start, fetch } = {}) {
+  let listener;
+  let captureId;
+  const stops = [];
+  const native = {
+    setCaptureActive: async () => { throw new Error('Native state belongs to the host'); },
+    startNativeCapture: async (id, source) => { captureId = id; if (start) await start(id, source); return { captureId: id }; },
+    stopNativeCapture: async id => { stops.push(id); return true; },
+    onNativeAudio: fn => { listener = fn; return () => { listener = null; }; },
+  };
+  const harness = captureHarness({
+    crypto, window: { sonoraDesktop: native },
+    navigator: { mediaDevices: { getUserMedia() { throw new Error('Unexpected browser fallback'); } } },
+    ...(fetch ? { fetch } : {}),
+  });
+  return { harness, stops, emit: event => listener?.({ captureId, ...event }) };
+}
+test('native chunks go to the existing Gemini endpoint; stale events are ignored', async () => {
+  const requests = [], texts = [];
+  const f = nativeHarness({ fetch: async (url, options) => {
+    requests.push({ url, body: JSON.parse(options.body) });
+    return { ok: true, json: async () => ({ text: 'Native transcript' }) };
+  } });
+  const capture = f.harness.context.subject.createDesktopAudio({
+    source: 'system', sessionId: 'session', onNotice() {}, onError() {}, onText: text => texts.push(text),
+  });
+  await capture.start();
+  f.emit({ type: 'audio', audio: 'ignored', captureId: 'stale-id' });
+  f.emit({ type: 'audio', audio: 'validated-native-wav' });
+  await new Promise(setImmediate);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, '/api/sessions/session/transcribe');
+  assert.deepEqual(requests[0].body, { audio: 'validated-native-wav', mimeType: 'audio/wav' });
+  assert.deepEqual(texts, ['Native transcript']);
+  capture.stop();
+  assert.equal(f.stops.length, 1);
+});
+test('native start cancellation stops a late-starting helper and unsubscribes', async () => {
+  let resolveStart;
+  const f = nativeHarness({ start: () => new Promise(resolve => { resolveStart = resolve; }) });
+  const capture = f.harness.context.subject.createDesktopAudio({ source: 'system', onNotice() {} });
+  const starting = capture.start();
+  capture.stop();
+  resolveStart();
+  await starting;
+  assert.equal(f.stops.length, 2);
+  assert.equal(f.stops[0], f.stops[1]);
+});
+test('Gemini transcription failure stops native capture with a visible error', async () => {
+  const errors = [];
+  const f = nativeHarness({ fetch: async () => ({ ok: false, json: async () => ({ error: 'Gemini unavailable' }) }) });
+  const capture = f.harness.context.subject.createDesktopAudio({
+    source: 'microphone', sessionId: 'session', onNotice() {}, onText() {},
+    onError: error => errors.push(error.message),
+  });
+  await capture.start();
+  f.emit({ type: 'audio', audio: 'validated-native-wav' });
+  await new Promise(setImmediate);
+  assert.deepEqual(errors, ['Gemini unavailable']);
+  assert.equal(f.stops.length, 1);
 });

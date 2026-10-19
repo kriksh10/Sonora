@@ -9,7 +9,7 @@ The service has not been published at the time of this implementation. Desktop p
 ## Targets
 
 - Windows x64: Windows 11 recommended. Electron's capture-exclusion API requires Windows 10 version 2004 or later for exclusion rather than a black rectangle; the sharing application can still behave differently.
-- macOS arm64 (Apple Silicon) and x64 (Intel): macOS 14.2 or later for the supported system-audio path.
+- macOS arm64 (Apple Silicon) and x64 (Intel): macOS 14.4 or later for native system-audio capture.
 - No Linux installer or Windows ARM installer in this release.
 
 ## Runtime
@@ -20,9 +20,11 @@ Use email/password sign-in inside the app. Some social identity providers reject
 
 ### Audio and lifecycle
 
-- Microphone and system audio require explicit user initiation and OS permission. The system-audio native dialog lets users cancel or select a display source. **System audio can include other applications**, not just the interview.
-- Electron establishes an audio/video display stream when required by Chromium; Sonora reads only its audio track. Screen pixels are never uploaded or persisted.
-- The audio worklet produces independent six-second mono 16 kHz PCM WAV chunks. Gemini `generateContent` transcribes these chunks with rate limiting and bounded retries. This is **not Gemini Live** and is not word-by-word transcription.
+- Microphone and system audio require explicit user initiation, a cancelable Sonora consent dialog, and OS permission. **System audio can include other applications**, not just the interview.
+- Packaged apps use a bundled Rust helper: CPAL microphone capture, Windows WASAPI output loopback through CPAL, and a macOS Core Audio process tap adapted from Meetily. This path captures no screen video. The older Chromium/audio-worklet path remains only for compatibility with older desktop bridges; a failed native start never silently falls back.
+- The helper downsamples to independent six-second mono 16 kHz PCM WAV chunks. Gemini `generateContent` transcribes these chunks through the existing authenticated API with rate limiting and bounded retries. This is **not Gemini Live** and is not word-by-word transcription. Sonora's interface and Gemini answer generation are unchanged; no speech models are downloaded.
+- The main process fixes the helper path and accepted sources, restricts native IPC to the trusted hosted main frame, validates WAV messages, and does not pass provider secrets to the helper. Capture stops on renderer exit/navigation, Quit, tray Stop, control-pipe EOF, protocol/queue errors, or startup timeout. Native captures keep the tray active until the helper exits.
+- The helper has no network client or audio-file output. Audio remains in bounded memory buffers until sent to Gemini by the existing client. Silence is skipped; no-data/permission failures are visible rather than silently returning fabricated transcripts.
 - Raw audio is request-scoped and not stored by Sonora. Provider processing applies. Recognized text follows the session's Save Transcript setting.
 - Silence is not sent. After 18 seconds of silence the UI asks users to check source, volume, and permissions. A silent track is not proof that OS audio access works.
 - If processing falls more than two waiting chunks behind, the app stops with an error instead of silently dropping speech. Stopping discards an unfinished final chunk and cancels in-flight client work; the server/provider may finish a request already received.
@@ -40,26 +42,29 @@ Use email/password sign-in inside the app. Some social identity providers reject
 
 ## Build locally on the target OS
 
-Install Node 22+ and pnpm 10.26.1. From the repository root:
+Install Node 22+, pnpm 10.26.1, and Rust 1.88 with the target OS's native compiler/SDK. macOS cross-architecture builds also require that Rust target. From the repository root:
 
 ```sh
 pnpm install --frozen-lockfile
 pnpm --filter @workspace/sonora-ai run desktop:test
+cargo test --locked --manifest-path artifacts/sonora-ai/desktop/native-audio/Cargo.toml
 ```
 
 1. Publish the Sonora web/API service with the user's approval. Obtain its actual production URL through deployment metadata; never substitute a preview domain.
 2. Set the public `SONORA_RELEASE_URL` build setting to that HTTPS URL in the native runner environment.
-3. On Windows: `pnpm --filter @workspace/sonora-ai run desktop:package win x64`
-4. On macOS: `pnpm --filter @workspace/sonora-ai run desktop:package mac arm64` and/or `... mac x64`
+3. Build the helper first: `pnpm --filter @workspace/sonora-ai run desktop:build-native x64` on Windows; use `arm64` or `x64` on macOS.
+4. On Windows: `pnpm --filter @workspace/sonora-ai run desktop:package win x64`. On macOS: `... desktop:package mac arm64` and/or `... mac x64`.
 5. Run `node artifacts/sonora-ai/desktop/checksums.cjs`.
 
-`desktop:prepare` verifies the hosted health and Sonora release marker, then creates an isolated package under `generated-artifacts/desktop-app/` containing only the native shell, public service URL, and generated artwork. No workspace dependencies, credentials, database, or web source are bundled. Installers and checksums go under `generated-artifacts/installers/`, excluded from Git and deployment.
+`desktop:prepare` verifies hosted health, the Sonora release marker, and the target's compiled audio helper. It then recreates isolated staging under `generated-artifacts/desktop-app/` with the shell, helper, public URL, artwork, and attribution notice. The helper is bundled outside ASAR under `resources/native`, inside the app bundle for macOS code signing. Native release verification must confirm that nested executable's signature and audio permissions. No workspace dependencies, provider credentials, database, or web source are bundled. Installers, Rust target output, and helper binaries stay under ignored `generated-artifacts/`.
 
 `desktop/package-release.cjs` requires a native OS runner rather than pretending a Linux cross-build establishes a valid Mac/Windows release.
 
 ### Native CI
 
-`.github/workflows/desktop-build.yml` runs desktop checks on Windows and macOS when relevant code is pushed to `main`. These automatic checks do not produce installers. To build installers, run the workflow manually with the published service URL. Its Windows/macOS jobs produce **unsigned preview** artifacts and checksums; they do not publish a GitHub release or change public download links.
+`.github/workflows/desktop-build.yml` runs native helper compilation/tests and desktop checks on Windows x64, Mac Apple Silicon, and Mac Intel when relevant code is pushed to `main`. Intel uses an Intel runner so its test executable is not assumed to work through Rosetta. These automatic checks do not produce installers. To build installers, run the workflow manually with the published service URL. Its Windows/macOS jobs produce **unsigned preview** artifacts and checksums; they do not publish a GitHub release or change public download links.
+
+The macOS capture adapter derives from MIT-licensed Meetily code. `native-audio/THIRD_PARTY_NOTICES.txt` preserves its copyright/license notice and is copied into packaged releases. Meetily's frontend, transcription models, telemetry, and meeting-summary product are not incorporated.
 
 For a signed release, use electron-builder's standard platform signing/notarization environment on a protected native runner. Windows requires an appropriate code-signing identity; macOS requires an Apple Developer signing identity and notarization credentials. Supply secrets only through the runner's secrets mechanism, never files, frontend code, or chat. The build configuration includes hardened runtime, microphone entitlements, and permission descriptions; it does not acquire certificates or approve publishing. Unsigned artifacts must remain labeled unsigned previews, not verified releases.
 

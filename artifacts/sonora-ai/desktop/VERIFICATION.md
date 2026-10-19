@@ -13,6 +13,10 @@ These are **incomplete original scope**, not a verified desktop release.
 
 Run `pnpm --filter @workspace/sonora-ai run desktop:test` for deterministic checks of service-URL/origin/IPC restrictions, no fictitious download links, PCM chunk format/limits, silence handling, rate gating, pending-permission cleanup, provider failure cleanup, and aborting late transcript results.
 
+Native integration checks additionally cover fixed helper executable/arguments, rejected or canceled consent, late-start cancellation, malformed protocol/WAV rejection, process exits, capture-state cleanup, stale-event filtering, and forwarding native chunks to the existing Gemini transcription route. These use simulated child processes, not real audio devices.
+
+Run `CARGO_TARGET_DIR=generated-artifacts/native-target cargo test --locked --manifest-path artifacts/sonora-ai/desktop/native-audio/Cargo.toml` for the shared Rust PCM resampling/WAV and silence/format checks. Linux compilation does not compile the platform-specific Mac or Windows capture code. Each target's CI compilation and real-device checks remain required.
+
 Web/API TypeScript checks and builds establish source compatibility, not native installer functionality. The public `/download` page can be visually checked without sign-in. The renderer's desktop bridge and OS APIs require native validation below.
 
 ## Native checklist (all currently blocked / not run)

@@ -5,7 +5,7 @@ const { buildAssets } = require('./build-assets.cjs');
 const root = path.resolve(__dirname, '../../..');
 const stage = path.join(root, 'generated-artifacts/desktop-app');
 
-async function prepare() {
+async function prepare({ arch = process.arch } = {}) {
   // URL is a public release setting, never a credential. Do not use preview domains.
   const serviceUrl = validateServiceUrl(process.env.SONORA_RELEASE_URL);
   const checks = await Promise.all([
@@ -17,8 +17,17 @@ async function prepare() {
   const release = await checks[1].json();
   if (health.status !== 'ok' || release.product !== 'sonora') throw new Error('This URL did not identify a healthy Sonora service.');
   const packageJson = require('../package.json');
+  const binaryName = process.platform === 'win32' ? 'sonora-audio.exe' : 'sonora-audio';
+  const nativeBinary = path.join(root, 'generated-artifacts/native', `${process.platform}-${arch}`, binaryName);
+  if (!fs.existsSync(nativeBinary)) throw new Error('Native audio helper is missing. Run desktop:build-native for this target before packaging.');
+  // Release staging is generated output, never carry files from an older target.
+  fs.rmSync(stage, { recursive: true, force: true });
   fs.mkdirSync(stage, { recursive: true });
-  for (const file of ['main.cjs', 'security.cjs', 'preload.cjs']) fs.copyFileSync(path.join(__dirname, file), path.join(stage, file));
+  for (const file of ['main.cjs', 'security.cjs', 'preload.cjs', 'native-audio-host.cjs']) fs.copyFileSync(path.join(__dirname, file), path.join(stage, file));
+  fs.mkdirSync(path.join(stage, 'native'), { recursive: true });
+  fs.copyFileSync(nativeBinary, path.join(stage, 'native', binaryName));
+  fs.chmodSync(path.join(stage, 'native', binaryName), 0o755);
+  fs.copyFileSync(path.join(__dirname, 'native-audio/THIRD_PARTY_NOTICES.txt'), path.join(stage, 'THIRD_PARTY_NOTICES.txt'));
   fs.writeFileSync(path.join(stage, 'runtime-config.json'), JSON.stringify({ serviceUrl }, null, 2));
   fs.writeFileSync(path.join(stage, 'package.json'), JSON.stringify({
     name: 'sonora-desktop', productName: 'Sonora AI', version: packageJson.version,

@@ -10,7 +10,7 @@ const { prepare } = require('./prepare-release.cjs');
     throw new Error('Use a native Mac or Windows release runner. Cross-built installers are not a substitute for platform validation.');
   }
   if (platform === 'win' && arch !== 'x64') throw new Error('Windows ARM releases are not supported yet.');
-  await prepare();
+  await prepare({ arch });
   const result = spawnSync(process.execPath, [
     require.resolve('electron-builder/out/cli/cli.js'),
     '--projectDir', path.resolve(__dirname, '../../../generated-artifacts/desktop-app'),

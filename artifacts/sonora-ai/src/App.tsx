@@ -96,6 +96,12 @@ type SonoraDesktopBridge = {
   setAlwaysOnTop: (value: boolean) => Promise<DesktopState>;
   setContentProtection: (value: boolean) => Promise<DesktopState>;
   setCaptureActive: (value: boolean) => Promise<DesktopState>;
+  startNativeCapture?: (captureId: string, source: "microphone" | "system") => Promise<{ captureId: string }>;
+  stopNativeCapture?: (captureId: string) => Promise<boolean>;
+  onNativeAudio?: (listener: (event: {
+    captureId: string; type: "audio" | "silence" | "error";
+    audio?: string; prolonged?: boolean; message?: string;
+  }) => void) => () => void;
   onStopCapture: (listener: () => void) => () => void;
   onStateChange: (listener: (state: DesktopState) => void) => () => void;
 };

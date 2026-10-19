@@ -32,3 +32,9 @@ Keep Sonora's existing interface and Gemini answer system when incorporating nat
 **Why:** The user explicitly chose to retain Sonora's interface and Gemini answer system after reviewing Meetily.
 
 **How to apply:** Treat Meetily as a potential source of native audio/transcription components, not approval for a wholesale framework or product migration. Clarify the transcription approach separately from Gemini answer generation.
+
+The user selected **native capture + Gemini transcription**, not local speech models.
+
+**Why:** The user explicitly chose that option for the packaged Sonora apps.
+
+**How to apply:** Keep both transcription and answer generation on the existing Gemini service. Do not add Whisper/Parakeet model downloads or convert to Tauri as part of this choice.

@@ -27,12 +27,15 @@ jobs:
           - os: windows-latest
             platform: win
             arch: x64
+            rust_target: x86_64-pc-windows-msvc
           - os: macos-latest
             platform: mac
             arch: arm64
-          - os: macos-latest
+            rust_target: aarch64-apple-darwin
+          - os: macos-15-intel
             platform: mac
             arch: x64
+            rust_target: x86_64-apple-darwin
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -44,6 +47,16 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          targets: ${{ matrix.rust_target }}
+      - name: Test native audio processing
+        run: cargo test --locked --manifest-path artifacts/sonora-ai/desktop/native-audio/Cargo.toml --target ${{ matrix.rust_target }}
+        env:
+          CARGO_TARGET_DIR: generated-artifacts/native-target
+          MACOSX_DEPLOYMENT_TARGET: "14.4"
+      - name: Build native audio helper
+        run: pnpm --filter @workspace/sonora-ai run desktop:build-native ${{ matrix.arch }}
       - run: pnpm --filter @workspace/sonora-ai run desktop:test
       - name: Build unsigned preview (not a verified release)
         if: github.event_name == 'workflow_dispatch'

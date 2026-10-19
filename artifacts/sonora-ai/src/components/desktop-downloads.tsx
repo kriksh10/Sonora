@@ -123,7 +123,7 @@ export default function DesktopDownloads() {
         <ul className="space-y-1.5">
           <li>Preview builds have not been through full testing; only a tested release has been verified on its listed OS.</li>
           <li>Installing may need administrator rights, and unsigned builds trigger OS security warnings. Check the SHA-256 when one is shown.</li>
-          <li>Allow microphone or system-audio access when prompted. System audio can include other apps, not just the call. Mac system audio requires macOS 14.2 or newer.</li>
+            <li>Allow microphone or system-audio access when prompted. System audio can include other apps, not just the call. Native Mac system audio requires macOS 14.4 or newer.</li>
           <li>Audio is transcribed in short Gemini-processed chunks, not word by word. Use email/password sign-in; social providers may block embedded browsers.</li>
           <li>Screen share exclusion is best effort. Apps and macOS ScreenCaptureKit may still capture the window.</li>
         </ul>

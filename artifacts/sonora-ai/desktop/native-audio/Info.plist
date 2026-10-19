@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleIdentifier</key><string>com.sonora.assistant.audio</string>
+  <key>CFBundleName</key><string>Sonora native audio</string>
+  <key>NSMicrophoneUsageDescription</key><string>Sonora captures microphone audio only after you start capture. Short audio chunks are sent to Gemini for transcription.</string>
+  <key>NSAudioCaptureUsageDescription</key><string>Sonora captures computer audio only after you approve it. Short audio chunks are sent to Gemini for transcription.</string>
+</dict></plist>

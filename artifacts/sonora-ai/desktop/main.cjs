@@ -2,6 +2,7 @@ const { app, BrowserWindow, globalShortcut, ipcMain, Menu, Tray, nativeImage, sc
 const path = require('node:path');
 const fs = require('node:fs');
 const { validateServiceUrl, isAllowedNavigation, isTrustedFrame } = require('./security.cjs');
+const { createNativeAudioHost } = require('./native-audio-host.cjs');
 
 let win;
 let tray;
@@ -11,6 +12,7 @@ let contentProtection = ['win32', 'darwin'].includes(process.platform);
 let captureActive = false;
 let shortcutRegistered = false;
 let target;
+let nativeAudio;
 const shortcut = 'CommandOrControl+Shift+Space';
 const development = !app.isPackaged && process.argv.includes('--dev');
 
@@ -33,12 +35,13 @@ function hide() {
 }
 function toggle() { if (win?.isVisible()) hide(); else show(); }
 function stopCapture() {
+  nativeAudio?.stop();
   win?.webContents.send('overlay:stop-capture');
   // Renderer reports inactive only after releasing the tracks.
   show();
 }
 function updateTray() {
-  if (!tray) return;
+  if (!tray || tray.isDestroyed()) return;
   tray.setToolTip(captureActive ? 'Sonora — AUDIO CAPTURE ACTIVE' : 'Sonora AI — audio off');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: captureActive ? 'Audio capture active' : 'Audio off', enabled: false },
@@ -59,6 +62,11 @@ function registerIpc() {
     return fn(...args);
   });
   handle('overlay:get-state', state);
+  handle('audio:start', (id, source) => nativeAudio.start(id, source));
+  handle('audio:stop', id => {
+    if (typeof id !== 'string') throw new Error('Expected a capture identifier.');
+    return nativeAudio.stop(id);
+  });
   handle('overlay:show', () => { show(); return state(); });
   handle('overlay:hide', () => { hide(); return state(); });
   handle('overlay:toggle', () => { toggle(); return state(); });
@@ -73,6 +81,7 @@ function registerIpc() {
   });
   handle('overlay:set-capture-active', value => {
     if (typeof value !== 'boolean') throw new Error('Expected boolean.');
+    if (nativeAudio?.isActive()) return state();
     captureActive = value; broadcast(); return state();
   });
   handle('overlay:quit', () => { quitting = true; app.quit(); });
@@ -126,6 +135,22 @@ function createWindow() {
       webSecurity: true, backgroundThrottling: false,
     },
   });
+  nativeAudio = createNativeAudioHost({
+    binary: app.isPackaged
+      ? path.join(process.resourcesPath, 'native', process.platform === 'win32' ? 'sonora-audio.exe' : 'sonora-audio')
+      : path.resolve(__dirname, '../../../generated-artifacts/native', `${process.platform}-${process.arch}`, process.platform === 'win32' ? 'sonora-audio.exe' : 'sonora-audio'),
+    confirm: async source => {
+      const result = await dialog.showMessageBox(win, {
+        type: 'question', title: 'Allow native audio capture?',
+        message: source === 'system' ? 'Transcribe audio playing on this computer?' : 'Transcribe your microphone?',
+        detail: 'Sonora sends six-second audio chunks to its hosted Gemini transcription service. System audio can include other apps. No screen video is captured by this helper. Capture continues while hidden; stop it from Sonora or the tray.',
+        buttons: ['Cancel', 'Allow audio capture'], defaultId: 0, cancelId: 0,
+      });
+      return result.response === 1 && !win.isDestroyed();
+    },
+    emit: event => { if (!win.isDestroyed()) win.webContents.send('audio:event', event); },
+    onActive: value => { captureActive = value; broadcast(); },
+  });
   win.setContentProtection(contentProtection);
   win.setMenuBarVisibility(false);
   win.webContents.on('will-navigate', (event, url) => {
@@ -146,9 +171,9 @@ function createWindow() {
   win.on('close', event => { if (!quitting) { event.preventDefault(); hide(); } });
   win.on('show', broadcast);
   win.on('hide', broadcast);
-  win.webContents.on('render-process-gone', () => { captureActive = false; broadcast(); });
+  win.webContents.on('render-process-gone', () => { nativeAudio.stop(); if (!nativeAudio.isActive()) captureActive = false; broadcast(); });
   win.webContents.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => {
-    if (mainFrame && !inPlace) { captureActive = false; broadcast(); }
+    if (mainFrame && !inPlace) { nativeAudio.stop(); if (!nativeAudio.isActive()) captureActive = false; broadcast(); }
   });
   win.webContents.on('did-fail-load', async (_event, code, _description, url, mainFrame) => {
     if (!mainFrame || code === -3 || !isAllowedNavigation(url, target)) return;
@@ -186,6 +211,6 @@ else {
     app.on('activate', show);
   });
 }
-app.on('before-quit', () => { quitting = true; win?.destroy(); });
+app.on('before-quit', () => { quitting = true; nativeAudio?.shutdown(); win?.destroy(); });
 app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('window-all-closed', () => { if (quitting) app.quit(); });
