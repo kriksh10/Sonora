@@ -11,6 +11,7 @@ import NotFound from '@/pages/not-found';
 import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 import InterviewWorkspace from '@/pages/interview-workspace';
 import DesktopDownloads from '@/components/desktop-downloads';
+import DesktopVisibilityControls from '@/components/desktop-visibility-controls';
 
 const queryClient = new QueryClient();
 const clerkPubKey = publishableKeyFromHost(
@@ -158,6 +159,7 @@ function App() {
   }
   return (
     <WouterRouter base={basePath}>
+      <DesktopVisibilityControls />
       <ClerkProviderWithRoutes />
     </WouterRouter>
   );

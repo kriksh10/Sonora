@@ -36,6 +36,16 @@ The launcher does not publish files, run the installer, open the app, capture au
 
 ## Verify before distributing
 
+### Visibility controls
+
+The installed app has a **Hide Sonora** button above every hosted page, including sign-in. Restore it through the Sonora system tray icon → **Show Sonora**, or **Ctrl+Shift+Space**. If the shortcut cannot register, the app reports this and the tray remains the restore path. Closing the window also hides it; use tray → **Quit Sonora and stop audio** to exit fully.
+
+The separate **Hide from screen sharing** switch keeps Sonora visible locally and requests native capture exclusion. The tray has a matching checkbox. The two controls reflect the same native state; the switch indicates a request, not verified invisibility. Protection starts enabled at launch; changes apply to the current app session. Actual results depend on Windows and the sharing software. Check the receiver's screen before relying on it.
+
+Hiding does not stop active audio. The app displays this warning while capturing, and the tray keeps capture status and **Stop audio capture** available.
+
+Republishing updates the hosted controls, but adding the matching native tray checkbox requires rebuilding and reinstalling the Windows app from the updated source using **BUILD-WINDOWS.cmd**. An old installer does not acquire native code changes just by republishing.
+
 - Install, launch, uninstall, and reinstall using a normal Windows account.
 - Sign in, create a session, and confirm a real typed Gemini answer.
 - Explicitly start microphone capture, then computer-audio capture with headphones; confirm actual speech becomes a transcript and suggestion.

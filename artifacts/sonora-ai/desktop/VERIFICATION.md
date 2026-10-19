@@ -1,3 +1,9 @@
+# Visibility-control verification
+
+The hosted desktop-only toolbar now exposes Hide Sonora and a separate Hide from screen sharing switch on all routed pages, including sign-in. Tray and toolbar share the native protection state. New deterministic tests cover protection state synchronization, failed protection changes, unsupported platforms, and hide/restore while audio remains active and tray Stop stays enabled.
+
+Type checking, the production web build, and desktop JavaScript tests pass. The web build requires the existing service PORT and BASE_PATH configuration. Native Windows installation, shortcut registration, tray access, actual active capture, and receiver-side sharing exclusion still require a Windows PC; these tests do not establish native functionality. The previously supplied installer has not been rebuilt here. Republish for hosted toolbar changes, and rebuild/reinstall for native tray updates.
+
 # Desktop release verification
 
 ## Current release blockers

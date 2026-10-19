@@ -34,6 +34,14 @@ function hide() {
   broadcast();
 }
 function toggle() { if (win?.isVisible()) hide(); else show(); }
+function setContentProtection(value) {
+  if (typeof value !== 'boolean') throw new Error('Expected boolean.');
+  const requested = value && ['win32', 'darwin'].includes(process.platform);
+  win.setContentProtection(requested);
+  contentProtection = requested;
+  broadcast();
+  return state();
+}
 function stopCapture() {
   nativeAudio?.stop();
   win?.webContents.send('overlay:stop-capture');
@@ -48,6 +56,12 @@ function updateTray() {
     { label: 'Show Sonora', click: show },
     { label: 'Hide Sonora (audio continues if active)', click: hide },
     { label: 'Stop audio capture', enabled: captureActive, click: stopCapture },
+    { label: 'Hide from screen sharing (best effort)', type: 'checkbox',
+      checked: contentProtection, enabled: ['win32', 'darwin'].includes(process.platform),
+      click: item => {
+        try { setContentProtection(item.checked); }
+        catch { dialog.showErrorBox('Sonora privacy control', 'Could not change capture exclusion. Do not assume the window is excluded from sharing.'); }
+      } },
     { type: 'separator' },
     { label: 'Keep on top', type: 'checkbox', checked: alwaysOnTop, click: item => {
       alwaysOnTop = item.checked; win?.setAlwaysOnTop(alwaysOnTop, 'floating'); broadcast();
@@ -74,11 +88,7 @@ function registerIpc() {
     if (typeof value !== 'boolean') throw new Error('Expected boolean.');
     alwaysOnTop = value; win.setAlwaysOnTop(value, 'floating'); broadcast(); return state();
   });
-  handle('overlay:set-content-protection', value => {
-    if (typeof value !== 'boolean') throw new Error('Expected boolean.');
-    contentProtection = value && ['win32', 'darwin'].includes(process.platform);
-    win.setContentProtection(contentProtection); broadcast(); return state();
-  });
+  handle('overlay:set-content-protection', setContentProtection);
   handle('overlay:set-capture-active', value => {
     if (typeof value !== 'boolean') throw new Error('Expected boolean.');
     if (nativeAudio?.isActive()) return state();
