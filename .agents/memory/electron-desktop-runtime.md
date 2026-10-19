@@ -45,6 +45,14 @@ The user selected **native capture + Gemini transcription**, not local speech mo
 
 **How to apply:** Keep both transcription and answer generation on the existing Gemini service. Do not add Whisper/Parakeet model downloads or convert to Tauri as part of this choice.
 
+## Session-creation reference scope
+
+Use the user-supplied session-creation screenshots and video as a requirements reference, not merely as visual inspiration. The newer screenshots show a two-step Details → Preferences wizard; the accompanying video shows an older Regular Call form. The reviewed inventory and unknowns are recorded in `.local/tasks/session-creation-reference.md`.
+
+**Why:** The user supplied these materials specifically so session-creation behavior would not be missed later.
+
+**How to apply:** Preserve confirmed choices and distinguish observed behavior from assumptions. Keep the existing Sonora/Gemini product scope; screenshots of Mock mode, other model vendors, or transcript contributions are not permission to add those features or share private transcripts.
+
 ## Hosted access for desktop
 
 Make the hosted Sonora site publicly reachable while retaining Sonora sign-in and owner-restricted session access.
