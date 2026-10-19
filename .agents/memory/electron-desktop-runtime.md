@@ -53,6 +53,14 @@ Use the user-supplied session-creation screenshots and video as a requirements r
 
 **How to apply:** Preserve confirmed choices and distinguish observed behavior from assumptions. Keep the existing Sonora/Gemini product scope; screenshots of Mock mode, other model vendors, or transcript contributions are not permission to add those features or share private transcripts.
 
+## Desktop authentication direction
+
+Use regular-browser authentication followed by an explicit desktop-code approval and a native-held, one-time proof exchange. Do not solve embedded OAuth failures by transferring browser cookies or putting authentication credentials in callback URLs.
+
+**Why:** Social providers can reject embedded Electron browsers, and logging in to the regular browser does not create an authenticated Electron session. The user requires both Google and email login to reach the installed app.
+
+**How to apply:** Preserve this security boundary when revising desktop sign-in. Treat backend protocol support, browser approval, and the installed shell as a coordinated release; republishing cannot update native code in an existing installer.
+
 ## Hosted access for desktop
 
 Make the hosted Sonora site publicly reachable while retaining Sonora sign-in and owner-restricted session access.

@@ -1,5 +1,23 @@
 # Session setup and answer preferences
 
+## Current source update — desktop 0.2.0
+
+The new source implements browser-based desktop authentication for Google and email/password. It replaces embedded sign-in in the updated shell, requires an authenticated same-origin browser to approve the desktop's six-digit code, and binds a single-use exchange to a native-held verifier. Requests expire after five minutes, code approval permits at most five attempts, cancellation revokes pending approval, and issued Clerk tickets expire after 60 seconds. Credentials are not placed in browser callback URLs, source archives, or the handoff table. Concurrent claims, cancellation during issuance, replay, provider failure, and stale desktop callbacks have deterministic regression coverage.
+
+Verified in this workspace:
+- 50 JavaScript tests pass, including native-host/audio lifecycle, visibility, preferences, browser-auth host, server authorization state machine, and build preflight.
+- API/frontend type checks and the production frontend build pass. Both managed workflows restart successfully.
+- Live development API + PostgreSQL checks pass for health protocol discovery, start validation, request persistence, redacted public state, authentication enforcement, verifier binding, pending polling, cancellation, and replay rejection.
+- The browser approval route renders its invalid-link state without a runtime error. This is visual smoke coverage, not a signed-in end-to-end test.
+- The Rust PCM test results from the preceding audit remain applicable; the Rust source has not changed.
+- A small source build kit is exported to generated-artifacts. It excludes credentials files, user uploads, databases, dependency caches, and old build outputs; archive integrity and current native/backend source inclusion were checked.
+
+Still blocked / NOT verified:
+- The updated hosted service must be republished, including its additive managed database schema, by the user. Publishing was not performed by the agent.
+- The installed Windows shell must be rebuilt to receive the new native bridge and visibility controls. The source archive is not a finished installer. The build gate now requires `desktopAuthProtocol: 1` in the live service health response and refuses the older service.
+- No Windows or Mac OS runner/device is available in this workspace. An actual new installer, full Google/email approval → Electron session → authenticated Gemini flow, native microphone/system capture, and receiver-side screen-share behavior have not been verified.
+- No current installer has been uploaded or advertised as verified. The desktop release task remains in progress.
+
 ## Desktop and published-service audit — 2026-10-19
 
 - The public published service responds to `/api/healthz` with HTTP 200 and `{"status":"ok"}`; `/sign-in` serves HTML with HTTP 200. Serving a sign-in page does not establish successful authentication.
@@ -9,7 +27,7 @@
 - All desktop CommonJS scripts pass `node --check`. The Electron 44.0.0 executable starts in Node mode in this Linux workspace; this checks the runtime binary, not the native GUI.
 - The Rust helper's two PCM tests pass with `cargo test --locked` on Linux. They verify chunk encoding/resampling and silence/format handling, not Windows WASAPI capture or Mac audio permissions.
 - Existing JavaScript test/type-check/build evidence below remains applicable; no code in those paths changed during this audit.
-- Google browser sign-in still has no browser-to-desktop authentication handoff. Email/password success in the installed Windows application remains unverified. Do not describe either path, receiver-side screen-share exclusion, or the release as fully verified.
+- Initial audit finding: Google browser sign-in had no browser-to-desktop authentication handoff. This gap is addressed in the current source update above, not yet verified in an installed native app. Do not describe either login path, receiver-side screen-share exclusion, or the release as fully verified.
 
 The hosted app now has a Details → Preferences wizard and an editable session-preferences dialog. Format, length, tone, STAR method, and filler words are persisted per session and included in Gemini's system instructions. Set default writes owner-scoped settings for future sessions only. Existing legacy sessions receive compatible read-time defaults. Regular Call excludes resume context. Transcript writes check the current database flag at the write boundary.
 

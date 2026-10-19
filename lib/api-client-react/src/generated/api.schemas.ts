@@ -5,6 +5,56 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export interface DesktopAuthStartInput {
+  /** @pattern ^[a-f0-9]{64}$ */
+  challenge: string;
+}
+
+export interface DesktopAuthProofInput {
+  /** @pattern ^[a-f0-9]{64}$ */
+  verifier: string;
+}
+
+export interface DesktopAuthApprovalInput {
+  /** @pattern ^[0-9]{6}$ */
+  code: string;
+}
+
+export interface DesktopAuthStarted {
+  id: string;
+  code: string;
+  expiresAt: string;
+}
+
+export type DesktopAuthStateStatus = typeof DesktopAuthStateStatus[keyof typeof DesktopAuthStateStatus];
+
+
+export const DesktopAuthStateStatus = {
+  pending: 'pending',
+  approved: 'approved',
+  exchanging: 'exchanging',
+  consumed: 'consumed',
+  cancelled: 'cancelled',
+} as const;
+
+export interface DesktopAuthState {
+  status: DesktopAuthStateStatus;
+  expiresAt: string;
+}
+
+export type DesktopAuthPollStatus = typeof DesktopAuthPollStatus[keyof typeof DesktopAuthPollStatus];
+
+
+export const DesktopAuthPollStatus = {
+  pending: 'pending',
+  complete: 'complete',
+} as const;
+
+export interface DesktopAuthPoll {
+  status: DesktopAuthPollStatus;
+  ticket?: string;
+}
+
 export type AnswerPreferencesFormat = typeof AnswerPreferencesFormat[keyof typeof AnswerPreferencesFormat];
 
 
@@ -266,7 +316,15 @@ export interface SessionAnswer {
   model: string;
 }
 
+export type HealthStatusDesktopAuthProtocol = typeof HealthStatusDesktopAuthProtocol[keyof typeof HealthStatusDesktopAuthProtocol];
+
+
+export const HealthStatusDesktopAuthProtocol = {
+  NUMBER_1: 1,
+} as const;
+
 export interface HealthStatus {
+  desktopAuthProtocol?: HealthStatusDesktopAuthProtocol;
   status: string;
 }
 

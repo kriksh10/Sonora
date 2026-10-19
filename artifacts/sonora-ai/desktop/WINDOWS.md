@@ -17,6 +17,8 @@ These are developer tools for the computer creating the installer. People instal
 
 ## Get the source without GitHub
 
+For the updated browser sign-in build, use the **Sonora 0.2.0 desktop build kit** provided with the update. Extract it and read `START-HERE.md`. It is a small source archive, not an installer, and excludes user uploads, credentials, and dependency caches. Republish the updated hosted service first: the builder checks for the browser sign-in protocol before downloading dependencies.
+
 In Replit, open the three-dot menu at the top of the file tree and choose **Download as zip**. Extract it into a writable local folder, for example `Documents\Sonora`. Do not run the launcher inside the ZIP.
 
 Do not transfer `.env` files, credentials, databases, audio recordings, or dependency caches. They are not needed for a desktop build. If the export includes `node_modules`, remove that generated folder before installing Windows dependencies; Linux dependencies cannot be reused as Windows binaries.

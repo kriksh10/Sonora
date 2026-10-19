@@ -8,6 +8,81 @@
 import * as zod from 'zod';
 
 
+export const startDesktopAuthBodyChallengeRegExp = new RegExp('^[a-f0-9]{64}$');
+
+
+export const StartDesktopAuthBody = zod.object({
+  "challenge": zod.string().regex(startDesktopAuthBodyChallengeRegExp)
+})
+
+export const StartDesktopAuthResponse = zod.object({
+  "id": zod.string().uuid(),
+  "code": zod.string(),
+  "expiresAt": zod.coerce.date()
+})
+
+
+export const GetDesktopAuthRequestParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const GetDesktopAuthRequestResponse = zod.object({
+  "status": zod.enum(['pending', 'approved', 'exchanging', 'consumed', 'cancelled']),
+  "expiresAt": zod.coerce.date()
+})
+
+
+export const ApproveDesktopAuthParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const approveDesktopAuthBodyCodeRegExp = new RegExp('^[0-9]{6}$');
+
+
+export const ApproveDesktopAuthBody = zod.object({
+  "code": zod.string().regex(approveDesktopAuthBodyCodeRegExp)
+})
+
+export const ApproveDesktopAuthResponse = zod.object({
+  "status": zod.enum(['pending', 'approved', 'exchanging', 'consumed', 'cancelled']),
+  "expiresAt": zod.coerce.date()
+})
+
+
+export const PollDesktopAuthParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const pollDesktopAuthBodyVerifierRegExp = new RegExp('^[a-f0-9]{64}$');
+
+
+export const PollDesktopAuthBody = zod.object({
+  "verifier": zod.string().regex(pollDesktopAuthBodyVerifierRegExp)
+})
+
+export const PollDesktopAuthResponse = zod.object({
+  "status": zod.enum(['pending', 'complete']),
+  "ticket": zod.string().optional()
+})
+
+
+export const CancelDesktopAuthParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const cancelDesktopAuthBodyVerifierRegExp = new RegExp('^[a-f0-9]{64}$');
+
+
+export const CancelDesktopAuthBody = zod.object({
+  "verifier": zod.string().regex(cancelDesktopAuthBodyVerifierRegExp)
+})
+
+export const CancelDesktopAuthResponse = zod.object({
+  "status": zod.enum(['pending', 'approved', 'exchanging', 'consumed', 'cancelled']),
+  "expiresAt": zod.coerce.date()
+})
+
+
 export const GetAnswerDefaultsResponse = zod.object({
   "format": zod.enum(['full_script', 'script_bullets', 'bullet_points']),
   "length": zod.enum(['short', 'balanced', 'long']),
@@ -96,6 +171,7 @@ export const UpdateSessionPreferencesResponse = zod.object({
  * @summary Health check
  */
 export const HealthCheckResponse = zod.object({
+  "desktopAuthProtocol": zod.literal(1).optional(),
   "status": zod.string()
 })
 

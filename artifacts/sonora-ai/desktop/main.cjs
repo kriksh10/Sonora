@@ -3,6 +3,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { validateServiceUrl, isAllowedNavigation, isTrustedFrame } = require('./security.cjs');
 const { createNativeAudioHost } = require('./native-audio-host.cjs');
+const { createBrowserAuth } = require('./browser-auth.cjs');
 
 let win;
 let tray;
@@ -13,6 +14,7 @@ let captureActive = false;
 let shortcutRegistered = false;
 let target;
 let nativeAudio;
+let browserAuth;
 const shortcut = 'CommandOrControl+Shift+Space';
 const development = !app.isPackaged && process.argv.includes('--dev');
 
@@ -76,6 +78,12 @@ function registerIpc() {
     return fn(...args);
   });
   handle('overlay:get-state', state);
+  handle('auth:start', () => browserAuth.start());
+  handle('auth:poll', id => browserAuth.poll(id));
+  handle('auth:cancel', id => {
+    if (typeof id !== 'string') throw new Error('Expected an authorization request id.');
+    return browserAuth.cancel(id);
+  });
   handle('audio:start', (id, source) => nativeAudio.start(id, source));
   handle('audio:stop', id => {
     if (typeof id !== 'string') throw new Error('Expected a capture identifier.');
@@ -211,6 +219,7 @@ else {
       app.quit(); return;
     }
     registerIpc();
+    browserAuth = createBrowserAuth({ serviceUrl: target, openExternal: url => shell.openExternal(url) });
     createWindow();
     // PNG avoids platform-dependent support for SVG tray images.
     const icon = nativeImage.createFromPath(path.join(__dirname, 'assets', 'tray.png'));
@@ -221,6 +230,6 @@ else {
     app.on('activate', show);
   });
 }
-app.on('before-quit', () => { quitting = true; nativeAudio?.shutdown(); win?.destroy(); });
+app.on('before-quit', () => { quitting = true; void browserAuth?.cancel(); nativeAudio?.shutdown(); win?.destroy(); });
 app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('window-all-closed', () => { if (quitting) app.quit(); });

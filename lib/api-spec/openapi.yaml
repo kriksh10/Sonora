@@ -13,6 +13,98 @@ tags:
   - name: sessions
     description: Private interview and regular-call sessions
 paths:
+  /desktop-auth/requests:
+    post:
+      operationId: startDesktopAuth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DesktopAuthStartInput"
+      responses:
+        "201":
+          description: Code shown only in the requesting desktop
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DesktopAuthStarted"
+        default:
+          $ref: "#/components/responses/SessionError"
+  /desktop-auth/requests/{id}:
+    parameters:
+      - $ref: "#/components/parameters/DesktopRequestId"
+    get:
+      operationId: getDesktopAuthRequest
+      responses:
+        "200":
+          description: State without a code or credential
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DesktopAuthState"
+        default:
+          $ref: "#/components/responses/SessionError"
+  /desktop-auth/requests/{id}/approve:
+    parameters:
+      - $ref: "#/components/parameters/DesktopRequestId"
+    post:
+      operationId: approveDesktopAuth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DesktopAuthApprovalInput"
+      responses:
+        "200":
+          description: Signed-in browser approved the desktop code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DesktopAuthState"
+        default:
+          $ref: "#/components/responses/SessionError"
+  /desktop-auth/requests/{id}/poll:
+    parameters:
+      - $ref: "#/components/parameters/DesktopRequestId"
+    post:
+      operationId: pollDesktopAuth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DesktopAuthProofInput"
+      responses:
+        "200":
+          description: Pending or a single-use sign-in ticket; never cache
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DesktopAuthPoll"
+        default:
+          $ref: "#/components/responses/SessionError"
+  /desktop-auth/requests/{id}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/DesktopRequestId"
+    post:
+      operationId: cancelDesktopAuth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DesktopAuthProofInput"
+      responses:
+        "200":
+          description: Desktop request cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DesktopAuthState"
+        default:
+          $ref: "#/components/responses/SessionError"
   /answer-preferences/defaults:
     get:
       operationId: getAnswerDefaults
@@ -233,6 +325,14 @@ paths:
         default:
           $ref: "#/components/responses/SessionError"
 components:
+  parameters:
+    DesktopRequestId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
   responses:
     SessionError:
       description: Sign-in, validation, ownership, or service error
@@ -245,6 +345,61 @@ components:
               error:
                 type: string
   schemas:
+    DesktopAuthStartInput:
+      type: object
+      additionalProperties: false
+      required: [challenge]
+      properties:
+        challenge:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+    DesktopAuthProofInput:
+      type: object
+      additionalProperties: false
+      required: [verifier]
+      properties:
+        verifier:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+    DesktopAuthApprovalInput:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code:
+          type: string
+          pattern: "^[0-9]{6}$"
+    DesktopAuthStarted:
+      type: object
+      required: [id, code, expiresAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+    DesktopAuthState:
+      type: object
+      required: [status, expiresAt]
+      properties:
+        status:
+          type: string
+          enum: [pending, approved, exchanging, consumed, cancelled]
+        expiresAt:
+          type: string
+          format: date-time
+    DesktopAuthPoll:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [pending, complete]
+        ticket:
+          type: string
     AnswerPreferences:
       type: object
       additionalProperties: false
@@ -447,6 +602,9 @@ components:
     HealthStatus:
       type: object
       properties:
+        desktopAuthProtocol:
+          type: integer
+          enum: [1]
         status:
           type: string
       required:

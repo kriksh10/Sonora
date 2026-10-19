@@ -2,9 +2,9 @@
 
 ## Release status
 
-**Source and release pipeline only. No Mac or Windows installer has been produced, signed, notarized, uploaded, or tested on native hardware yet.** The download page deliberately shows unavailable builds rather than offering broken links.
+**Desktop release is not yet verified.** A user-built older Windows installer exists, but it predates the current browser sign-in handoff and visibility updates. No current Windows/Mac installer is hosted. The download page deliberately shows unavailable builds rather than offering broken links.
 
-The service has not been published at the time of this implementation. Desktop packaging refuses to use an empty URL, a development preview domain, or an unhealthy/unrecognized service. Do not mark the desktop release complete until the blockers in `VERIFICATION.md` are resolved.
+The service is published, but it must be republished with the latest API and database schema before the updated desktop can sign in. Packaging checks `desktopAuthProtocol: 1` in the hosted health response and refuses old/unhealthy services, empty URLs, and preview domains. Do not mark the desktop release complete until the blockers in `VERIFICATION.md` are resolved.
 
 ## Targets
 
@@ -18,7 +18,9 @@ For a local Windows build without GitHub, see [WINDOWS.md](WINDOWS.md) and use `
 
 The packaged app loads the publisher-configured HTTPS Sonora service, not an offline `file://` bundle. Internet and the hosted frontend, authentication, API, database, and Gemini service remain required. It opens visibly on first launch and defaults to a compact session view. Create a session and type a question before granting audio permission to check Gemini independently.
 
-Use email/password sign-in inside the app. Some social identity providers reject embedded browsers; opening a browser externally does not transfer its authenticated session to Electron. Native sign-in must be validated against the production Clerk instance. If required, authorized administrators can configure embedded/native application settings through the Replit-managed Clerk dashboard; do not put secret keys in this package.
+The updated shell signs in through the regular browser for both Google and email/password. Click **Sign in with browser**, authenticate, then enter the six-digit code displayed in the desktop app on the browser approval page. Return to Sonora for completion. Requests expire after five minutes and can be cancelled; starting again creates a new request. Older shells show an update-required message rather than offering a broken social-login flow.
+
+The desktop keeps a random verifier only in native memory. The browser URL carries only a random request id; the browser never receives that verifier or the resulting ticket. A signed-in, same-origin browser must explicitly approve the matching code (five attempts maximum). The native proof redeems approval once for a 60-second, single-use Clerk ticket. The renderer exchanges it for its own persistent Clerk session. No browser cookies, passwords, API keys, or sign-in tickets are bundled or stored in the handoff table. Native production sign-in still requires end-to-end validation on the target machine.
 
 ### Audio and lifecycle
 

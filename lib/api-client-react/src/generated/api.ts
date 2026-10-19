@@ -24,6 +24,12 @@ import type {
   AppendTranscriptRequest,
   AudioTranscription,
   CallSession,
+  DesktopAuthApprovalInput,
+  DesktopAuthPoll,
+  DesktopAuthProofInput,
+  DesktopAuthStartInput,
+  DesktopAuthStarted,
+  DesktopAuthState,
   HealthStatus,
   NewCallSession,
   SessionAnswer,
@@ -60,6 +66,340 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   }
   return result;
 };
+
+export const getStartDesktopAuthUrl = () => {
+
+
+
+
+  return `/api/desktop-auth/requests`
+}
+
+export const startDesktopAuth = async (desktopAuthStartInput: DesktopAuthStartInput, options?: Parameters<typeof customFetch>[1]): Promise<DesktopAuthStarted> => {
+
+  return customFetch<DesktopAuthStarted>(getStartDesktopAuthUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(desktopAuthStartInput)
+  }
+);}
+
+
+
+
+
+export const getStartDesktopAuthMutationOptions = <TError = ErrorType<SessionErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startDesktopAuth>>, TError,{data: BodyType<DesktopAuthStartInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startDesktopAuth>>, TError,{data: BodyType<DesktopAuthStartInput>}, TContext> => {
+
+const mutationKey = ['startDesktopAuth'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startDesktopAuth>>, {data: BodyType<DesktopAuthStartInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  startDesktopAuth(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartDesktopAuthMutationResult = NonNullable<Awaited<ReturnType<typeof startDesktopAuth>>>
+    export type StartDesktopAuthMutationBody = BodyType<DesktopAuthStartInput>
+    export type StartDesktopAuthMutationError = ErrorType<SessionErrorResponse>
+
+    export const useStartDesktopAuth = <TError = ErrorType<SessionErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startDesktopAuth>>, TError,{data: BodyType<DesktopAuthStartInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof startDesktopAuth>>,
+        TError,
+        {data: BodyType<DesktopAuthStartInput>},
+        TContext
+      > => {
+      return useMutation(getStartDesktopAuthMutationOptions(options));
+    }
+
+export const getGetDesktopAuthRequestUrl = (id: string,) => {
+
+
+
+
+  return `/api/desktop-auth/requests/${id}`
+}
+
+export const getDesktopAuthRequest = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<DesktopAuthState> => {
+
+  return customFetch<DesktopAuthState>(getGetDesktopAuthRequestUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetDesktopAuthRequestQueryKey = (id: string,) => {
+    return [
+    `/api/desktop-auth/requests/${id}`
+    ] as const;
+    }
+
+
+export const getGetDesktopAuthRequestQueryOptions = <TData = Awaited<ReturnType<typeof getDesktopAuthRequest>>, TError = ErrorType<SessionErrorResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDesktopAuthRequest>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetDesktopAuthRequestQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDesktopAuthRequest>>> = ({ signal }) => getDesktopAuthRequest(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDesktopAuthRequest>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetDesktopAuthRequestQueryResult = NonNullable<Awaited<ReturnType<typeof getDesktopAuthRequest>>>
+export type GetDesktopAuthRequestQueryError = ErrorType<SessionErrorResponse>
+
+
+
+export function useGetDesktopAuthRequest<TData = Awaited<ReturnType<typeof getDesktopAuthRequest>>, TError = ErrorType<SessionErrorResponse>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDesktopAuthRequest>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetDesktopAuthRequestQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getApproveDesktopAuthUrl = (id: string,) => {
+
+
+
+
+  return `/api/desktop-auth/requests/${id}/approve`
+}
+
+export const approveDesktopAuth = async (id: string,
+    desktopAuthApprovalInput: DesktopAuthApprovalInput, options?: Parameters<typeof customFetch>[1]): Promise<DesktopAuthState> => {
+
+  return customFetch<DesktopAuthState>(getApproveDesktopAuthUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(desktopAuthApprovalInput)
+  }
+);}
+
+
+
+
+
+export const getApproveDesktopAuthMutationOptions = <TError = ErrorType<SessionErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approveDesktopAuth>>, TError,{id: string;data: BodyType<DesktopAuthApprovalInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof approveDesktopAuth>>, TError,{id: string;data: BodyType<DesktopAuthApprovalInput>}, TContext> => {
+
+const mutationKey = ['approveDesktopAuth'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof approveDesktopAuth>>, {id: string;data: BodyType<DesktopAuthApprovalInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  approveDesktopAuth(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ApproveDesktopAuthMutationResult = NonNullable<Awaited<ReturnType<typeof approveDesktopAuth>>>
+    export type ApproveDesktopAuthMutationBody = BodyType<DesktopAuthApprovalInput>
+    export type ApproveDesktopAuthMutationError = ErrorType<SessionErrorResponse>
+
+    export const useApproveDesktopAuth = <TError = ErrorType<SessionErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approveDesktopAuth>>, TError,{id: string;data: BodyType<DesktopAuthApprovalInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof approveDesktopAuth>>,
+        TError,
+        {id: string;data: BodyType<DesktopAuthApprovalInput>},
+        TContext
+      > => {
+      return useMutation(getApproveDesktopAuthMutationOptions(options));
+    }
+
+export const getPollDesktopAuthUrl = (id: string,) => {
+
+
+
+
+  return `/api/desktop-auth/requests/${id}/poll`
+}
+
+export const pollDesktopAuth = async (id: string,
+    desktopAuthProofInput: DesktopAuthProofInput, options?: Parameters<typeof customFetch>[1]): Promise<DesktopAuthPoll> => {
+
+  return customFetch<DesktopAuthPoll>(getPollDesktopAuthUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(desktopAuthProofInput)
+  }
+);}
+
+
+
+
+
+export const getPollDesktopAuthMutationOptions = <TError = ErrorType<SessionErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pollDesktopAuth>>, TError,{id: string;data: BodyType<DesktopAuthProofInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof pollDesktopAuth>>, TError,{id: string;data: BodyType<DesktopAuthProofInput>}, TContext> => {
+
+const mutationKey = ['pollDesktopAuth'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof pollDesktopAuth>>, {id: string;data: BodyType<DesktopAuthProofInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  pollDesktopAuth(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PollDesktopAuthMutationResult = NonNullable<Awaited<ReturnType<typeof pollDesktopAuth>>>
+    export type PollDesktopAuthMutationBody = BodyType<DesktopAuthProofInput>
+    export type PollDesktopAuthMutationError = ErrorType<SessionErrorResponse>
+
+    export const usePollDesktopAuth = <TError = ErrorType<SessionErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pollDesktopAuth>>, TError,{id: string;data: BodyType<DesktopAuthProofInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof pollDesktopAuth>>,
+        TError,
+        {id: string;data: BodyType<DesktopAuthProofInput>},
+        TContext
+      > => {
+      return useMutation(getPollDesktopAuthMutationOptions(options));
+    }
+
+export const getCancelDesktopAuthUrl = (id: string,) => {
+
+
+
+
+  return `/api/desktop-auth/requests/${id}/cancel`
+}
+
+export const cancelDesktopAuth = async (id: string,
+    desktopAuthProofInput: DesktopAuthProofInput, options?: Parameters<typeof customFetch>[1]): Promise<DesktopAuthState> => {
+
+  return customFetch<DesktopAuthState>(getCancelDesktopAuthUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(desktopAuthProofInput)
+  }
+);}
+
+
+
+
+
+export const getCancelDesktopAuthMutationOptions = <TError = ErrorType<SessionErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelDesktopAuth>>, TError,{id: string;data: BodyType<DesktopAuthProofInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof cancelDesktopAuth>>, TError,{id: string;data: BodyType<DesktopAuthProofInput>}, TContext> => {
+
+const mutationKey = ['cancelDesktopAuth'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cancelDesktopAuth>>, {id: string;data: BodyType<DesktopAuthProofInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  cancelDesktopAuth(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CancelDesktopAuthMutationResult = NonNullable<Awaited<ReturnType<typeof cancelDesktopAuth>>>
+    export type CancelDesktopAuthMutationBody = BodyType<DesktopAuthProofInput>
+    export type CancelDesktopAuthMutationError = ErrorType<SessionErrorResponse>
+
+    export const useCancelDesktopAuth = <TError = ErrorType<SessionErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelDesktopAuth>>, TError,{id: string;data: BodyType<DesktopAuthProofInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof cancelDesktopAuth>>,
+        TError,
+        {id: string;data: BodyType<DesktopAuthProofInput>},
+        TContext
+      > => {
+      return useMutation(getCancelDesktopAuthMutationOptions(options));
+    }
 
 export const getGetAnswerDefaultsUrl = () => {
 

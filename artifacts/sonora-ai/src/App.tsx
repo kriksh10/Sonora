@@ -12,6 +12,8 @@ import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 import InterviewWorkspace from '@/pages/interview-workspace';
 import DesktopDownloads from '@/components/desktop-downloads';
 import DesktopVisibilityControls from '@/components/desktop-visibility-controls';
+import DesktopBrowserSignIn from '@/components/desktop-browser-sign-in';
+import DesktopConnect from '@/pages/desktop-connect';
 
 const queryClient = new QueryClient();
 const clerkPubKey = publishableKeyFromHost(
@@ -94,6 +96,9 @@ type SonoraDesktopBridge = {
   toggle: () => Promise<DesktopState>;
   quit: () => Promise<void>;
   getState: () => Promise<DesktopState>;
+  startBrowserSignIn?: () => Promise<{ id: string; code: string; expiresAt: string }>;
+  pollBrowserSignIn?: (id: string) => Promise<{ status: "pending" | "complete"; ticket?: string }>;
+  cancelBrowserSignIn?: (id: string) => Promise<void>;
   setAlwaysOnTop: (value: boolean) => Promise<DesktopState>;
   setContentProtection: (value: boolean) => Promise<DesktopState>;
   setCaptureActive: (value: boolean) => Promise<DesktopState>;
@@ -187,6 +192,7 @@ function ClerkProviderWithRoutes() {
           <RoutedErrorBoundary>
             <Switch>
               <Route path="/download">{() => <main className="min-h-screen bg-[#101113]"><DesktopDownloads /></main>}</Route>
+              <Route path="/desktop-connect/:id">{(params) => <DesktopConnect key={params.id} params={params} />}</Route>
               <Route path="/sign-in/*?" component={SignInPage} />
               <Route path="/sign-up/*?" component={SignUpPage} />
               <Route path="/" component={HomeRedirect} />
@@ -227,9 +233,8 @@ function SignInPage() {
   return (
     <div className="flex min-h-[100dvh] items-center justify-center bg-[#101113] px-4 py-8">
       <div>
-        {window.sonoraDesktop && <p className="mx-auto mb-4 max-w-sm text-sm text-white/60">Use email and password here. Some social sign-in providers block embedded desktop browsers; browser sign-in does not automatically sign in this app.</p>}
-        <SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`}
-          forceRedirectUrl={`${basePath}/`} signUpForceRedirectUrl={`${basePath}/`} />
+        {window.sonoraDesktop ? <DesktopBrowserSignIn /> : <SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`}
+          forceRedirectUrl={`${basePath}/`} signUpForceRedirectUrl={`${basePath}/`} />}
       </div>
     </div>
   );
@@ -243,9 +248,9 @@ function SignUpPage() {
   }, [isLoaded, isSignedIn, setLocation]);
   if (isLoaded && isSignedIn) return null;
   return (
-    <div className="flex min-h-[100dvh] items-center justify-center bg-[#101113] px-4 py-8">
-      <SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`}
-        forceRedirectUrl={`${basePath}/`} signInForceRedirectUrl={`${basePath}/`} />
+    <div className="flex min-h-[100dvh] flex-col items-center justify-center gap-6 bg-[#101113] px-4 py-8">
+      {window.sonoraDesktop ? <DesktopBrowserSignIn /> : <SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`}
+        forceRedirectUrl={`${basePath}/`} signInForceRedirectUrl={`${basePath}/`} />}
     </div>
   );
 }
@@ -262,9 +267,9 @@ function Router() {
 }
 
 function HomeRedirect() {
-  const { isLoaded, isSignedIn } = useAuth();
+  const { isLoaded, isSignedIn, userId } = useAuth();
   if (!isLoaded) return <div className="min-h-screen bg-[#101113]" />;
-  return isSignedIn ? <InterviewWorkspace /> : <LandingHome />;
+  return isSignedIn ? <InterviewWorkspace key={userId} /> : window.sonoraDesktop ? <SignInPage /> : <LandingHome />;
 }
 
 function DesktopOverlay() {
