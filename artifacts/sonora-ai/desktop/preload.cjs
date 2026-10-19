@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('sonoraDesktop', {
   toggle: () => ipcRenderer.invoke('overlay:toggle'),
   quit: () => ipcRenderer.invoke('overlay:quit'),
   getState: () => ipcRenderer.invoke('overlay:get-state'),
+  setBackgroundOpacity: value => ipcRenderer.invoke('overlay:set-background-opacity', value),
   startBrowserSignIn: () => ipcRenderer.invoke('auth:start'),
   pollBrowserSignIn: id => ipcRenderer.invoke('auth:poll', id),
   cancelBrowserSignIn: id => ipcRenderer.invoke('auth:cancel', id),
@@ -23,6 +24,7 @@ contextBridge.exposeInMainWorld('sonoraDesktop', {
   setCaptureActive: (value) => ipcRenderer.invoke('overlay:set-capture-active', Boolean(value)),
   startNativeCapture: (captureId, source) => ipcRenderer.invoke('audio:start', captureId, source),
   stopNativeCapture: captureId => ipcRenderer.invoke('audio:stop', captureId),
+  stopAllCapture: () => ipcRenderer.invoke('audio:stop-all'),
   onNativeAudio: listener => {
     const handler = (_event, message) => listener(message);
     ipcRenderer.on('audio:event', handler);

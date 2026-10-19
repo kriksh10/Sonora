@@ -450,6 +450,9 @@ components:
         mimeType:
           type: string
           enum: [audio/wav]
+        source:
+          type: string
+          enum: [microphone, system]
     AudioTranscription:
       type: object
       required: [text]
@@ -477,7 +480,13 @@ components:
           enum: [user, assistant]
         source:
           type: string
-          enum: [typed, microphone, ai]
+          enum: [typed, microphone, system, ai]
+        speaker:
+          type: string
+          enum: [candidate, interviewer, unknown]
+        capturedAt:
+          type: string
+          format: date-time
     SessionAnswerRequest:
       type: object
       required: [question]
@@ -537,7 +546,13 @@ components:
           type: string
         source:
           type: string
-          enum: [typed, microphone, ai]
+          enum: [typed, microphone, system, ai]
+        speaker:
+          type: string
+          enum: [candidate, interviewer, unknown]
+        capturedAt:
+          type: string
+          format: date-time
         createdAt:
           type: string
           format: date-time
@@ -605,6 +620,9 @@ components:
         desktopAuthProtocol:
           type: integer
           enum: [1]
+        desktopAudioProtocol:
+          type: integer
+          enum: [2]
         status:
           type: string
       required:

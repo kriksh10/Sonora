@@ -178,9 +178,16 @@ router.patch("/sessions/:id", async (req, res, next) => {
     const [session] = await db
       .update(callSessionsTable)
       .set(updates)
-      .where(ownedSessionQuery(req.params.id, userId))
+      .where(status === "ended"
+        ? ownedSessionQuery(req.params.id, userId)
+        : and(ownedSessionQuery(req.params.id, userId), eq(callSessionsTable.status, "ready")))
       .returning();
-    if (!session) return res.status(404).json({ error: "Session not found." });
+    if (!session) {
+      const [existing] = await db.select().from(callSessionsTable).where(ownedSessionQuery(req.params.id, userId)).limit(1);
+      if (!existing) return res.status(404).json({ error: "Session not found." });
+      if (existing.status === status) return res.json(withAnswerPreferences(existing));
+      return res.status(400).json({ error: "This session cannot return to that status. Create a new session if it has ended." });
+    }
     return res.json(withAnswerPreferences(session));
   } catch (error) {
     return next(error);
@@ -190,14 +197,15 @@ router.patch("/sessions/:id", async (req, res, next) => {
 router.post("/sessions/:id/transcript", async (req, res, next) => {
   const userId = currentUserId(req, res);
   if (!userId) return;
-  if (!AppendTranscriptBody.safeParse(req.body).success) {
+  const parsedEntry = AppendTranscriptBody.safeParse(req.body);
+  if (!parsedEntry.success) {
     return res.status(400).json({ error: "Transcript text must be between 1 and 8,000 characters." });
   }
   const text = asText(req.body?.text, 8_000);
   const role = req.body?.role === "assistant" ? "assistant" : "user";
   const source =
-    req.body?.source === "microphone"
-      ? "microphone"
+    ["microphone", "system"].includes(req.body?.source)
+      ? req.body.source as "microphone" | "system"
       : role === "assistant"
         ? "ai"
         : "typed";
@@ -213,6 +221,8 @@ router.post("/sessions/:id/transcript", async (req, res, next) => {
       role,
       text,
       source,
+      speaker: parsedEntry.data.speaker ?? "unknown",
+      ...(parsedEntry.data.capturedAt ? { capturedAt: parsedEntry.data.capturedAt.toISOString() } : {}),
       createdAt: new Date().toISOString(),
     };
     const [updated] = await db
@@ -276,7 +286,7 @@ router.post("/sessions/:id/answer", async (req, res, next) => {
       `Candidate resume: ${session.sessionType === "interview" ? session.resumeText || "not provided" : "not applicable to Regular Call"}`,
       `Reference documents: ${session.documentsText || "not provided"}`,
       `Candidate instructions: ${session.instructions || "none"}`,
-      `Recent transcript: ${(session.transcript ?? []).slice(-12).map((entry) => `${entry.role}: ${entry.text}`).join("\n") || "none"}`,
+      `Recent transcript (speaker labels are user-confirmed source mappings, not verified identity): ${(session.transcript ?? []).slice(-12).map((entry) => `${entry.role === "assistant" ? "Assistant" : entry.speaker || "Unknown speaker"} [${entry.source}]: ${entry.text}`).join("\n") || "none"}`,
       `Question or latest interviewer statement: ${question}`,
     ].join("\n\n");
     let result;

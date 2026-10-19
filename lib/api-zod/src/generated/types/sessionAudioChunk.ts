@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { SessionAudioChunkMimeType } from './sessionAudioChunkMimeType';
+import type { SessionAudioChunkSource } from './sessionAudioChunkSource';
 
 export interface SessionAudioChunk {
   /**
@@ -15,4 +16,5 @@ export interface SessionAudioChunk {
      */
   audio: string;
   mimeType: SessionAudioChunkMimeType;
+  source?: SessionAudioChunkSource;
 }

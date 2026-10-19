@@ -10,6 +10,16 @@
 /* Native frameless title bar. Keep interactive children clickable. */
 .desktop-drag { -webkit-app-region: drag; }
 .desktop-drag button, .desktop-drag a, .desktop-drag input, .desktop-drag select { -webkit-app-region: no-drag; }
+.desktop-drag textarea, .desktop-drag label, .desktop-drag details, .desktop-no-drag { -webkit-app-region: no-drag; }
+.sonora-desktop, .sonora-desktop body, .sonora-desktop #root { background: transparent !important; }
+.sonora-desktop .lsv-root { height: calc(100dvh - var(--sonora-titlebar-height, 44px)); }
+.sonora-window-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: .5rem; min-height: 44px; padding: 6px 10px; color: #e7e8eb; border-bottom: 1px solid #ffffff18; background: rgba(23,24,27,var(--sonora-background-opacity,.85)); cursor: grab; }
+.sonora-window-action { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 30px; min-height: 30px; border-radius: 6px; padding: 4px 7px; font-size: 11px; cursor: pointer; }
+.sonora-window-action:hover { background: #ffffff12; }
+.sonora-window-action:disabled { opacity: .45; cursor: default; }
+.sonora-window-action:focus-visible { outline: 2px solid #75c853; }
+.sonora-window-popover { position: absolute; right: 8px; top: 100%; width: min(330px,calc(100vw - 16px)); max-height: calc(100dvh - 60px); overflow-y: auto; background: #17181b; border: 1px solid #ffffff28; border-radius: 10px; padding: 16px; box-shadow: 0 14px 40px #0008; font-size: 11px; line-height: 1.6; cursor: default; }
+.sonora-window-error { position: absolute; top: 100%; left: 8px; right: 8px; padding: 8px; background: #441e24; color: #fecdd3; font-size: 12px; }
 
 @theme inline {
   --color-background: hsl(var(--background));

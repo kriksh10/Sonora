@@ -4,7 +4,7 @@ import { HealthCheckResponse } from "@workspace/api-zod";
 const router: IRouter = Router();
 
 router.get("/healthz", (_req, res) => {
-  const data = HealthCheckResponse.parse({ status: "ok", desktopAuthProtocol: 1 });
+  const data = HealthCheckResponse.parse({ status: "ok", desktopAuthProtocol: 1, desktopAudioProtocol: 2 });
   res.json(data);
 });
 

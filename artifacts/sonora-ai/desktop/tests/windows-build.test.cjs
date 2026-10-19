@@ -30,5 +30,6 @@ test('Windows preflight refuses preview, unhealthy, and unrelated hosted service
   const responses = values => async () => ({ ok: true, json: async () => values.shift() });
   await assert.rejects(checkHostedService('https://service.example/', responses([{ status: 'ok' }, { product: 'other' }])), /healthy Sonora/);
   await assert.rejects(checkHostedService('https://service.example/', responses([{ status: 'ok' }, { product: 'sonora' }])), /Publish the latest/);
-  assert.equal(await checkHostedService('https://service.example/', responses([{ status: 'ok', desktopAuthProtocol: 1 }, { product: 'sonora' }])), 'https://service.example/');
+  await assert.rejects(checkHostedService('https://service.example/', responses([{ status: 'ok', desktopAuthProtocol: 1 }, { product: 'sonora' }])), /separate-channel/);
+  assert.equal(await checkHostedService('https://service.example/', responses([{ status: 'ok', desktopAuthProtocol: 1, desktopAudioProtocol: 2 }, { product: 'sonora' }])), 'https://service.example/');
 });

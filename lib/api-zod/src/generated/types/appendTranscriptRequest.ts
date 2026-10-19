@@ -7,6 +7,7 @@
  */
 import type { AppendTranscriptRequestRole } from './appendTranscriptRequestRole';
 import type { AppendTranscriptRequestSource } from './appendTranscriptRequestSource';
+import type { AppendTranscriptRequestSpeaker } from './appendTranscriptRequestSpeaker';
 
 export interface AppendTranscriptRequest {
   /**
@@ -16,4 +17,6 @@ export interface AppendTranscriptRequest {
   text: string;
   role: AppendTranscriptRequestRole;
   source: AppendTranscriptRequestSource;
+  speaker?: AppendTranscriptRequestSpeaker;
+  capturedAt?: Date;
 }

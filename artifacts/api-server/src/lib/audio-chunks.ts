@@ -21,13 +21,14 @@ export function validateAudioChunk(audio: string): Buffer {
 
 /** Bounded per-process abuse/concurrency guard; rate failures do not retain audio. */
 export class TranscriptionGate {
-  private slots = new Map<string, { active: boolean; started: number }>();
+  private slots = new Map<string, { active: boolean; started: number; channels: Partial<Record<"microphone" | "system", number>> }>();
   constructor(private clock = Date.now) {}
-  enter(user: string) {
+  enter(user: string, source: "microphone" | "system" = "microphone") {
     const now = this.clock();
     const slot = this.slots.get(user);
-    if (slot && (slot.active || now - slot.started < 4_000)) return false;
-    this.slots.set(user, { active: true, started: now });
+    const last = slot?.channels[source];
+    if (slot && (slot.active || (last !== undefined && now - last < 4_000))) return false;
+    this.slots.set(user, { active: true, started: now, channels: { ...slot?.channels, [source]: now } });
     // Expire idle keys so many one-time users cannot grow this map indefinitely.
     for (const [key, value] of this.slots) {
       if (!value.active && now - value.started > 60_000) this.slots.delete(key);

@@ -1,13 +1,32 @@
 import { wavBase64 } from "./pcm-wav";
 
+// Both channels share one provider lane; server concurrency limits remain enforced.
+let transcriptionLane: Promise<void> = Promise.resolve();
+
 type Options = {
   source: "microphone" | "system";
   sessionId: string;
-  onText: (text: string) => void;
+  onText: (text: string, metadata: { source: "microphone" | "system"; capturedAt: string }) => void;
   onNotice: (text: string) => void;
   onError: (error: Error) => void;
 };
 export type AudioCapture = { start: () => Promise<void>; stop: () => void };
+
+export function createAudioGroup(captures: AudioCapture[]): AudioCapture {
+  let stopped = false;
+  const stop = () => { stopped = true; captures.forEach(capture => capture.stop()); };
+  return {
+    stop,
+    async start() {
+      try {
+        for (const capture of captures) {
+          if (stopped) return;
+          await capture.start();
+        }
+      } catch (error) { stop(); throw error; }
+    },
+  };
+}
 
 /** Bounded FIFO with at most two waiting chunks; stop on lag instead of silently losing speech. */
 export function createDesktopAudio(options: Options): AudioCapture {
@@ -16,7 +35,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
   let stream: MediaStream | null = null;
   let node: AudioWorkletNode | null = null;
   let active = false;
-  let pending: string[] = [];
+  let pending: { audio: string; capturedAt: string }[] = [];
   let nativeId: string | null = null;
   let unsubscribeNative: (() => void) | undefined;
   const abort = new AbortController();
@@ -42,23 +61,30 @@ export function createDesktopAudio(options: Options): AudioCapture {
     active = true;
     try {
       while (pending.length && !stopped) {
-        const audio = pending.shift()!;
+        const { audio, capturedAt } = pending.shift()!;
+        const previous = transcriptionLane;
+        let release!: () => void;
+        transcriptionLane = new Promise<void>(resolve => { release = resolve; });
+        await previous;
+        try {
+        if (stopped) return;
         const response = await fetch(`/api/sessions/${options.sessionId}/transcribe`, {
-          method: "POST", credentials: "include", signal: abort.signal,
+          method: "POST", credentials: "include", signal: AbortSignal.any([abort.signal, AbortSignal.timeout(30_000)]),
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ audio, mimeType: "audio/wav" }),
+          body: JSON.stringify({ audio, mimeType: "audio/wav", source: options.source }),
         });
         const result = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(result.error || `Transcription failed (${response.status}).`);
-        if (!stopped && result.text) options.onText(result.text);
+        if (!stopped && result.text) options.onText(result.text, { source: options.source, capturedAt });
+        } finally { release(); }
       }
     } catch (error) { fail(error); }
     finally { active = false; }
   };
-  const enqueue = (audio: string) => {
+  const enqueue = (audio: string, capturedAt = new Date().toISOString()) => {
     if (stopped) return;
     if (pending.length >= 2) { fail(new Error("Transcription is falling behind. Capture stopped to avoid dropping speech. Retry or type your question.")); return; }
-    pending.push(audio);
+    pending.push({ audio, capturedAt });
     void pump();
   };
   return {
@@ -71,7 +97,10 @@ export function createDesktopAudio(options: Options): AudioCapture {
           unsubscribeNative = desktop.onNativeAudio(event => {
             if (stopped || event.captureId !== nativeId) return;
             if (event.type === "error") fail(new Error(event.message || "Native audio stopped."));
-            else if (event.type === "audio" && event.audio) enqueue(event.audio);
+            else if (event.type === "audio" && event.audio) {
+              if (event.source && event.source !== options.source) { fail(new Error("Native audio source mismatch.")); return; }
+              enqueue(event.audio, event.capturedAt);
+            }
             else if (event.type === "silence" && event.prolonged) options.onNotice("No audible speech for 18 seconds. Check your source, volume, and OS audio permission.");
           });
           await desktop.startNativeCapture(nativeId, options.source);

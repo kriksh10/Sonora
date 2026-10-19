@@ -63,7 +63,7 @@ function captureHarness(overrides = {}) {
     disconnect() {}
   }
   const context = vm.createContext({
-    Uint8Array, Float32Array, ArrayBuffer, DataView, btoa, AbortController,
+    Uint8Array, Float32Array, ArrayBuffer, DataView, btoa, AbortController, AbortSignal,
     window: { sonoraDesktop: { setCaptureActive: async value => { bridgeStates.push(value); } } },
     navigator: { mediaDevices: { getUserMedia: async () => stream, getDisplayMedia: async () => stream } },
     AudioContext: Context, AudioWorkletNode: Worklet, MediaStream: class { constructor() {} },
@@ -108,6 +108,7 @@ test('stop aborts in-flight request and prevents late transcript callbacks', asy
   const capture = harness.context.subject.createDesktopAudio({ source: 'system', sessionId: 'test', onError() {}, onNotice() {}, onText: text => texts.push(text) });
   await capture.start();
   harness.node.port.onmessage({ data: { samples: new Float32Array(96000).fill(.2) } });
+  await new Promise(resolve => setImmediate(resolve));
   capture.stop();
   assert.equal(requestSignal.aborted, true);
   resolveRequest({ ok: true, json: async () => ({ text: 'late text' }) });
@@ -148,7 +149,7 @@ test('native chunks go to the existing Gemini endpoint; stale events are ignored
   await new Promise(setImmediate);
   assert.equal(requests.length, 1);
   assert.equal(requests[0].url, '/api/sessions/session/transcribe');
-  assert.deepEqual(requests[0].body, { audio: 'validated-native-wav', mimeType: 'audio/wav' });
+  assert.deepEqual(requests[0].body, { audio: 'validated-native-wav', mimeType: 'audio/wav', source: 'system' });
   assert.deepEqual(texts, ['Native transcript']);
   capture.stop();
   assert.equal(f.stops.length, 1);

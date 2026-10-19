@@ -19,8 +19,9 @@ import type { CallSession, TranscriptEntry } from "@workspace/api-client-react";
 import SessionWizard from "@/components/session-wizard";
 import SessionPreferencesDialog from "@/components/session-preferences-dialog";
 import { sessionPreferences, summarizePreferences } from "@/lib/answer-preferences";
-import DesktopToolbar from "@/components/desktop-toolbar";
-import { createDesktopAudio, type AudioCapture } from "@/lib/desktop-audio";
+import LiveSessionView from "@/components/live-session-view";
+import { createDesktopAudio, createAudioGroup, type AudioCapture } from "@/lib/desktop-audio";
+import { createInterviewerQuestions } from "@/lib/interviewer-questions";
 
 type SpeechResult = {
   isFinal: boolean;
@@ -47,6 +48,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, {
     credentials: "include",
     ...init,
+    signal: init?.signal ?? AbortSignal.timeout(20_000),
     headers: {
       ...(init?.body ? { "Content-Type": "application/json" } : {}),
       ...init?.headers,
@@ -63,15 +65,6 @@ function formatDuration(startedAt: string | null, now: number) {
   if (!startedAt) return "00:00";
   const elapsed = Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000));
   return `${String(Math.floor(elapsed / 60)).padStart(2, "0")}:${String(elapsed % 60).padStart(2, "0")}`;
-}
-
-function isLikelyQuestion(text: string) {
-  return (
-    text.includes("?") ||
-    /^(what|how|why|when|where|which|who|can you|could you|would you|tell me|describe|explain|walk me|give me|write|implement|design)\b/i.test(
-      text.trim(),
-    )
-  );
 }
 
 export default function InterviewWorkspace() {
@@ -94,8 +87,13 @@ export default function InterviewWorkspace() {
   const [error, setError] = useState("");
   const [now, setNow] = useState(Date.now());
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  const desktopCaptureRef = useRef<AudioCapture | null>(null);
-  const [audioSource, setAudioSource] = useState<"microphone" | "system">("microphone");
+  const desktopCaptureRef = useRef<AudioCapture[]>([]);
+  const [audioSource, setAudioSource] = useState<"microphone" | "system" | "both">(window.sonoraDesktop ? "system" : "microphone");
+  const [remoteConfirmed, setRemoteConfirmed] = useState(false);
+  const [supportsDualAudio, setSupportsDualAudio] = useState(false);
+  const [liveMode, setLiveMode] = useState(false);
+  const answerAbortRef = useRef<AbortController | null>(null);
+  const transcriptWritesRef = useRef<Promise<unknown>>(Promise.resolve());
   const [compact, setCompact] = useState(Boolean(window.sonoraDesktop));
   const streamRef = useRef<MediaStream | null>(null);
   const answerInFlightRef = useRef(false);
@@ -106,11 +104,17 @@ export default function InterviewWorkspace() {
   const selectedSessionRef = useRef<CallSession | null>(selected);
   selectedSessionRef.current = selected;
   const settingsRevisionRef = useRef(0);
-  const visibleAnswer = busy
-    ? ""
-    : answer ||
+  const visibleAnswer = answer ||
       [...(selected?.transcript ?? [])].reverse().find((entry) => entry.role === "assistant")?.text ||
       "";
+
+  useEffect(() => {
+    let mounted = true;
+    void window.sonoraDesktop?.getState().then(state => {
+      if (mounted) setSupportsDualAudio((state.audioProtocol ?? 0) >= 2);
+    }).catch(() => { /* Old shells continue to support one explicitly chosen source. */ });
+    return () => { mounted = false; };
+  }, []);
 
   const refreshSessions = useCallback(async () => {
     const revision = settingsRevisionRef.current;
@@ -145,11 +149,16 @@ export default function InterviewWorkspace() {
       role: "user" | "assistant",
       text: string,
       source: TranscriptEntry["source"],
+      speaker: "candidate" | "interviewer" | "unknown" = "unknown",
+      capturedAt?: string,
     ) => {
+      const write = async () => {
       const entry: TranscriptEntry = {
         role,
         text,
         source,
+        speaker,
+        ...(capturedAt ? { capturedAt } : {}),
         createdAt: new Date().toISOString(),
       };
       if (session.saveTranscript) {
@@ -157,11 +166,13 @@ export default function InterviewWorkspace() {
           `/sessions/${session.id}/transcript`,
           {
             method: "POST",
-            body: JSON.stringify({ role, text, source }),
+            body: JSON.stringify({ role, text, source, speaker, capturedAt }),
           },
         );
         setSessions((items) =>
-          items.map((item) => (item.id === session.id ? { ...item, transcript: updated.transcript } : item)),
+          items.map((item) => (item.id === session.id ? {
+            ...item, transcript: updated.saveTranscript ? updated.transcript : [...item.transcript, entry],
+          } : item)),
         );
       } else {
         setSessions((items) =>
@@ -172,30 +183,39 @@ export default function InterviewWorkspace() {
           ),
         );
       }
+      };
+      const next = transcriptWritesRef.current.then(write);
+      transcriptWritesRef.current = next.catch(() => {});
+      return next;
     },
     [],
   );
 
   const askGemini = useCallback(
-    async (question: string, source: "typed" | "microphone" = "typed") => {
+    async (question: string, source: "typed" | "microphone" | "system" = "typed", persistQuestion = true) => {
       if (!selected) return;
       const cleanQuestion = question.trim();
       if (!cleanQuestion) return;
       if (answerInFlightRef.current) return;
+      setLiveMode(true);
       answerInFlightRef.current = true;
       setBusy(true);
       setError("");
-      setAnswer("");
+      const controller = new AbortController();
+      answerAbortRef.current = controller;
       try {
-        await saveTranscript(selected, "user", cleanQuestion, source);
+        if (persistQuestion) await saveTranscript(selected, "user", cleanQuestion, source);
+        if (controller.signal.aborted) return;
         const response = await api<{ answer: string; model: string }>(
           `/sessions/${selected.id}/answer`,
           {
             method: "POST",
+            signal: controller.signal,
             body: JSON.stringify({ question: cleanQuestion }),
           },
         );
-        if (selectedIdRef.current === selected.id) setAnswer(response.answer);
+        if (controller.signal.aborted || selectedIdRef.current !== selected.id) return;
+        setAnswer(response.answer);
         if (selected.saveTranscript) {
           await refreshSessions();
         } else {
@@ -214,7 +234,7 @@ export default function InterviewWorkspace() {
           );
         }
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "Gemini could not answer.");
+        if (!controller.signal.aborted && selectedIdRef.current === selected.id) setError(cause instanceof Error ? cause.message : "Gemini could not answer.");
       } finally {
         answerInFlightRef.current = false;
         setBusy(false);
@@ -224,11 +244,28 @@ export default function InterviewWorkspace() {
   );
   const askRef = useRef(askGemini);
   askRef.current = askGemini;
+  const questionsRef = useRef<ReturnType<typeof createInterviewerQuestions> | null>(null);
+  if (!questionsRef.current) questionsRef.current = createInterviewerQuestions({
+    answer: async text => {
+      const session = selectedSessionRef.current;
+      if (!session?.autoAnswer || session.status === "ended") return;
+      const token = captureTokenRef.current;
+      // A manual answer can also occupy the provider lane.
+      while (answerInFlightRef.current) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        if (captureTokenRef.current !== token) return;
+      }
+      if (selectedSessionRef.current?.id !== session.id || !selectedSessionRef.current.autoAnswer || selectedSessionRef.current.status === "ended") return;
+      await askRef.current(text, "system", false);
+    },
+    notice: setNotice,
+  });
 
   const stopCapture = useCallback(() => {
     captureTokenRef.current += 1;
-    desktopCaptureRef.current?.stop();
-    desktopCaptureRef.current = null;
+    for (const capture of desktopCaptureRef.current) capture.stop();
+    desktopCaptureRef.current = [];
+    questionsRef.current?.reset();
     recognitionRef.current?.stop();
     recognitionRef.current = null;
     streamRef.current?.getTracks().forEach(track => track.stop());
@@ -241,10 +278,15 @@ export default function InterviewWorkspace() {
   useEffect(() => {
     const off = window.sonoraDesktop?.onStopCapture(stopCapture);
     window.addEventListener("beforeunload", stopCapture);
-    return () => { off?.(); window.removeEventListener("beforeunload", stopCapture); };
+    window.addEventListener("sonora-stop-audio", stopCapture);
+    return () => { off?.(); window.removeEventListener("beforeunload", stopCapture); window.removeEventListener("sonora-stop-audio", stopCapture); stopCapture(); answerAbortRef.current?.abort(); };
   }, [stopCapture]);
 
   useEffect(() => {
+    answerAbortRef.current?.abort();
+    setAnswer("");
+    setRemoteConfirmed(false);
+    setLiveMode(selectedSessionRef.current?.status === "active");
     setListening(false);
     setRequestingMic(false);
     setInterimTranscript("");
@@ -255,12 +297,13 @@ export default function InterviewWorkspace() {
 
   const startSession = async () => {
     if (!selected) return;
-    await toggleMicrophone();
+    setLiveMode(true);
   };
 
   const endSession = async () => {
     if (!selected) return;
     stopCapture();
+    answerAbortRef.current?.abort();
     try {
       const updated = await api<CallSession>(`/sessions/${selected.id}`, {
         method: "PATCH",
@@ -284,23 +327,37 @@ export default function InterviewWorkspace() {
       setError("This session has ended. Create a new session to start microphone transcription.");
       return;
     }
+    setLiveMode(true);
+    if (!window.sonoraDesktop && audioSource !== "microphone") {
+      setError("Call audio requires the packaged desktop app. Browser transcription supports your microphone only.");
+      return;
+    }
     if (window.sonoraDesktop) {
       const captureToken = ++captureTokenRef.current;
       setRequestingMic(true);
       setError("");
-      const capture = createDesktopAudio({
-        source: audioSource,
+      const sources: ("microphone" | "system")[] = audioSource === "both" ? ["microphone", "system"] : [audioSource];
+      if (sources.length === 2 && !supportsDualAudio) {
+        setRequestingMic(false);
+        setError("Rebuild and install the updated desktop app to capture both channels separately.");
+        return;
+      }
+      const captures = sources.map(source => createDesktopAudio({
+        source,
         sessionId: selected.id,
-        onText: text => {
+        onText: (text, metadata) => {
           if (captureToken !== captureTokenRef.current) return;
           const activeSession = selectedSessionRef.current;
           if (!activeSession || activeSession.id !== selected.id) return;
-          if (activeSession.autoAnswer && isLikelyQuestion(text) && !answerInFlightRef.current) {
-            void askRef.current(text, "microphone");
-          } else {
-            void saveTranscript(activeSession, "user", text, "microphone").catch(cause =>
-              setError(cause instanceof Error ? cause.message : "Could not save transcript."));
-          }
+          const speaker = !remoteConfirmed ? "unknown" : source === "microphone" ? "candidate" : "interviewer";
+          void saveTranscript(activeSession, "user", text, metadata.source, speaker, metadata.capturedAt).then(() => {
+            if (captureToken !== captureTokenRef.current) return;
+            if (selectedSessionRef.current?.autoAnswer) questionsRef.current?.push(text, speaker);
+          }).catch(cause => {
+            if (captureToken !== captureTokenRef.current) return;
+            stopCapture();
+            setError(cause instanceof Error ? cause.message : "Could not save transcript. Capture stopped.");
+          });
         },
         onNotice: text => { if (captureToken === captureTokenRef.current) setNotice(text); },
         onError: cause => {
@@ -308,20 +365,22 @@ export default function InterviewWorkspace() {
           stopCapture();
           setError(cause.message);
         },
-      });
-      desktopCaptureRef.current = capture;
+      }));
+      const group = createAudioGroup(captures);
+      desktopCaptureRef.current = [group];
       try {
-        await capture.start();
-        if (captureToken !== captureTokenRef.current) { capture.stop(); return; }
+        await group.start();
+        if (captureToken !== captureTokenRef.current) { group.stop(); return; }
         if (selected.status === "ready") {
           const updated = await api<CallSession>(`/sessions/${selected.id}`, {
             method: "PATCH", body: JSON.stringify({ status: "active" }),
           });
+          if (captureToken !== captureTokenRef.current) { group.stop(); return; }
           setSessions(items => items.map(item => item.id === updated.id ? updated : item));
         }
-        if (captureToken !== captureTokenRef.current) { capture.stop(); return; }
+        if (captureToken !== captureTokenRef.current) { captures.forEach(item => item.stop()); return; }
         setListening(true);
-        setNotice(`${audioSource === "system" ? "System audio" : "Microphone"} is on. Short audio chunks are sent to Gemini for transcription. Processing delay is expected; Stop is also available from the tray.`);
+        setNotice(`${audioSource === "both" ? "Separate microphone and call channels are" : audioSource === "system" ? "Call audio is" : "Microphone is"} on. ${audioSource === "microphone" ? "Your microphone never triggers auto-answer; use Call audio for interviewer questions." : remoteConfirmed ? "Only confirmed remote questions can trigger auto-answer when enabled in Answer settings." : "Speaker mapping unconfirmed: auto-answer is paused. Stop audio to confirm it."} Six-second chunks are transcribed by Gemini; use headphones to reduce echo.`);
       } catch (cause) {
         if (captureToken !== captureTokenRef.current) return;
         stopCapture();
@@ -372,14 +431,10 @@ export default function InterviewWorkspace() {
           if (event.results[index].isFinal) {
             const activeSession = selectedSessionRef.current;
             if (activeSession) {
-              if (activeSession.autoAnswer && isLikelyQuestion(text) && !answerInFlightRef.current) {
-                void askRef.current(text, "microphone");
-              } else {
-                void saveTranscript(activeSession, "user", text, "microphone").catch(
+                void saveTranscript(activeSession, "user", text, "microphone", remoteConfirmed ? "candidate" : "unknown").catch(
                   (cause) =>
                     setError(cause instanceof Error ? cause.message : "Could not save transcript."),
                 );
-              }
             }
           } else {
             interim += `${text} `;
@@ -411,6 +466,10 @@ export default function InterviewWorkspace() {
           method: "PATCH",
           body: JSON.stringify({ status: "active" }),
         });
+        if (captureToken !== captureTokenRef.current) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
         setSessions((items) =>
           items.map((item) => (item.id === updated.id ? updated : item)),
         );
@@ -454,7 +513,22 @@ export default function InterviewWorkspace() {
   });
 
   return (
-    <main className="min-h-screen bg-[#101113] text-[#e7e8eb]">
+    <main className={`${liveMode && selected ? "" : "min-h-screen"} text-[#e7e8eb]`}
+      style={{ background: window.sonoraDesktop ? "rgba(16,17,19,var(--sonora-background-opacity,0.85))" : "#101113" }}>
+      {liveMode && selected ? (
+        <LiveSessionView
+          session={selected} answer={answer} busy={busy} listening={listening}
+          requestingAudio={requestingMic} interimTranscript={interimTranscript}
+          duration={formatDuration(selected.startedAt, now)} notice={notice} error={error}
+          audioSource={audioSource} remoteConfirmed={remoteConfirmed} supportsDualAudio={supportsDualAudio}
+          onAudioSourceChange={setAudioSource} onRemoteConfirmedChange={setRemoteConfirmed}
+          onToggleAudio={() => void toggleMicrophone()} onEnd={() => void endSession()}
+          onBack={() => { stopCapture(); answerAbortRef.current?.abort(); setLiveMode(false); }}
+          onPreferences={() => setEditOpen(true)}
+          question={answerInput} onQuestionChange={setAnswerInput}
+          onAsk={() => void askGemini(answerInput)} onUseTranscript={setAnswerInput}
+        />
+      ) : (<>
       <header className={`${window.sonoraDesktop ? "desktop-drag" : ""} flex h-[60px] items-center justify-between border-b border-white/10 bg-[#17181b] px-4 sm:px-6`}>
         <a href={import.meta.env.BASE_URL} className="flex items-center gap-2 text-lg font-bold tracking-tight text-white">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#75c853] text-[#19321d]"><Sparkles size={18} /></span>
@@ -474,7 +548,6 @@ export default function InterviewWorkspace() {
       </header>
 
       <div className={`mx-auto max-w-[1440px] px-4 ${compact ? "py-3" : "py-6 sm:px-6 lg:px-8"}`}>
-        <DesktopToolbar captureActive={listening} onStop={stopCapture} />
         {window.sonoraDesktop && <div className="mb-4 flex flex-wrap gap-2">
           <select aria-label="Current desktop session" value={selectedId ?? ""} onChange={event => { setSelectedId(event.target.value || null); setAnswer(""); setError(""); }} className="min-w-0 flex-1 rounded-lg border border-white/10 bg-[#17181b] px-3 py-2 text-sm"><option value="">Choose a session</option>{sessions.map(item => <option key={item.id} value={item.id}>{item.title} · {item.status}</option>)}</select>
           <button onClick={() => setCompact(value => !value)} className="rounded-lg border border-white/10 px-3 py-2 text-xs">{compact ? "Show session browser" : "Compact assistant"}</button>
@@ -662,6 +735,7 @@ export default function InterviewWorkspace() {
           )}
         </div>
       </div>
+      </>)}
 
       {createOpen && (
         <SessionWizard
@@ -682,6 +756,7 @@ export default function InterviewWorkspace() {
           onClose={() => setEditOpen(false)}
           onSaved={(updated) => {
             settingsRevisionRef.current += 1;
+            if (!updated.autoAnswer) questionsRef.current?.reset();
             if (selectedSessionRef.current?.id === updated.id) selectedSessionRef.current = updated;
             if (listening && selected.language !== updated.language && !window.sonoraDesktop) {
               stopCapture();

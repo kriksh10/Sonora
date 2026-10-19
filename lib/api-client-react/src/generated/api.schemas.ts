@@ -124,6 +124,14 @@ export const SessionAudioChunkMimeType = {
   'audio/wav': 'audio/wav',
 } as const;
 
+export type SessionAudioChunkSource = typeof SessionAudioChunkSource[keyof typeof SessionAudioChunkSource];
+
+
+export const SessionAudioChunkSource = {
+  microphone: 'microphone',
+  system: 'system',
+} as const;
+
 export interface SessionAudioChunk {
   /**
      * Base64 PCM WAV, mono 16 kHz, at most eight seconds
@@ -132,6 +140,7 @@ export interface SessionAudioChunk {
      */
   audio: string;
   mimeType: SessionAudioChunkMimeType;
+  source?: SessionAudioChunkSource;
 }
 
 export interface AudioTranscription {
@@ -166,7 +175,17 @@ export type AppendTranscriptRequestSource = typeof AppendTranscriptRequestSource
 export const AppendTranscriptRequestSource = {
   typed: 'typed',
   microphone: 'microphone',
+  system: 'system',
   ai: 'ai',
+} as const;
+
+export type AppendTranscriptRequestSpeaker = typeof AppendTranscriptRequestSpeaker[keyof typeof AppendTranscriptRequestSpeaker];
+
+
+export const AppendTranscriptRequestSpeaker = {
+  candidate: 'candidate',
+  interviewer: 'interviewer',
+  unknown: 'unknown',
 } as const;
 
 export interface AppendTranscriptRequest {
@@ -177,6 +196,8 @@ export interface AppendTranscriptRequest {
   text: string;
   role: AppendTranscriptRequestRole;
   source: AppendTranscriptRequestSource;
+  speaker?: AppendTranscriptRequestSpeaker;
+  capturedAt?: string;
 }
 
 export interface SessionAnswerRequest {
@@ -258,13 +279,25 @@ export type TranscriptEntrySource = typeof TranscriptEntrySource[keyof typeof Tr
 export const TranscriptEntrySource = {
   typed: 'typed',
   microphone: 'microphone',
+  system: 'system',
   ai: 'ai',
+} as const;
+
+export type TranscriptEntrySpeaker = typeof TranscriptEntrySpeaker[keyof typeof TranscriptEntrySpeaker];
+
+
+export const TranscriptEntrySpeaker = {
+  candidate: 'candidate',
+  interviewer: 'interviewer',
+  unknown: 'unknown',
 } as const;
 
 export interface TranscriptEntry {
   role: TranscriptEntryRole;
   text: string;
   source: TranscriptEntrySource;
+  speaker?: TranscriptEntrySpeaker;
+  capturedAt?: string;
   createdAt: string;
 }
 
@@ -323,8 +356,16 @@ export const HealthStatusDesktopAuthProtocol = {
   NUMBER_1: 1,
 } as const;
 
+export type HealthStatusDesktopAudioProtocol = typeof HealthStatusDesktopAudioProtocol[keyof typeof HealthStatusDesktopAudioProtocol];
+
+
+export const HealthStatusDesktopAudioProtocol = {
+  NUMBER_2: 2,
+} as const;
+
 export interface HealthStatus {
   desktopAuthProtocol?: HealthStatusDesktopAuthProtocol;
+  desktopAudioProtocol?: HealthStatusDesktopAudioProtocol;
   status: string;
 }
 

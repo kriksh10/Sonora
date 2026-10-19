@@ -27,7 +27,7 @@ router.post("/sessions/:id/transcribe", async (req, res): Promise<void> => {
   const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
   const apiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
   if (!baseUrl || !apiKey) { res.status(503).json({ error: "Transcription is not configured." }); return; }
-  if (!gate.enter(userId)) { res.status(429).json({ error: "A transcription is already running or was requested too recently." }); return; }
+  if (!gate.enter(userId, body.data.source ?? "microphone")) { res.status(429).json({ error: "A transcription is already running or this audio channel was requested too recently." }); return; }
   try {
     const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "", baseUrl, timeout: 30_000 } });
     let text = "";

@@ -135,6 +135,42 @@ function createNativeAudioHost({ binary, confirm, emit, onActive, spawnProcess =
       }
     });
   }
-  return { start, stop, shutdown, isActive: () => Boolean(current?.ready) };
+  return { start, stop, shutdown, isActive: () => Boolean(current?.ready), isBusy: () => Boolean(current || consentBusy) };
 }
-module.exports = { createNativeAudioHost, validWav };
+
+/** Two independently permissioned helpers, never a mixed recording. */
+function createNativeAudioManager(options) {
+  const channels = new Map();
+  const changed = () => options.onActive([...channels.values()].some(record => record.host.isActive()));
+  return {
+    async start(id, source) {
+      if (!['microphone', 'system'].includes(source)) throw new Error('Invalid native audio source.');
+      for (const [key, record] of channels) {
+        if (!record.host.isBusy()) channels.delete(key);
+        else if (key === source || record.id === id) throw new Error('This audio channel is already starting, active, or stopping.');
+      }
+      const host = createNativeAudioHost({
+        ...options,
+        emit: event => options.emit({ ...event, source, capturedAt: new Date().toISOString() }),
+        onActive: changed,
+      });
+      channels.set(source, { id, host });
+      try { return await host.start(id, source); }
+      catch (error) {
+        if (!host.isBusy()) channels.delete(source);
+        changed();
+        throw error;
+      }
+    },
+    stop(id) {
+      let stopped = false;
+      for (const record of channels.values()) {
+        if (!id || record.id === id) stopped = record.host.stop(id) || stopped;
+      }
+      return stopped;
+    },
+    shutdown() { for (const record of channels.values()) record.host.shutdown(); },
+    isActive: () => [...channels.values()].some(record => record.host.isActive()),
+  };
+}
+module.exports = { createNativeAudioHost, createNativeAudioManager, validWav };

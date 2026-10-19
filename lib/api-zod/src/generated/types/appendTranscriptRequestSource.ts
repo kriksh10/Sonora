@@ -12,5 +12,6 @@ export type AppendTranscriptRequestSource = typeof AppendTranscriptRequestSource
 export const AppendTranscriptRequestSource = {
   typed: 'typed',
   microphone: 'microphone',
+  system: 'system',
   ai: 'ai',
 } as const;

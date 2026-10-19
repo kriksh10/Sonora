@@ -76,3 +76,11 @@ The user wants a transparent, freely movable desktop app. Once a session starts,
 **Why:** The user reported these usability problems after using the installed app and explicitly prioritized the live transcript.
 
 **How to apply:** Preserve transcript-first live mode when revising the desktop layout. Keep setup/history separate from active-call content, and distinguish visual transparency from screen-share exclusion.
+
+## Source attribution is not speaker identity
+
+Keep microphone and system/call audio separate. Treat speaker labels as explicit user-confirmed source mappings, not voice identification. Candidate and Unknown speech must not independently trigger automatic answers; preserve manual question selection for mixed or uncertain audio.
+
+**Why:** The user asked how interviewer and candidate are distinguished because the earlier question heuristic could answer the candidate's own speech. A system loopback may contain several people, other apps or locally monitored microphone audio.
+
+**How to apply:** Preserve source provenance through transcription, history and answer context. When supporting multiple capture streams, retain a user-wide in-flight limit but allow each source's legitimate cadence; a single shared minimum interval can reject healthy simultaneous streams.

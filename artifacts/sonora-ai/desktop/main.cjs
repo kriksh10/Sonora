@@ -2,8 +2,9 @@ const { app, BrowserWindow, globalShortcut, ipcMain, Menu, Tray, nativeImage, sc
 const path = require('node:path');
 const fs = require('node:fs');
 const { validateServiceUrl, isAllowedNavigation, isTrustedFrame } = require('./security.cjs');
-const { createNativeAudioHost } = require('./native-audio-host.cjs');
+const { createNativeAudioManager } = require('./native-audio-host.cjs');
 const { createBrowserAuth } = require('./browser-auth.cjs');
+const { opacity, safeBounds } = require('./window-preferences.cjs');
 
 let win;
 let tray;
@@ -15,11 +16,24 @@ let shortcutRegistered = false;
 let target;
 let nativeAudio;
 let browserAuth;
+let backgroundOpacity = 0.85;
+let preferencesPath;
+let preferencesError = '';
+let saveTimer;
 const shortcut = 'CommandOrControl+Shift+Space';
 const development = !app.isPackaged && process.argv.includes('--dev');
 
 function state() {
-  return { visible: win?.isVisible() ?? false, alwaysOnTop, contentProtection, captureActive, shortcutRegistered, platform: process.platform };
+  return { visible: win?.isVisible() ?? false, alwaysOnTop, contentProtection, captureActive, shortcutRegistered, platform: process.platform,
+    audioProtocol: 2, backgroundOpacity, preferencesError };
+}
+function persistWindow() {
+  if (!preferencesPath || !win || win.isDestroyed()) return;
+  try {
+    fs.writeFileSync(`${preferencesPath}.tmp`, JSON.stringify({ bounds: win.getBounds(), backgroundOpacity }), { mode: 0o600 });
+    fs.renameSync(`${preferencesPath}.tmp`, preferencesPath);
+    preferencesError = '';
+  } catch { preferencesError = 'Window preferences could not be saved. Changes apply for this launch only.'; }
 }
 function broadcast() {
   if (win && !win.isDestroyed()) win.webContents.send('overlay:state-changed', state());
@@ -85,6 +99,7 @@ function registerIpc() {
     return browserAuth.cancel(id);
   });
   handle('audio:start', (id, source) => nativeAudio.start(id, source));
+  handle('audio:stop-all', stopCapture);
   handle('audio:stop', id => {
     if (typeof id !== 'string') throw new Error('Expected a capture identifier.');
     return nativeAudio.stop(id);
@@ -97,6 +112,12 @@ function registerIpc() {
     alwaysOnTop = value; win.setAlwaysOnTop(value, 'floating'); broadcast(); return state();
   });
   handle('overlay:set-content-protection', setContentProtection);
+  handle('overlay:set-background-opacity', value => {
+    backgroundOpacity = opacity(value);
+    persistWindow();
+    broadcast();
+    return state();
+  });
   handle('overlay:set-capture-active', value => {
     if (typeof value !== 'boolean') throw new Error('Expected boolean.');
     if (nativeAudio?.isActive()) return state();
@@ -142,18 +163,26 @@ function configurePermissions() {
   }, { useSystemPicker: false });
 }
 function createWindow() {
-  const display = screen.getPrimaryDisplay().workAreaSize;
+  preferencesPath = path.join(app.getPath('userData'), 'window-preferences.json');
+  let saved;
+  try {
+    saved = JSON.parse(fs.readFileSync(preferencesPath, 'utf8'));
+    backgroundOpacity = opacity(saved.backgroundOpacity);
+  } catch (error) {
+    if (error.code !== 'ENOENT') preferencesError = 'Saved window preferences were invalid; safe defaults were restored.';
+  }
+  const bounds = safeBounds(saved?.bounds, screen.getAllDisplays());
   win = new BrowserWindow({
-    width: Math.min(640, display.width), height: Math.min(780, display.height),
-    minWidth: 390, minHeight: 460, show: false, frame: false,
-    backgroundColor: '#101113', alwaysOnTop: true,
+    ...bounds,
+    minWidth: Math.min(390, bounds.width), minHeight: Math.min(460, bounds.height), show: false, frame: false,
+    transparent: true, backgroundColor: '#00000000', resizable: true, alwaysOnTop: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'), partition: 'persist:sonora',
       contextIsolation: true, nodeIntegration: false, sandbox: true,
       webSecurity: true, backgroundThrottling: false,
     },
   });
-  nativeAudio = createNativeAudioHost({
+  nativeAudio = createNativeAudioManager({
     binary: app.isPackaged
       ? path.join(process.resourcesPath, 'native', process.platform === 'win32' ? 'sonora-audio.exe' : 'sonora-audio')
       : path.resolve(__dirname, '../../../generated-artifacts/native', `${process.platform}-${process.arch}`, process.platform === 'win32' ? 'sonora-audio.exe' : 'sonora-audio'),
@@ -170,6 +199,17 @@ function createWindow() {
     onActive: value => { captureActive = value; broadcast(); },
   });
   win.setContentProtection(contentProtection);
+  const remember = () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(persistWindow, 300);
+  };
+  win.on('moved', remember);
+  win.on('resized', remember);
+  const recoverPosition = () => {
+    if (!win.isDestroyed()) win.setBounds(safeBounds(win.getBounds(), screen.getAllDisplays()));
+  };
+  screen.on('display-removed', recoverPosition);
+  screen.on('display-metrics-changed', recoverPosition);
   win.setMenuBarVisibility(false);
   win.webContents.on('will-navigate', (event, url) => {
     if (!isAllowedNavigation(url, target)) event.preventDefault();
@@ -230,6 +270,6 @@ else {
     app.on('activate', show);
   });
 }
-app.on('before-quit', () => { quitting = true; void browserAuth?.cancel(); nativeAudio?.shutdown(); win?.destroy(); });
+app.on('before-quit', () => { quitting = true; clearTimeout(saveTimer); persistWindow(); void browserAuth?.cancel(); nativeAudio?.shutdown(); win?.destroy(); });
 app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('window-all-closed', () => { if (quitting) app.quit(); });

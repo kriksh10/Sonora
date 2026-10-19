@@ -157,7 +157,9 @@ export const UpdateSessionPreferencesResponse = zod.object({
   "transcript": zod.array(zod.object({
   "role": zod.enum(['user', 'assistant']),
   "text": zod.string(),
-  "source": zod.enum(['typed', 'microphone', 'ai']),
+  "source": zod.enum(['typed', 'microphone', 'system', 'ai']),
+  "speaker": zod.enum(['candidate', 'interviewer', 'unknown']).optional(),
+  "capturedAt": zod.coerce.date().optional(),
   "createdAt": zod.coerce.date()
 })),
   "createdAt": zod.coerce.date(),
@@ -172,6 +174,7 @@ export const UpdateSessionPreferencesResponse = zod.object({
  */
 export const HealthCheckResponse = zod.object({
   "desktopAuthProtocol": zod.literal(1).optional(),
+  "desktopAudioProtocol": zod.literal(2).optional(),
   "status": zod.string()
 })
 
@@ -204,7 +207,9 @@ export const ListSessionsResponseItem = zod.object({
   "transcript": zod.array(zod.object({
   "role": zod.enum(['user', 'assistant']),
   "text": zod.string(),
-  "source": zod.enum(['typed', 'microphone', 'ai']),
+  "source": zod.enum(['typed', 'microphone', 'system', 'ai']),
+  "speaker": zod.enum(['candidate', 'interviewer', 'unknown']).optional(),
+  "capturedAt": zod.coerce.date().optional(),
   "createdAt": zod.coerce.date()
 })),
   "createdAt": zod.coerce.date(),
@@ -278,7 +283,9 @@ export const CreateSessionResponse = zod.object({
   "transcript": zod.array(zod.object({
   "role": zod.enum(['user', 'assistant']),
   "text": zod.string(),
-  "source": zod.enum(['typed', 'microphone', 'ai']),
+  "source": zod.enum(['typed', 'microphone', 'system', 'ai']),
+  "speaker": zod.enum(['candidate', 'interviewer', 'unknown']).optional(),
+  "capturedAt": zod.coerce.date().optional(),
   "createdAt": zod.coerce.date()
 })),
   "createdAt": zod.coerce.date(),
@@ -319,7 +326,9 @@ export const GetSessionResponse = zod.object({
   "transcript": zod.array(zod.object({
   "role": zod.enum(['user', 'assistant']),
   "text": zod.string(),
-  "source": zod.enum(['typed', 'microphone', 'ai']),
+  "source": zod.enum(['typed', 'microphone', 'system', 'ai']),
+  "speaker": zod.enum(['candidate', 'interviewer', 'unknown']).optional(),
+  "capturedAt": zod.coerce.date().optional(),
   "createdAt": zod.coerce.date()
 })),
   "createdAt": zod.coerce.date(),
@@ -364,7 +373,9 @@ export const UpdateSessionResponse = zod.object({
   "transcript": zod.array(zod.object({
   "role": zod.enum(['user', 'assistant']),
   "text": zod.string(),
-  "source": zod.enum(['typed', 'microphone', 'ai']),
+  "source": zod.enum(['typed', 'microphone', 'system', 'ai']),
+  "speaker": zod.enum(['candidate', 'interviewer', 'unknown']).optional(),
+  "capturedAt": zod.coerce.date().optional(),
   "createdAt": zod.coerce.date()
 })),
   "createdAt": zod.coerce.date(),
@@ -387,7 +398,9 @@ export const appendTranscriptBodyTextMax = 8000;
 export const AppendTranscriptBody = zod.object({
   "text": zod.string().min(1).max(appendTranscriptBodyTextMax),
   "role": zod.enum(['user', 'assistant']),
-  "source": zod.enum(['typed', 'microphone', 'ai'])
+  "source": zod.enum(['typed', 'microphone', 'system', 'ai']),
+  "speaker": zod.enum(['candidate', 'interviewer', 'unknown']).optional(),
+  "capturedAt": zod.coerce.date().optional()
 })
 
 export const AppendTranscriptResponse = zod.object({
@@ -415,7 +428,9 @@ export const AppendTranscriptResponse = zod.object({
   "transcript": zod.array(zod.object({
   "role": zod.enum(['user', 'assistant']),
   "text": zod.string(),
-  "source": zod.enum(['typed', 'microphone', 'ai']),
+  "source": zod.enum(['typed', 'microphone', 'system', 'ai']),
+  "speaker": zod.enum(['candidate', 'interviewer', 'unknown']).optional(),
+  "capturedAt": zod.coerce.date().optional(),
   "createdAt": zod.coerce.date()
 })),
   "createdAt": zod.coerce.date(),
@@ -459,7 +474,8 @@ export const transcribeSessionAudioBodyAudioMax = 400000;
 
 export const TranscribeSessionAudioBody = zod.object({
   "audio": zod.string().min(transcribeSessionAudioBodyAudioMin).max(transcribeSessionAudioBodyAudioMax).describe('Base64 PCM WAV, mono 16 kHz, at most eight seconds'),
-  "mimeType": zod.enum(['audio/wav'])
+  "mimeType": zod.enum(['audio/wav']),
+  "source": zod.enum(['microphone', 'system']).optional()
 })
 
 export const transcribeSessionAudioResponseTextMax = 8000;

@@ -1,5 +1,16 @@
 # Sonora desktop release
 
+## Live view and separate audio channels
+
+The current source is version 0.2.1. Native transparency, saved window placement and two-channel capture require rebuilding and installing this shell; republishing only replaces the hosted interface.
+
+- Drag the persistent Sonora top bar to move the window, including while the content is scrolling. Resize from window edges. Window settings provide background opacity from 45% to 100% and an opaque fallback. This changes the backdrop, not the text opacity or screen-sharing protection.
+- Opening a session switches to the transcript-first live view. Answers have their own pane; both panes follow the latest content until you scroll up, and Jump to latest resumes following. Answers arrive as complete responses; audio transcription uses six-second chunks, not word-by-word streaming.
+- On desktop, choose Call audio for remote speech or Both for separately captured microphone and system audio. Confirm “Mic = me · call = interviewer” only when that is true for your setup. Enable Auto Generate in Answer settings if desired; its state is shown in the live title.
+- Microphone speech never independently triggers automatic answers. Confirmed remote question turns can trigger them; uncertain sources stay Unknown/Remote and can be selected manually. Source mapping is not voice identification or multi-person diarization. System audio can include other applications, multiple people, or your voice if your system monitors it. Use headphones, and leave the mapping unconfirmed if uncertain.
+- Both channels require separate native permissions. Denial/failure cancels the group and stops already-started capture. Stop, End, session switch, sign-out and Quit clean up every channel. Hiding retains the documented active-capture behavior; use the window or tray Stop control.
+- Current packaging requires hosted health support for authentication protocol 1 and audio protocol 2. Publish the latest service before building. No current installer is advertised as verified until real platform checks pass.
+
 ## Release status
 
 **Desktop release is not yet verified.** A user-built older Windows installer exists, but it predates the current browser sign-in handoff and visibility updates. No current Windows/Mac installer is hosted. The download page deliberately shows unavailable builds rather than offering broken links.

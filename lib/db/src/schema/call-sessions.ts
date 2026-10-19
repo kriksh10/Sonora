@@ -10,7 +10,9 @@ import {
 export type TranscriptEntry = {
   role: "user" | "assistant";
   text: string;
-  source: "typed" | "microphone" | "ai";
+  source: "typed" | "microphone" | "system" | "ai";
+  speaker?: "candidate" | "interviewer" | "unknown";
+  capturedAt?: string;
   createdAt: string;
 };
 

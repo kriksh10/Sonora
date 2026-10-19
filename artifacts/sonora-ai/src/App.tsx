@@ -85,6 +85,9 @@ type DesktopState = {
   captureActive: boolean;
   shortcutRegistered: boolean;
   platform: string;
+  audioProtocol?: number;
+  backgroundOpacity?: number;
+  preferencesError?: string;
 };
 
 type SonoraDesktopBridge = {
@@ -96,6 +99,7 @@ type SonoraDesktopBridge = {
   toggle: () => Promise<DesktopState>;
   quit: () => Promise<void>;
   getState: () => Promise<DesktopState>;
+  setBackgroundOpacity?: (value: number) => Promise<DesktopState>;
   startBrowserSignIn?: () => Promise<{ id: string; code: string; expiresAt: string }>;
   pollBrowserSignIn?: (id: string) => Promise<{ status: "pending" | "complete"; ticket?: string }>;
   cancelBrowserSignIn?: (id: string) => Promise<void>;
@@ -104,9 +108,10 @@ type SonoraDesktopBridge = {
   setCaptureActive: (value: boolean) => Promise<DesktopState>;
   startNativeCapture?: (captureId: string, source: "microphone" | "system") => Promise<{ captureId: string }>;
   stopNativeCapture?: (captureId: string) => Promise<boolean>;
+  stopAllCapture?: () => Promise<void>;
   onNativeAudio?: (listener: (event: {
     captureId: string; type: "audio" | "silence" | "error";
-    audio?: string; prolonged?: boolean; message?: string;
+    audio?: string; prolonged?: boolean; message?: string; source?: "microphone" | "system"; capturedAt?: string;
   }) => void) => () => void;
   onStopCapture: (listener: () => void) => () => void;
   onStateChange: (listener: (state: DesktopState) => void) => () => void;

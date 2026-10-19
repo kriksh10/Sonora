@@ -7,10 +7,13 @@
  */
 import type { TranscriptEntryRole } from './transcriptEntryRole';
 import type { TranscriptEntrySource } from './transcriptEntrySource';
+import type { TranscriptEntrySpeaker } from './transcriptEntrySpeaker';
 
 export interface TranscriptEntry {
   role: TranscriptEntryRole;
   text: string;
   source: TranscriptEntrySource;
+  speaker?: TranscriptEntrySpeaker;
+  capturedAt?: Date;
   createdAt: Date;
 }

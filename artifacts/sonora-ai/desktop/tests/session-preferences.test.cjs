@@ -21,9 +21,47 @@ const standard = () => ({ ...preferences.standardAnswerPreferences });
 const plain = value => JSON.parse(JSON.stringify(value));
 const id = '550e8400-e29b-41d4-a716-446655440000';
 
+test('audio source and speaker metadata persist, remain owner-scoped, and reach Gemini without relabeling legacy speech', async () => {
+  const f = fixture();
+  f.rows.push({ id, userId: 'user-a', status: 'active', saveTranscript: true, answerPreference: 'concise',
+    transcript: [{ role: 'user', source: 'microphone', text: 'Legacy', createdAt: '2026-10-19T11:00:00.000Z' }] });
+  const entry = { role: 'user', source: 'system', speaker: 'interviewer', text: 'Why this design?', capturedAt: '2026-10-19T12:00:00.000Z' };
+  assert.equal((await f.call('post', '/sessions/:id/transcript', entry, 'user-b')).code, 404);
+  const response = await f.call('post', '/sessions/:id/transcript', entry);
+  assert.equal(response.code, 200);
+  assert.equal(f.rows[0].transcript[0].speaker, undefined);
+  assert.equal(f.rows[0].transcript[1].source, 'system');
+  assert.equal(f.rows[0].transcript[1].speaker, 'interviewer');
+  assert.equal(f.rows[0].transcript[1].capturedAt, entry.capturedAt);
+  for (const invalid of [{ ...entry, source: 'mixed' }, { ...entry, speaker: 'person-1' }, { ...entry, capturedAt: 'yesterday' }]) {
+    assert.equal((await f.call('post', '/sessions/:id/transcript', invalid)).code, 400);
+  }
+  await f.call('post', '/sessions/:id/answer', { question: entry.text });
+  assert.ok(f.requests[0].contents.includes('interviewer [system]: Why this design'));
+  assert.ok(f.requests[0].contents.includes('Unknown speaker [microphone]: Legacy'));
+  const count = f.rows[0].transcript.length;
+  f.rows[0].saveTranscript = false;
+  await f.call('post', '/sessions/:id/transcript', entry);
+  assert.equal(f.rows[0].transcript.length, count);
+});
+
+test('ending wins over late activation; repeated activation cannot reset the start time', async () => {
+  const f = fixture();
+  f.rows.push({ id, userId: 'user-a', status: 'ready', transcript: [], saveTranscript: true });
+  assert.equal((await f.call('patch', '/sessions/:id', { status: 'active' })).code, 200);
+  const startedAt = f.rows[0].startedAt;
+  assert.equal((await f.call('patch', '/sessions/:id', { status: 'active' })).code, 200);
+  assert.equal(f.rows[0].startedAt, startedAt);
+  assert.equal((await f.call('patch', '/sessions/:id', { status: 'ended' })).code, 200);
+  assert.equal((await f.call('patch', '/sessions/:id', { status: 'active' })).code, 400);
+  assert.equal((await f.call('patch', '/sessions/:id', { status: 'ready' })).code, 400);
+  assert.equal(f.rows[0].status, 'ended');
+  assert.equal((await f.call('patch', '/sessions/:id', { status: 'active' }, 'other-user')).code, 404);
+});
+
 function fixture() {
   const handlers = new Map(), rows = [], defaults = [], requests = [];
-  const sessionTable = Object.fromEntries(['id', 'userId', 'saveTranscript', 'transcript', 'createdAt'].map(k => [k, k]));
+  const sessionTable = Object.fromEntries(['id', 'userId', 'status', 'saveTranscript', 'transcript', 'createdAt'].map(k => [k, k]));
   const defaultsTable = { userId: 'userId', preferences: 'preferences' };
   const collection = table => table === sessionTable ? rows : defaults;
   const matches = (row, expr) => !expr || (expr.and ? expr.and.every(e => matches(row, e)) : row[expr.key] === expr.value);

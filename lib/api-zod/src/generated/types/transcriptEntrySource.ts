@@ -12,5 +12,6 @@ export type TranscriptEntrySource = typeof TranscriptEntrySource[keyof typeof Tr
 export const TranscriptEntrySource = {
   typed: 'typed',
   microphone: 'microphone',
+  system: 'system',
   ai: 'ai',
 } as const;

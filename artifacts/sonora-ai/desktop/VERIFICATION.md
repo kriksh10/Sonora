@@ -1,6 +1,18 @@
 # Session setup and answer preferences
 
-## Current source update — desktop 0.2.0
+## Current source update — desktop 0.2.1
+
+The live view is transcript-first, with a separate answer pane, independent follow/pause/jump scrolling, a compact consolidated window toolbar, background-opacity controls and persistent safe window bounds. Native capture supports two independently permissioned helper processes with source/time metadata; microphone speech cannot trigger automatic answers, and remote speech requires explicit source confirmation. Question assembly, bounded buffering and deduplication replace single-chunk/question-punctuation triggering.
+
+Verified in the Linux workspace:
+- All 62 deterministic JavaScript tests pass. New coverage includes native channel isolation/aggregate state, partial-start rollback and cancellation, serialized dual-source transcription and metadata, per-user concurrency with per-source rate limiting, candidate/Unknown suppression, chunk assembly, bounded question queue/overflow, replay deduplication, scroll follow/pause/jump/resize/reset, opacity validation, monitor-removal recovery, and late activation after End/idempotent-start protection.
+- API/frontend type checks, frontend production build and desktop CommonJS syntax checks pass. Both managed services restart, and the actual development health response reports authentication protocol 1 and audio protocol 2.
+- A visual-only fixture rendered from the real live-view component was inspected with fictional data. It does not access authentication or APIs and does not establish a working native window, device permissions, real Gemini delivery, or installed sign-in.
+- Source/speaker metadata persistence, legacy Unknown behavior, owner isolation, transcript-off enforcement and prompt propagation have mocked route regression coverage. This is not a production-database or real-provider test.
+
+The release remains in progress. Publishing is user-controlled and has not been performed by the agent. A newly built Windows installer, native transparency and dragging/resizing across DPI/monitors, real dual-channel audio/Gemini, installed sign-in, and receiver-side sharing checks still require the Windows PC. Mac equivalents require a Mac runner/device. No native installer, signature/notarization status or screen-sharing exclusion result has been newly certified.
+
+## Previous source update — desktop 0.2.0
 
 The new source implements browser-based desktop authentication for Google and email/password. It replaces embedded sign-in in the updated shell, requires an authenticated same-origin browser to approve the desktop's six-digit code, and binds a single-use exchange to a native-held verifier. Requests expire after five minutes, code approval permits at most five attempts, cancellation revokes pending approval, and issued Clerk tickets expire after 60 seconds. Credentials are not placed in browser callback URLs, source archives, or the handoff table. Concurrent claims, cancellation during issuance, replay, provider failure, and stale desktop callbacks have deterministic regression coverage.
 
