@@ -24,3 +24,11 @@ Do not treat Electron's content-protection flag as evidence that a sharing appli
 **Why:** The user's central requirement is seeing suggestions locally while excluding them from screen sharing, and this is a platform limitation rather than a UI toggle implementation detail.
 
 **How to apply:** Require receiver-side checks for each OS, meeting-app version, and sharing mode. State the Mac limitation before promising parity or a release; use window-specific sharing as a fallback where appropriate.
+
+## Preserve Sonora's product
+
+Keep Sonora's existing interface and Gemini answer system when incorporating native desktop capabilities. Do not replace the product with Meetily's interface.
+
+**Why:** The user explicitly chose to retain Sonora's interface and Gemini answer system after reviewing Meetily.
+
+**How to apply:** Treat Meetily as a potential source of native audio/transcription components, not approval for a wholesale framework or product migration. Clarify the transcription approach separately from Gemini answer generation.
