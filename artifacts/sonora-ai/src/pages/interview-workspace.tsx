@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Check,
   CircleStop,
@@ -14,16 +14,13 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
 import { useClerk, useUser } from "@clerk/react";
 import type { CallSession, TranscriptEntry } from "@workspace/api-client-react";
+import SessionWizard from "@/components/session-wizard";
+import SessionPreferencesDialog from "@/components/session-preferences-dialog";
+import { sessionPreferences, summarizePreferences } from "@/lib/answer-preferences";
 import DesktopToolbar from "@/components/desktop-toolbar";
 import { createDesktopAudio, type AudioCapture } from "@/lib/desktop-audio";
-
-GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url,
-).toString();
 
 type SpeechResult = {
   isFinal: boolean;
@@ -46,36 +43,6 @@ type WindowWithSpeechRecognition = Window & {
   webkitSpeechRecognition?: new () => SpeechRecognitionLike;
 };
 
-type NewSessionForm = {
-  sessionType: "interview" | "call";
-  company: string;
-  description: string;
-  title: string;
-  resumeText: string;
-  documentsText: string;
-  instructions: string;
-  answerPreference: "concise" | "detailed" | "technical";
-  model: "gemini-2.5-flash" | "gemini-3-flash-preview";
-  language: string;
-  autoAnswer: boolean;
-  saveTranscript: boolean;
-};
-
-const emptyForm: NewSessionForm = {
-  sessionType: "interview",
-  company: "",
-  description: "",
-  title: "",
-  resumeText: "",
-  documentsText: "",
-  instructions: "",
-  answerPreference: "concise",
-  model: "gemini-2.5-flash",
-  language: "English",
-  autoAnswer: false,
-  saveTranscript: true,
-};
-
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, {
     credentials: "include",
@@ -90,34 +57,6 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(payload.error || `Request failed (${response.status}).`);
   }
   return payload as T;
-}
-
-async function extractFileText(file: File): Promise<string> {
-  if (file.size > 12 * 1024 * 1024) {
-    throw new Error(`${file.name} is larger than the 12 MB limit.`);
-  }
-  const lowerName = file.name.toLowerCase();
-  if (lowerName.endsWith(".txt") || lowerName.endsWith(".md")) {
-    return file.text();
-  }
-  if (lowerName.endsWith(".pdf") || file.type === "application/pdf") {
-    const pdf = await getDocument({
-      data: new Uint8Array(await file.arrayBuffer()),
-    }).promise;
-    const pages: string[] = [];
-    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-      const page = await pdf.getPage(pageNumber);
-      const content = await page.getTextContent();
-      pages.push(
-        content.items
-          .map((item) => ("str" in item ? item.str : ""))
-          .filter(Boolean)
-          .join(" "),
-      );
-    }
-    return pages.join("\n").slice(0, 40_000);
-  }
-  throw new Error("Choose a PDF, TXT, or Markdown file.");
 }
 
 function formatDuration(startedAt: string | null, now: number) {
@@ -143,7 +82,7 @@ export default function InterviewWorkspace() {
   const [filter, setFilter] = useState<"all" | "active" | "ended">("all");
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState<NewSessionForm>(emptyForm);
+  const [editOpen, setEditOpen] = useState(false);
   const [answerInput, setAnswerInput] = useState("");
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
@@ -154,19 +93,19 @@ export default function InterviewWorkspace() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [now, setNow] = useState(Date.now());
-  const [uploading, setUploading] = useState<"resume" | "documents" | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const desktopCaptureRef = useRef<AudioCapture | null>(null);
   const [audioSource, setAudioSource] = useState<"microphone" | "system">("microphone");
   const [compact, setCompact] = useState(Boolean(window.sonoraDesktop));
   const streamRef = useRef<MediaStream | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const uploadTargetRef = useRef<"resume" | "documents">("resume");
   const answerInFlightRef = useRef(false);
   const captureTokenRef = useRef(0);
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
   const selected = sessions.find((session) => session.id === selectedId) ?? null;
+  const selectedSessionRef = useRef<CallSession | null>(selected);
+  selectedSessionRef.current = selected;
+  const settingsRevisionRef = useRef(0);
   const visibleAnswer = busy
     ? ""
     : answer ||
@@ -174,8 +113,10 @@ export default function InterviewWorkspace() {
       "";
 
   const refreshSessions = useCallback(async () => {
+    const revision = settingsRevisionRef.current;
     try {
       const data = await api<CallSession[]>("/sessions");
+      if (revision !== settingsRevisionRef.current) return;
       setSessions(data);
       setSelectedId((current) =>
         current && data.some((item) => item.id === current)
@@ -220,7 +161,7 @@ export default function InterviewWorkspace() {
           },
         );
         setSessions((items) =>
-          items.map((item) => (item.id === session.id ? updated : item)),
+          items.map((item) => (item.id === session.id ? { ...item, transcript: updated.transcript } : item)),
         );
       } else {
         setSessions((items) =>
@@ -312,59 +253,6 @@ export default function InterviewWorkspace() {
     };
   }, [selectedId, stopCapture]);
 
-  const handleCreate = async (event: FormEvent) => {
-    event.preventDefault();
-    setBusy(true);
-    setError("");
-    try {
-      const created = await api<CallSession>("/sessions", {
-        method: "POST",
-        body: JSON.stringify({
-          ...form,
-          title: form.title,
-          company: form.company,
-        }),
-      });
-      setSessions((items) => [created, ...items]);
-      setSelectedId(created.id);
-      setCreateOpen(false);
-      setAnswer("");
-      setForm(emptyForm);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not create session.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? []);
-    event.target.value = "";
-    if (!files.length) return;
-    const target = uploadTargetRef.current;
-    setUploading(target);
-    setError("");
-    try {
-      const texts = await Promise.all(files.map(extractFileText));
-      const joined = texts.join("\n\n").slice(0, 40_000);
-      if (!joined.trim()) {
-        throw new Error("No selectable text was found. Paste the resume or document text below instead.");
-      }
-      setForm((current) => ({
-        ...current,
-        [target === "resume" ? "resumeText" : "documentsText"]:
-          target === "resume"
-            ? joined
-            : [current.documentsText, joined].filter(Boolean).join("\n\n").slice(0, 40_000),
-      }));
-      setNotice(`${files.length} file${files.length > 1 ? "s" : ""} added as text context.`);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not read that file.");
-    } finally {
-      setUploading(null);
-    }
-  };
-
   const startSession = async () => {
     if (!selected) return;
     await toggleMicrophone();
@@ -405,10 +293,12 @@ export default function InterviewWorkspace() {
         sessionId: selected.id,
         onText: text => {
           if (captureToken !== captureTokenRef.current) return;
-          if (selected.autoAnswer && isLikelyQuestion(text) && !answerInFlightRef.current) {
+          const activeSession = selectedSessionRef.current;
+          if (!activeSession || activeSession.id !== selected.id) return;
+          if (activeSession.autoAnswer && isLikelyQuestion(text) && !answerInFlightRef.current) {
             void askRef.current(text, "microphone");
           } else {
-            void saveTranscript(selected, "user", text, "microphone").catch(cause =>
+            void saveTranscript(activeSession, "user", text, "microphone").catch(cause =>
               setError(cause instanceof Error ? cause.message : "Could not save transcript."));
           }
         },
@@ -480,7 +370,7 @@ export default function InterviewWorkspace() {
           const text = event.results[index][0]?.transcript?.trim() ?? "";
           if (!text) continue;
           if (event.results[index].isFinal) {
-            const activeSession = sessions.find((item) => item.id === selectedId);
+            const activeSession = selectedSessionRef.current;
             if (activeSession) {
               if (activeSession.autoAnswer && isLikelyQuestion(text) && !answerInFlightRef.current) {
                 void askRef.current(text, "microphone");
@@ -565,14 +455,6 @@ export default function InterviewWorkspace() {
 
   return (
     <main className="min-h-screen bg-[#101113] text-[#e7e8eb]">
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown"
-        multiple
-        className="hidden"
-        onChange={handleUpload}
-      />
       <header className={`${window.sonoraDesktop ? "desktop-drag" : ""} flex h-[60px] items-center justify-between border-b border-white/10 bg-[#17181b] px-4 sm:px-6`}>
         <a href={import.meta.env.BASE_URL} className="flex items-center gap-2 text-lg font-bold tracking-tight text-white">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#75c853] text-[#19321d]"><Sparkles size={18} /></span>
@@ -608,7 +490,6 @@ export default function InterviewWorkspace() {
             onClick={() => {
               setError("");
               setNotice("");
-              setForm(emptyForm);
               setCreateOpen(true);
             }}
           >
@@ -736,7 +617,7 @@ export default function InterviewWorkspace() {
                         />
                         <button disabled={busy || !answerInput.trim()} aria-label="Ask Gemini" className="self-end rounded-lg bg-[#257c3c] p-3 text-white disabled:cursor-not-allowed disabled:opacity-40"><Send size={17} /></button>
                       </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-white/40"><Sparkles size={12} /> {selected.model} · {selected.answerPreference} answer · {selected.language}</div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-white/40"><Sparkles size={12} /> {selected.model} · {summarizePreferences(sessionPreferences(selected))} · {selected.language} <button type="button" data-testid="button-edit-preferences" onClick={() => setEditOpen(true)} className="ml-2 rounded-md border border-white/10 px-2 py-1 text-white/70 hover:bg-white/5">Edit preferences</button></div>
                       {selected.transcript.some((entry) => entry.source === "microphone") && <button type="button" onClick={() => setAnswerInput([...selected.transcript].reverse().find((entry) => entry.source === "microphone")?.text ?? "")} className="mt-3 text-xs font-medium text-emerald-300 hover:text-emerald-200">Use latest microphone transcript as the question</button>}
                     </form>
                   </div>
@@ -783,60 +664,35 @@ export default function InterviewWorkspace() {
       </div>
 
       {createOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/70 p-3 sm:p-6" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCreateOpen(false); }}>
-          <form onSubmit={handleCreate} className="my-auto max-h-[94vh] w-full max-w-[760px] overflow-y-auto rounded-2xl border border-white/10 bg-[#111214] p-5 shadow-2xl sm:p-7">
-            <div className="mb-5 flex items-center justify-between">
-              <h2 className="text-2xl font-semibold tracking-tight text-white">Create Session</h2>
-              <button type="button" onClick={() => setCreateOpen(false)} aria-label="Close" className="rounded-lg p-2 text-white/50 hover:bg-white/5 hover:text-white"><X size={20} /></button>
-            </div>
-            <label className="mb-2 block text-sm font-semibold">Session Type</label>
-            <div className="mb-5 grid grid-cols-2 rounded-xl bg-[#242528] p-1">
-              {(["interview", "call"] as const).map((type) => <button type="button" key={type} onClick={() => setForm((current) => ({ ...current, sessionType: type }))} className={`rounded-lg py-2.5 text-sm font-medium capitalize ${form.sessionType === type ? "bg-[#101113] text-white shadow" : "text-white/50 hover:text-white"}`}>{type === "call" ? "Regular Call" : "Interview"}</button>)}
-            </div>
-            {form.sessionType === "interview" ? <>
-              <label className="mb-2 block text-sm font-semibold" htmlFor="company">Company</label>
-              <input id="company" value={form.company} onChange={(event) => setForm((current) => ({ ...current, company: event.target.value }))} placeholder="Company name" className="mb-4 w-full rounded-lg border border-white/10 bg-[#191a1d] px-4 py-3 text-sm outline-none placeholder:text-white/35 focus:border-white/25" />
-              <label className="mb-2 block text-sm font-semibold" htmlFor="role-description">Interview Description</label>
-              <textarea id="role-description" value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} placeholder="Role, job description, and interview focus…" className="mb-4 min-h-24 w-full rounded-lg border border-white/10 bg-[#191a1d] px-4 py-3 text-sm outline-none placeholder:text-white/35 focus:border-white/25" />
-            </> : <>
-              <label className="mb-2 block text-sm font-semibold" htmlFor="call-title">Call Title <span className="font-normal text-white/40">(Optional)</span></label>
-              <input id="call-title" value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Call title" className="mb-4 w-full rounded-lg border border-white/10 bg-[#191a1d] px-4 py-3 text-sm outline-none placeholder:text-white/35 focus:border-white/25" />
-              <label className="mb-2 block text-sm font-semibold" htmlFor="call-description">Description <span className="font-normal text-white/40">(Optional)</span></label>
-              <textarea id="call-description" value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} placeholder="What will you discuss?" className="mb-4 min-h-24 w-full rounded-lg border border-white/10 bg-[#191a1d] px-4 py-3 text-sm outline-none placeholder:text-white/35 focus:border-white/25" />
-            </>}
-            <div className="mb-2 mt-1 text-sm font-semibold">Context</div>
-            <div className="mb-3 flex flex-wrap gap-2">
-              {form.sessionType === "interview" && <button type="button" onClick={() => { uploadTargetRef.current = "resume"; fileInputRef.current?.click(); }} className="inline-flex items-center gap-2 rounded-full border border-dashed border-white/20 px-4 py-2 text-sm hover:bg-white/5"><Upload size={14} /> {uploading === "resume" ? "Reading…" : form.resumeText ? "Resume added" : "Add Resume"}</button>}
-              <button type="button" onClick={() => { uploadTargetRef.current = "documents"; fileInputRef.current?.click(); }} className="inline-flex items-center gap-2 rounded-full border border-dashed border-white/20 px-4 py-2 text-sm hover:bg-white/5"><Upload size={14} /> {uploading === "documents" ? "Reading…" : form.documentsText ? "Documents added" : "Add Documents"}</button>
-              {form.resumeText && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/10 px-3 py-2 text-xs text-emerald-200"><Check size={13} /> Resume text extracted</span>}
-            </div>
-            <p className="mb-4 text-xs leading-5 text-white/40">PDF, TXT, and Markdown are supported. Text is extracted in your browser and saved with this session; original files are not retained.</p>
-            <details className="mb-5 rounded-lg border border-white/10 p-3">
-              <summary className="cursor-pointer text-xs font-medium text-white/60">Review or paste context text</summary>
-              <div className="mt-3 space-y-3">
-                {form.sessionType === "interview" && <label className="block text-xs text-white/50">Resume text<textarea value={form.resumeText} onChange={(event) => setForm((current) => ({ ...current, resumeText: event.target.value.slice(0, 40_000) }))} className="mt-1.5 min-h-24 w-full rounded-lg border border-white/10 bg-[#191a1d] p-3 text-sm text-white outline-none" placeholder="Paste your resume text here…" /></label>}
-                <label className="block text-xs text-white/50">Document text<textarea value={form.documentsText} onChange={(event) => setForm((current) => ({ ...current, documentsText: event.target.value.slice(0, 40_000) }))} className="mt-1.5 min-h-24 w-full rounded-lg border border-white/10 bg-[#191a1d] p-3 text-sm text-white outline-none" placeholder="Paste reference document text here…" /></label>
-              </div>
-            </details>
-            <label className="mb-2 block text-sm font-semibold" htmlFor="instructions">Instructions <span className="font-normal text-white/40">(Optional)</span></label>
-            <textarea id="instructions" value={form.instructions} onChange={(event) => setForm((current) => ({ ...current, instructions: event.target.value }))} placeholder="Answer in a concise, confident, conversational tone…" className="mb-5 min-h-[70px] w-full rounded-lg border border-white/10 bg-[#191a1d] px-4 py-3 text-sm outline-none placeholder:text-white/35 focus:border-white/25" />
-            <div className="mb-2 text-sm font-semibold">Output Settings</div>
-            <div className="mb-5 grid gap-3 sm:grid-cols-3">
-              <label className="text-xs text-white/45">Answer style<select value={form.answerPreference} onChange={(event) => setForm((current) => ({ ...current, answerPreference: event.target.value as NewSessionForm["answerPreference"] }))} className="mt-1.5 w-full rounded-lg border border-white/10 bg-[#191a1d] px-3 py-2.5 text-sm text-white"><option value="concise">Concise</option><option value="detailed">Detailed</option><option value="technical">Technical</option></select></label>
-              <label className="text-xs text-white/45">Gemini model<select value={form.model} onChange={(event) => setForm((current) => ({ ...current, model: event.target.value as NewSessionForm["model"] }))} className="mt-1.5 w-full rounded-lg border border-white/10 bg-[#191a1d] px-3 py-2.5 text-sm text-white"><option value="gemini-2.5-flash">Gemini 2.5 Flash</option><option value="gemini-3-flash-preview">Gemini 3 Flash Preview</option></select></label>
-              <label className="text-xs text-white/45">Language<select value={form.language} onChange={(event) => setForm((current) => ({ ...current, language: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-white/10 bg-[#191a1d] px-3 py-2.5 text-sm text-white"><option>English</option><option>Spanish</option><option>French</option><option>German</option></select></label>
-            </div>
-            <div className="mb-6 flex flex-wrap gap-x-6 gap-y-3 text-sm text-white/75">
-              <label className="flex items-center gap-2"><input type="checkbox" checked={form.autoAnswer} onChange={(event) => setForm((current) => ({ ...current, autoAnswer: event.target.checked }))} className="accent-emerald-500" /> Auto-generate suggestions for detected questions</label>
-              <label className="flex items-center gap-2"><input type="checkbox" checked={form.saveTranscript} onChange={(event) => setForm((current) => ({ ...current, saveTranscript: event.target.checked }))} className="accent-emerald-500" /> Save Transcript</label>
-            </div>
-            {error && <p className="mb-4 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-200">{error}</p>}
-            <div className="grid grid-cols-2 gap-3">
-              <button type="button" onClick={() => setCreateOpen(false)} className="rounded-xl border border-white/10 px-4 py-3 text-sm font-semibold text-white/70 hover:bg-white/5">Close</button>
-              <button disabled={busy || uploading !== null} className="rounded-xl bg-[#f0f1f3] px-4 py-3 text-sm font-semibold text-[#151619] hover:bg-white disabled:opacity-50">{busy ? "Creating…" : "Create Session"}</button>
-            </div>
-          </form>
-        </div>
+        <SessionWizard
+          onClose={() => setCreateOpen(false)}
+          onCreated={(created) => {
+            settingsRevisionRef.current += 1;
+            setSessions((items) => [created, ...items]);
+            setSelectedId(created.id);
+            setAnswer("");
+            setCreateOpen(false);
+          }}
+        />
+      )}
+      {editOpen && selected && (
+        <SessionPreferencesDialog
+          key={selected.id}
+          session={selected}
+          onClose={() => setEditOpen(false)}
+          onSaved={(updated) => {
+            settingsRevisionRef.current += 1;
+            if (selectedSessionRef.current?.id === updated.id) selectedSessionRef.current = updated;
+            if (listening && selected.language !== updated.language && !window.sonoraDesktop) {
+              stopCapture();
+              setNotice("Preferences saved. Restart microphone capture to use the new call language.");
+            } else {
+              setNotice("Preferences saved. New settings apply to subsequent answers.");
+            }
+            setSessions((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+            setEditOpen(false);
+          }}
+        />
       )}
     </main>
   );

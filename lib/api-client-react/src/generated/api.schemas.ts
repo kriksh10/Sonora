@@ -5,6 +5,68 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export type AnswerPreferencesFormat = typeof AnswerPreferencesFormat[keyof typeof AnswerPreferencesFormat];
+
+
+export const AnswerPreferencesFormat = {
+  full_script: 'full_script',
+  script_bullets: 'script_bullets',
+  bullet_points: 'bullet_points',
+} as const;
+
+export type AnswerPreferencesLength = typeof AnswerPreferencesLength[keyof typeof AnswerPreferencesLength];
+
+
+export const AnswerPreferencesLength = {
+  short: 'short',
+  balanced: 'balanced',
+  long: 'long',
+} as const;
+
+export type AnswerPreferencesTone = typeof AnswerPreferencesTone[keyof typeof AnswerPreferencesTone];
+
+
+export const AnswerPreferencesTone = {
+  simple: 'simple',
+  formal: 'formal',
+} as const;
+
+export interface AnswerPreferences {
+  format: AnswerPreferencesFormat;
+  length: AnswerPreferencesLength;
+  tone: AnswerPreferencesTone;
+  starMethod: boolean;
+  fillerWords: boolean;
+}
+
+export type SessionPreferencesInputModel = typeof SessionPreferencesInputModel[keyof typeof SessionPreferencesInputModel];
+
+
+export const SessionPreferencesInputModel = {
+  'gemini-25-flash': 'gemini-2.5-flash',
+  'gemini-3-flash-preview': 'gemini-3-flash-preview',
+} as const;
+
+export type SessionPreferencesInputLanguage = typeof SessionPreferencesInputLanguage[keyof typeof SessionPreferencesInputLanguage];
+
+
+export const SessionPreferencesInputLanguage = {
+  English: 'English',
+  Spanish: 'Spanish',
+  French: 'French',
+  German: 'German',
+} as const;
+
+export interface SessionPreferencesInput {
+  answerPreferences?: AnswerPreferences;
+  /** @maxLength 8000 */
+  instructions?: string;
+  model?: SessionPreferencesInputModel;
+  language?: SessionPreferencesInputLanguage;
+  autoAnswer?: boolean;
+  saveTranscript?: boolean;
+}
+
 export type SessionAudioChunkMimeType = typeof SessionAudioChunkMimeType[keyof typeof SessionAudioChunkMimeType];
 
 
@@ -125,6 +187,7 @@ export interface NewCallSession {
   /** @maxLength 8000 */
   instructions?: string;
   answerPreference?: NewCallSessionAnswerPreference;
+  answerPreferences?: AnswerPreferences;
   model?: NewCallSessionModel;
   language?: NewCallSessionLanguage;
   autoAnswer?: boolean;
@@ -184,6 +247,7 @@ export interface CallSession {
   documentsText: string;
   instructions: string;
   answerPreference: string;
+  answerPreferences?: AnswerPreferences;
   model: string;
   language: string;
   autoAnswer: boolean;

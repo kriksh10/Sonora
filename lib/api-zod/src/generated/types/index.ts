@@ -6,6 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './answerPreferences';
+export * from './answerPreferencesFormat';
+export * from './answerPreferencesLength';
+export * from './answerPreferencesTone';
 export * from './appendTranscriptRequest';
 export * from './appendTranscriptRequestRole';
 export * from './appendTranscriptRequestSource';
@@ -24,6 +28,9 @@ export * from './sessionAnswerRequest';
 export * from './sessionAudioChunk';
 export * from './sessionAudioChunkMimeType';
 export * from './sessionErrorResponse';
+export * from './sessionPreferencesInput';
+export * from './sessionPreferencesInputLanguage';
+export * from './sessionPreferencesInputModel';
 export * from './transcriptEntry';
 export * from './transcriptEntryRole';
 export * from './transcriptEntrySource';

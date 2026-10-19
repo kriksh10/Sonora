@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { AnswerPreferences } from './answerPreferences';
 import type { NewCallSessionAnswerPreference } from './newCallSessionAnswerPreference';
 import type { NewCallSessionLanguage } from './newCallSessionLanguage';
 import type { NewCallSessionModel } from './newCallSessionModel';
@@ -25,6 +26,7 @@ export interface NewCallSession {
   /** @maxLength 8000 */
   instructions?: string;
   answerPreference?: NewCallSessionAnswerPreference;
+  answerPreferences?: AnswerPreferences;
   model?: NewCallSessionModel;
   language?: NewCallSessionLanguage;
   autoAnswer?: boolean;

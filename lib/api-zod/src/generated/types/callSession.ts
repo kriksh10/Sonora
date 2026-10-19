@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { AnswerPreferences } from './answerPreferences';
 import type { CallSessionSessionType } from './callSessionSessionType';
 import type { CallSessionStatus } from './callSessionStatus';
 import type { TranscriptEntry } from './transcriptEntry';
@@ -21,6 +22,7 @@ export interface CallSession {
   documentsText: string;
   instructions: string;
   answerPreference: string;
+  answerPreferences?: AnswerPreferences;
   model: string;
   language: string;
   autoAnswer: boolean;

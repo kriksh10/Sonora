@@ -20,6 +20,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AnswerPreferences,
   AppendTranscriptRequest,
   AudioTranscription,
   CallSession,
@@ -29,6 +30,7 @@ import type {
   SessionAnswerRequest,
   SessionAudioChunk,
   SessionErrorResponse,
+  SessionPreferencesInput,
   UpdateCallSessionRequest
 } from './api.schemas';
 
@@ -58,6 +60,208 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   }
   return result;
 };
+
+export const getGetAnswerDefaultsUrl = () => {
+
+
+
+
+  return `/api/answer-preferences/defaults`
+}
+
+export const getAnswerDefaults = async ( options?: Parameters<typeof customFetch>[1]): Promise<AnswerPreferences> => {
+
+  return customFetch<AnswerPreferences>(getGetAnswerDefaultsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAnswerDefaultsQueryKey = () => {
+    return [
+    `/api/answer-preferences/defaults`
+    ] as const;
+    }
+
+
+export const getGetAnswerDefaultsQueryOptions = <TData = Awaited<ReturnType<typeof getAnswerDefaults>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAnswerDefaults>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAnswerDefaultsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAnswerDefaults>>> = ({ signal }) => getAnswerDefaults({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAnswerDefaults>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAnswerDefaultsQueryResult = NonNullable<Awaited<ReturnType<typeof getAnswerDefaults>>>
+export type GetAnswerDefaultsQueryError = ErrorType<unknown>
+
+
+
+export function useGetAnswerDefaults<TData = Awaited<ReturnType<typeof getAnswerDefaults>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAnswerDefaults>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAnswerDefaultsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSaveAnswerDefaultsUrl = () => {
+
+
+
+
+  return `/api/answer-preferences/defaults`
+}
+
+export const saveAnswerDefaults = async (answerPreferences: AnswerPreferences, options?: Parameters<typeof customFetch>[1]): Promise<AnswerPreferences> => {
+
+  return customFetch<AnswerPreferences>(getSaveAnswerDefaultsUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(answerPreferences)
+  }
+);}
+
+
+
+
+
+export const getSaveAnswerDefaultsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveAnswerDefaults>>, TError,{data: BodyType<AnswerPreferences>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveAnswerDefaults>>, TError,{data: BodyType<AnswerPreferences>}, TContext> => {
+
+const mutationKey = ['saveAnswerDefaults'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveAnswerDefaults>>, {data: BodyType<AnswerPreferences>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  saveAnswerDefaults(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveAnswerDefaultsMutationResult = NonNullable<Awaited<ReturnType<typeof saveAnswerDefaults>>>
+    export type SaveAnswerDefaultsMutationBody = BodyType<AnswerPreferences>
+    export type SaveAnswerDefaultsMutationError = ErrorType<unknown>
+
+    export const useSaveAnswerDefaults = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveAnswerDefaults>>, TError,{data: BodyType<AnswerPreferences>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveAnswerDefaults>>,
+        TError,
+        {data: BodyType<AnswerPreferences>},
+        TContext
+      > => {
+      return useMutation(getSaveAnswerDefaultsMutationOptions(options));
+    }
+
+export const getUpdateSessionPreferencesUrl = (id: string,) => {
+
+
+
+
+  return `/api/sessions/${id}/preferences`
+}
+
+export const updateSessionPreferences = async (id: string,
+    sessionPreferencesInput: SessionPreferencesInput, options?: Parameters<typeof customFetch>[1]): Promise<CallSession> => {
+
+  return customFetch<CallSession>(getUpdateSessionPreferencesUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(sessionPreferencesInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateSessionPreferencesMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSessionPreferences>>, TError,{id: string;data: BodyType<SessionPreferencesInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateSessionPreferences>>, TError,{id: string;data: BodyType<SessionPreferencesInput>}, TContext> => {
+
+const mutationKey = ['updateSessionPreferences'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateSessionPreferences>>, {id: string;data: BodyType<SessionPreferencesInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateSessionPreferences(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateSessionPreferencesMutationResult = NonNullable<Awaited<ReturnType<typeof updateSessionPreferences>>>
+    export type UpdateSessionPreferencesMutationBody = BodyType<SessionPreferencesInput>
+    export type UpdateSessionPreferencesMutationError = ErrorType<void>
+
+    export const useUpdateSessionPreferences = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSessionPreferences>>, TError,{id: string;data: BodyType<SessionPreferencesInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateSessionPreferences>>,
+        TError,
+        {id: string;data: BodyType<SessionPreferencesInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateSessionPreferencesMutationOptions(options));
+    }
 
 export const getHealthCheckUrl = () => {
 

@@ -1,3 +1,11 @@
+# Session setup and answer preferences
+
+The hosted app now has a Details → Preferences wizard and an editable session-preferences dialog. Format, length, tone, STAR method, and filler words are persisted per session and included in Gemini's system instructions. Set default writes owner-scoped settings for future sessions only. Existing legacy sessions receive compatible read-time defaults. Regular Call excludes resume context. Transcript writes check the current database flag at the write boundary.
+
+Verification: 40 deterministic JavaScript tests pass, including 10 preference/preview/route tests. The route tests use an in-memory database adapter and mocked Gemini; they do not establish an authenticated browser journey, real database concurrency, or a live Gemini answer. API/frontend type checks and the web build pass; the API workflow restarts and serves health checks. Anonymous defaults/settings requests return 401. No authenticated end-to-end pass was run while the full desktop release remains incomplete.
+
+The additive development schema update introduces nullable session preferences and a per-user defaults table without deleting session history. The published service needs republishing with the corresponding managed database schema changes before its desktop-hosted interface can use these endpoints. This hosted change does not itself require a new native installer. Native sign-in, audio capture, screen-sharing exclusion, and the separate compact floating-toolbar release work remain unresolved; no finished Windows/Mac release is claimed here.
+
 # Visibility-control verification
 
 The hosted desktop-only toolbar now exposes Hide Sonora and a separate Hide from screen sharing switch on all routed pages, including sign-in. Tray and toolbar share the native protection state. New deterministic tests cover protection state synchronization, failed protection changes, unsupported platforms, and hide/restore while audio remains active and tray Stop stays enabled.

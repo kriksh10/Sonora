@@ -13,6 +13,56 @@ tags:
   - name: sessions
     description: Private interview and regular-call sessions
 paths:
+  /answer-preferences/defaults:
+    get:
+      operationId: getAnswerDefaults
+      responses:
+        "200":
+          description: Current user's defaults, or standard defaults if none saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnswerPreferences"
+    put:
+      operationId: saveAnswerDefaults
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnswerPreferences"
+      responses:
+        "200":
+          description: Saved defaults for future sessions only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnswerPreferences"
+  /sessions/{id}/preferences:
+    patch:
+      operationId: updateSessionPreferences
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionPreferencesInput"
+      responses:
+        "200":
+          description: Updated owned session; applies to subsequent answers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallSession"
+        "404":
+          description: Session not found
   /healthz:
     get:
       operationId: healthCheck
@@ -195,6 +245,44 @@ components:
               error:
                 type: string
   schemas:
+    AnswerPreferences:
+      type: object
+      additionalProperties: false
+      required: [format, length, tone, starMethod, fillerWords]
+      properties:
+        format:
+          type: string
+          enum: [full_script, script_bullets, bullet_points]
+        length:
+          type: string
+          enum: [short, balanced, long]
+        tone:
+          type: string
+          enum: [simple, formal]
+        starMethod:
+          type: boolean
+        fillerWords:
+          type: boolean
+    SessionPreferencesInput:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        answerPreferences:
+          $ref: "#/components/schemas/AnswerPreferences"
+        instructions:
+          type: string
+          maxLength: 8000
+        model:
+          type: string
+          enum: [gemini-2.5-flash, gemini-3-flash-preview]
+        language:
+          type: string
+          enum: [English, Spanish, French, German]
+        autoAnswer:
+          type: boolean
+        saveTranscript:
+          type: boolean
     SessionAudioChunk:
       type: object
       required: [audio, mimeType]
@@ -271,6 +359,8 @@ components:
         answerPreference:
           type: string
           enum: [concise, detailed, technical]
+        answerPreferences:
+          $ref: "#/components/schemas/AnswerPreferences"
         model:
           type: string
           enum: [gemini-2.5-flash, gemini-3-flash-preview]
@@ -320,6 +410,8 @@ components:
           type: string
         answerPreference:
           type: string
+        answerPreferences:
+          $ref: "#/components/schemas/AnswerPreferences"
         model:
           type: string
         language:

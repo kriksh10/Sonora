@@ -8,6 +8,89 @@
 import * as zod from 'zod';
 
 
+export const GetAnswerDefaultsResponse = zod.object({
+  "format": zod.enum(['full_script', 'script_bullets', 'bullet_points']),
+  "length": zod.enum(['short', 'balanced', 'long']),
+  "tone": zod.enum(['simple', 'formal']),
+  "starMethod": zod.boolean(),
+  "fillerWords": zod.boolean()
+})
+
+
+export const SaveAnswerDefaultsBody = zod.object({
+  "format": zod.enum(['full_script', 'script_bullets', 'bullet_points']),
+  "length": zod.enum(['short', 'balanced', 'long']),
+  "tone": zod.enum(['simple', 'formal']),
+  "starMethod": zod.boolean(),
+  "fillerWords": zod.boolean()
+})
+
+export const SaveAnswerDefaultsResponse = zod.object({
+  "format": zod.enum(['full_script', 'script_bullets', 'bullet_points']),
+  "length": zod.enum(['short', 'balanced', 'long']),
+  "tone": zod.enum(['simple', 'formal']),
+  "starMethod": zod.boolean(),
+  "fillerWords": zod.boolean()
+})
+
+
+export const UpdateSessionPreferencesParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const updateSessionPreferencesBodyInstructionsMax = 8000;
+
+
+
+export const UpdateSessionPreferencesBody = zod.object({
+  "answerPreferences": zod.object({
+  "format": zod.enum(['full_script', 'script_bullets', 'bullet_points']),
+  "length": zod.enum(['short', 'balanced', 'long']),
+  "tone": zod.enum(['simple', 'formal']),
+  "starMethod": zod.boolean(),
+  "fillerWords": zod.boolean()
+}).optional(),
+  "instructions": zod.string().max(updateSessionPreferencesBodyInstructionsMax).optional(),
+  "model": zod.enum(['gemini-2.5-flash', 'gemini-3-flash-preview']).optional(),
+  "language": zod.enum(['English', 'Spanish', 'French', 'German']).optional(),
+  "autoAnswer": zod.boolean().optional(),
+  "saveTranscript": zod.boolean().optional()
+})
+
+export const UpdateSessionPreferencesResponse = zod.object({
+  "id": zod.string().uuid(),
+  "sessionType": zod.enum(['interview', 'call']),
+  "title": zod.string(),
+  "company": zod.string().nullable(),
+  "description": zod.string().nullable(),
+  "resumeText": zod.string(),
+  "documentsText": zod.string(),
+  "instructions": zod.string(),
+  "answerPreference": zod.string(),
+  "answerPreferences": zod.object({
+  "format": zod.enum(['full_script', 'script_bullets', 'bullet_points']),
+  "length": zod.enum(['short', 'balanced', 'long']),
+  "tone": zod.enum(['simple', 'formal']),
+  "starMethod": zod.boolean(),
+  "fillerWords": zod.boolean()
+}).optional(),
+  "model": zod.string(),
+  "language": zod.string(),
+  "autoAnswer": zod.boolean(),
+  "saveTranscript": zod.boolean(),
+  "status": zod.enum(['ready', 'active', 'ended']),
+  "transcript": zod.array(zod.object({
+  "role": zod.enum(['user', 'assistant']),
+  "text": zod.string(),
+  "source": zod.enum(['typed', 'microphone', 'ai']),
+  "createdAt": zod.coerce.date()
+})),
+  "createdAt": zod.coerce.date(),
+  "startedAt": zod.coerce.date().nullable(),
+  "endedAt": zod.coerce.date().nullable()
+})
+
+
 /**
  * Returns server health status
  * @summary Health check
@@ -30,6 +113,13 @@ export const ListSessionsResponseItem = zod.object({
   "documentsText": zod.string(),
   "instructions": zod.string(),
   "answerPreference": zod.string(),
+  "answerPreferences": zod.object({
+  "format": zod.enum(['full_script', 'script_bullets', 'bullet_points']),
+  "length": zod.enum(['short', 'balanced', 'long']),
+  "tone": zod.enum(['simple', 'formal']),
+  "starMethod": zod.boolean(),
+  "fillerWords": zod.boolean()
+}).optional(),
   "model": zod.string(),
   "language": zod.string(),
   "autoAnswer": zod.boolean(),
@@ -74,6 +164,13 @@ export const CreateSessionBody = zod.object({
   "documentsText": zod.string().max(createSessionBodyDocumentsTextMax).optional(),
   "instructions": zod.string().max(createSessionBodyInstructionsMax).optional(),
   "answerPreference": zod.enum(['concise', 'detailed', 'technical']).optional(),
+  "answerPreferences": zod.object({
+  "format": zod.enum(['full_script', 'script_bullets', 'bullet_points']),
+  "length": zod.enum(['short', 'balanced', 'long']),
+  "tone": zod.enum(['simple', 'formal']),
+  "starMethod": zod.boolean(),
+  "fillerWords": zod.boolean()
+}).optional(),
   "model": zod.enum(['gemini-2.5-flash', 'gemini-3-flash-preview']).optional(),
   "language": zod.enum(['English', 'Spanish', 'French', 'German']).optional(),
   "autoAnswer": zod.boolean().optional(),
@@ -90,6 +187,13 @@ export const CreateSessionResponse = zod.object({
   "documentsText": zod.string(),
   "instructions": zod.string(),
   "answerPreference": zod.string(),
+  "answerPreferences": zod.object({
+  "format": zod.enum(['full_script', 'script_bullets', 'bullet_points']),
+  "length": zod.enum(['short', 'balanced', 'long']),
+  "tone": zod.enum(['simple', 'formal']),
+  "starMethod": zod.boolean(),
+  "fillerWords": zod.boolean()
+}).optional(),
   "model": zod.string(),
   "language": zod.string(),
   "autoAnswer": zod.boolean(),
@@ -124,6 +228,13 @@ export const GetSessionResponse = zod.object({
   "documentsText": zod.string(),
   "instructions": zod.string(),
   "answerPreference": zod.string(),
+  "answerPreferences": zod.object({
+  "format": zod.enum(['full_script', 'script_bullets', 'bullet_points']),
+  "length": zod.enum(['short', 'balanced', 'long']),
+  "tone": zod.enum(['simple', 'formal']),
+  "starMethod": zod.boolean(),
+  "fillerWords": zod.boolean()
+}).optional(),
   "model": zod.string(),
   "language": zod.string(),
   "autoAnswer": zod.boolean(),
@@ -162,6 +273,13 @@ export const UpdateSessionResponse = zod.object({
   "documentsText": zod.string(),
   "instructions": zod.string(),
   "answerPreference": zod.string(),
+  "answerPreferences": zod.object({
+  "format": zod.enum(['full_script', 'script_bullets', 'bullet_points']),
+  "length": zod.enum(['short', 'balanced', 'long']),
+  "tone": zod.enum(['simple', 'formal']),
+  "starMethod": zod.boolean(),
+  "fillerWords": zod.boolean()
+}).optional(),
   "model": zod.string(),
   "language": zod.string(),
   "autoAnswer": zod.boolean(),
@@ -206,6 +324,13 @@ export const AppendTranscriptResponse = zod.object({
   "documentsText": zod.string(),
   "instructions": zod.string(),
   "answerPreference": zod.string(),
+  "answerPreferences": zod.object({
+  "format": zod.enum(['full_script', 'script_bullets', 'bullet_points']),
+  "length": zod.enum(['short', 'balanced', 'long']),
+  "tone": zod.enum(['simple', 'formal']),
+  "starMethod": zod.boolean(),
+  "fillerWords": zod.boolean()
+}).optional(),
   "model": zod.string(),
   "language": zod.string(),
   "autoAnswer": zod.boolean(),

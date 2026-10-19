@@ -14,6 +14,14 @@ export type TranscriptEntry = {
   createdAt: string;
 };
 
+export type AnswerPreferences = {
+  format: "full_script" | "script_bullets" | "bullet_points";
+  length: "short" | "balanced" | "long";
+  tone: "simple" | "formal";
+  starMethod: boolean;
+  fillerWords: boolean;
+};
+
 export const callSessionsTable = pgTable("call_sessions", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: text("user_id").notNull(),
@@ -25,6 +33,7 @@ export const callSessionsTable = pgTable("call_sessions", {
   documentsText: text("documents_text").notNull().default(""),
   instructions: text("instructions").notNull().default(""),
   answerPreference: text("answer_preference").notNull().default("concise"),
+  answerPreferences: jsonb("answer_preferences").$type<AnswerPreferences>(),
   model: text("model").notNull().default("gemini-2.5-flash"),
   language: text("language").notNull().default("English"),
   autoAnswer: boolean("auto_answer").notNull().default(false),
@@ -43,3 +52,8 @@ export const callSessionsTable = pgTable("call_sessions", {
 
 export type CallSession = typeof callSessionsTable.$inferSelect;
 export type NewCallSession = typeof callSessionsTable.$inferInsert;
+
+export const answerDefaultsTable = pgTable("answer_defaults", {
+  userId: text("user_id").primaryKey(),
+  preferences: jsonb("preferences").$type<AnswerPreferences>().notNull(),
+});
