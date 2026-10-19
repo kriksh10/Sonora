@@ -44,3 +44,11 @@ The user selected **native capture + Gemini transcription**, not local speech mo
 **Why:** The user explicitly chose that option for the packaged Sonora apps.
 
 **How to apply:** Keep both transcription and answer generation on the existing Gemini service. Do not add Whisper/Parakeet model downloads or convert to Tauri as part of this choice.
+
+## Hosted access for desktop
+
+Make the hosted Sonora site publicly reachable while retaining Sonora sign-in and owner-restricted session access.
+
+**Why:** The user explicitly selected public hosting with Sonora sign-in retained so the desktop app can reach its service without Replit's private-deployment gate.
+
+**How to apply:** Distinguish hosting visibility from application authentication. Do not remove Sonora's auth checks or bundle a Replit protection-bypass token into installers; publishing actions remain user-controlled.
