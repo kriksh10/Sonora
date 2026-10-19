@@ -68,3 +68,11 @@ Make the hosted Sonora site publicly reachable while retaining Sonora sign-in an
 **Why:** The user explicitly selected public hosting with Sonora sign-in retained so the desktop app can reach its service without Replit's private-deployment gate.
 
 **How to apply:** Distinguish hosting visibility from application authentication. Do not remove Sonora's auth checks or bundle a Replit protection-bypass token into installers; publishing actions remain user-controlled.
+
+## Live desktop priorities
+
+The user wants a transparent, freely movable desktop app. Once a session starts, live transcription must be the main focus, answers must be visually separated, and new answers must automatically scroll into view rather than requiring navigation through a crowded setup page.
+
+**Why:** The user reported these usability problems after using the installed app and explicitly prioritized the live transcript.
+
+**How to apply:** Preserve transcript-first live mode when revising the desktop layout. Keep setup/history separate from active-call content, and distinguish visual transparency from screen-share exclusion.
