@@ -5,6 +5,7 @@ const { validateServiceUrl, isAllowedNavigation, isTrustedFrame } = require('./s
 const { createNativeAudioManager } = require('./native-audio-host.cjs');
 const { createBrowserAuth } = require('./browser-auth.cjs');
 const { opacity, safeBounds } = require('./window-preferences.cjs');
+const { createMaintenance, diagnosticReport } = require('./maintenance.cjs');
 
 let win;
 let tray;
@@ -20,12 +21,13 @@ let backgroundOpacity = 0.85;
 let preferencesPath;
 let preferencesError = '';
 let saveTimer;
+let maintenance;
 const shortcut = 'CommandOrControl+Shift+Space';
 const development = !app.isPackaged && process.argv.includes('--dev');
 
 function state() {
   return { visible: win?.isVisible() ?? false, alwaysOnTop, contentProtection, captureActive, shortcutRegistered, platform: process.platform,
-    audioProtocol: 2, backgroundOpacity, preferencesError };
+    audioProtocol: 2, nativeAudioProtocol: 2, version: app.getVersion(), backgroundOpacity, preferencesError };
 }
 function persistWindow() {
   if (!preferencesPath || !win || win.isDestroyed()) return;
@@ -92,6 +94,23 @@ function registerIpc() {
     return fn(...args);
   });
   handle('overlay:get-state', state);
+  const diagnostics = () => diagnosticReport({ version: app.getVersion(), platform: process.platform,
+    arch: process.arch, captureActive, shortcutRegistered, audioProtocol: 2 });
+  handle('desktop:diagnostics', diagnostics);
+  handle('desktop:export-diagnostics', async () => {
+    const result = await dialog.showSaveDialog(win, { title: 'Export privacy-safe diagnostics',
+      defaultPath: 'sonora-diagnostics.json', filters: [{ name: 'JSON report', extensions: ['json'] }] });
+    if (result.canceled || !result.filePath) return false;
+    await fs.promises.writeFile(result.filePath, JSON.stringify(diagnostics(), null, 2), { mode: 0o600 });
+    return true;
+  });
+  handle('desktop:check-updates', () => maintenance.check());
+  handle('desktop:open-update', () => maintenance.download(async release => {
+    const result = await dialog.showMessageBox(win, { type: 'question', title: 'Download Sonora update?',
+      message: `Download Sonora ${release.version}?`, detail: `${release.signing}\nSHA-256: ${release.sha256}\nOpens the verified download in your browser. Installation is manual; Sonora will not restart or install automatically.`,
+      buttons: ['Cancel', 'Download'], defaultId: 0, cancelId: 0 });
+    return result.response === 1;
+  }, url => shell.openExternal(url)));
   handle('auth:start', () => browserAuth.start());
   handle('auth:poll', id => browserAuth.poll(id));
   handle('auth:cancel', id => {
@@ -174,7 +193,7 @@ function createWindow() {
   const bounds = safeBounds(saved?.bounds, screen.getAllDisplays());
   win = new BrowserWindow({
     ...bounds,
-    minWidth: Math.min(390, bounds.width), minHeight: Math.min(460, bounds.height), show: false, frame: false,
+    minWidth: Math.min(390, bounds.width), minHeight: Math.min(620, bounds.height), show: false, frame: false,
     transparent: true, backgroundColor: '#00000000', resizable: true, alwaysOnTop: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'), partition: 'persist:sonora',
@@ -259,6 +278,7 @@ else {
       app.quit(); return;
     }
     registerIpc();
+    maintenance = createMaintenance({ serviceUrl: target, version: app.getVersion(), platform: process.platform, arch: process.arch });
     browserAuth = createBrowserAuth({ serviceUrl: target, openExternal: url => shell.openExternal(url) });
     createWindow();
     // PNG avoids platform-dependent support for SVG tray images.

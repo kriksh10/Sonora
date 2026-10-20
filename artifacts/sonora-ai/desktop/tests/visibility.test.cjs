@@ -18,7 +18,7 @@ function fixture(platform = 'win32') {
   };
   const tray = { isDestroyed: () => false, setToolTip() {}, setContextMenu: next => { menu = next; } };
   const electron = {
-    app: { isPackaged: true, requestSingleInstanceLock: () => false, quit() {}, on() {} },
+    app: { isPackaged: true, getVersion: () => '0.3.0', requestSingleInstanceLock: () => false, quit() {}, on() {} },
     Menu: { buildFromTemplate: items => items },
   };
   const context = vm.createContext({

@@ -32,6 +32,19 @@ impl Encoder {
         }
     }
 
+    /// Loopback can stop delivering buffers when no app is playing sound.
+    /// Finish partial speech chunks on the same wall-clock cadence, without
+    /// claiming the device itself is producing samples.
+    pub fn pad_silence(&mut self, milliseconds: u32) -> Result<Vec<Chunk>> {
+        if milliseconds > 250 {
+            bail!("Silence padding exceeded its bounded interval.");
+        }
+        match self.rate {
+            Some(rate) => self.push(rate, &vec![0.0; (u64::from(rate) * u64::from(milliseconds) / 1000) as usize]),
+            None => Ok(Vec::new()),
+        }
+    }
+
     pub fn push(&mut self, rate: u32, input: &[f32]) -> Result<Vec<Chunk>> {
         if !(RATE..=384_000).contains(&rate) {
             bail!("Unsupported audio sample rate. Select another device.");
@@ -126,5 +139,23 @@ mod tests {
         assert!(encoder.push(44_100, &[0.1]).is_err());
         assert!(Encoder::new().push(8_000, &[0.1]).is_err());
         assert!(Encoder::new().push(48_000, &[f32::NAN]).is_err());
+    }
+    #[test]
+    fn idle_loopback_finishes_short_speech_then_remains_silent() {
+        let mut encoder = Encoder::new();
+        assert!(encoder.pad_silence(250).unwrap().is_empty());
+        assert!(encoder.push(48_000, &vec![0.2; 48_000 * 2]).unwrap().is_empty());
+        let mut chunks = Vec::new();
+        for _ in 0..16 { chunks.extend(encoder.pad_silence(250).unwrap()); }
+        assert_eq!(chunks.len(), 1);
+        let Chunk::Audio(wav) = &chunks[0] else { panic!("Short speech was lost"); };
+        assert_eq!(wav.len(), 192_044);
+        assert!(wav[44..64044].iter().any(|x| *x != 0));
+        assert!(wav[64044..].iter().all(|x| *x == 0));
+        let mut silent = Vec::new();
+        for _ in 0..24 { silent.extend(encoder.pad_silence(250).unwrap()); }
+        assert!(matches!(silent[0], Chunk::Silence { .. }));
+        assert!(encoder.pad_silence(251).is_err());
+        assert!(encoder.push(48_000, &[0.1; 480]).is_ok());
     }
 }

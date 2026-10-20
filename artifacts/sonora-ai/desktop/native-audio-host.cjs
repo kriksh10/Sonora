@@ -91,8 +91,9 @@ function createNativeAudioHost({ binary, confirm, emit, onActive, spawnProcess =
             if (!event || typeof event !== 'object' || Array.isArray(event)) {
               fail('Native audio returned an invalid message.'); return;
             }
-            if (event.type === 'ready' && event.protocol === 1 && !record.ready) {
+            if (event.type === 'ready' && [1, 2].includes(event.protocol) && !record.ready) {
               record.ready = true;
+              record.protocol = event.protocol;
               clearTimeout(record.startTimer);
               onActive(true);
               watchdog();
@@ -103,6 +104,12 @@ function createNativeAudioHost({ binary, confirm, emit, onActive, spawnProcess =
             } else if (event.type === 'silence' && record.ready && typeof event.prolonged === 'boolean') {
               watchdog();
               send({ type: 'silence', prolonged: event.prolonged });
+            } else if (event.type === 'status' && record.ready && record.protocol === 2 &&
+                Number.isInteger(event.sampleAgeMs) && event.sampleAgeMs >= 0 && event.sampleAgeMs <= 86400000 &&
+                Number.isFinite(event.peak) && event.peak >= 0 && event.peak <= 1) {
+              // A live helper is not proof of arriving audio: forward both independently.
+              watchdog();
+              send({ type: 'status', sampleAgeMs: event.sampleAgeMs, peak: event.peak });
             } else if (event.type === 'error' && typeof event.message === 'string') {
               fail(event.message.slice(0, 300));
             } else if (event.type === 'stopped') {

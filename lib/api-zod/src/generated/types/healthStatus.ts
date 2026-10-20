@@ -5,10 +5,12 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { HealthStatusDesktopAnswerProtocol } from './healthStatusDesktopAnswerProtocol';
 import type { HealthStatusDesktopAudioProtocol } from './healthStatusDesktopAudioProtocol';
 import type { HealthStatusDesktopAuthProtocol } from './healthStatusDesktopAuthProtocol';
 
 export interface HealthStatus {
+  desktopAnswerProtocol?: HealthStatusDesktopAnswerProtocol;
   desktopAuthProtocol?: HealthStatusDesktopAuthProtocol;
   desktopAudioProtocol?: HealthStatusDesktopAudioProtocol;
   status: string;

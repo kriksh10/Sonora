@@ -22,6 +22,8 @@ import { sessionPreferences, summarizePreferences } from "@/lib/answer-preferenc
 import LiveSessionView from "@/components/live-session-view";
 import { createDesktopAudio, createAudioGroup, type AudioCapture } from "@/lib/desktop-audio";
 import { createInterviewerQuestions } from "@/lib/interviewer-questions";
+import { requestAnswer } from "@/lib/answer-stream";
+import AudioReadiness from "@/components/audio-readiness";
 
 type SpeechResult = {
   isFinal: boolean;
@@ -92,6 +94,16 @@ export default function InterviewWorkspace() {
   const [remoteConfirmed, setRemoteConfirmed] = useState(false);
   const [supportsDualAudio, setSupportsDualAudio] = useState(false);
   const [liveMode, setLiveMode] = useState(false);
+  const [readinessOpen, setReadinessOpen] = useState(false);
+  const [latestQuestion, setLatestQuestion] = useState("");
+  const [answerState, setAnswerState] = useState<"idle" | "generating" | "streaming" | "complete" | "interrupted">("idle");
+  const [pipelineStatus, setPipelineStatus] = useState("");
+  const [levels, setLevels] = useState({ microphone: 0, system: 0 });
+  const [channelStatus, setChannelStatus] = useState({ microphone: "Audio off", system: "Audio off" });
+  const [online, setOnline] = useState(navigator.onLine);
+  const [settingsBusy, setSettingsBusy] = useState(false);
+  const settingsBusyRef = useRef(false);
+  const lastRequestRef = useRef<{ question: string; action: "answer" | "shorten" | "explain" | "again"; previousAnswer?: string; persistQuestion: boolean } | null>(null);
   const answerAbortRef = useRef<AbortController | null>(null);
   const transcriptWritesRef = useRef<Promise<unknown>>(Promise.resolve());
   const [compact, setCompact] = useState(Boolean(window.sonoraDesktop));
@@ -142,6 +154,15 @@ export default function InterviewWorkspace() {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+  useEffect(() => {
+    const update = () => {
+      setOnline(navigator.onLine);
+      if (!navigator.onLine) window.dispatchEvent(new Event("sonora-stop-audio"));
+    };
+    window.addEventListener("online", update);
+    window.addEventListener("offline", update);
+    return () => { window.removeEventListener("online", update); window.removeEventListener("offline", update); };
+  }, []);
 
   const saveTranscript = useCallback(
     async (
@@ -161,7 +182,7 @@ export default function InterviewWorkspace() {
         ...(capturedAt ? { capturedAt } : {}),
         createdAt: new Date().toISOString(),
       };
-      if (session.saveTranscript) {
+       if ((selectedSessionRef.current?.id === session.id ? selectedSessionRef.current : session).saveTranscript) {
         const updated = await api<CallSession>(
           `/sessions/${session.id}/transcript`,
           {
@@ -192,33 +213,43 @@ export default function InterviewWorkspace() {
   );
 
   const askGemini = useCallback(
-    async (question: string, source: "typed" | "microphone" | "system" = "typed", persistQuestion = true) => {
+    async (question: string, source: "typed" | "microphone" | "system" = "typed", persistQuestion = true,
+      action: "answer" | "shorten" | "explain" | "again" = "answer", previousAnswer?: string) => {
       if (!selected) return;
+      if (selected.status === "ended") { setError("This session has ended. Create a new session to ask questions."); return; }
       const cleanQuestion = question.trim();
       if (!cleanQuestion) return;
       if (answerInFlightRef.current) return;
+      if (settingsBusyRef.current) { setNotice("Wait for answer settings to finish saving, then ask again."); return; }
       setLiveMode(true);
       answerInFlightRef.current = true;
       setBusy(true);
+      setLatestQuestion(cleanQuestion);
+      setAnswerState("generating");
       setError("");
       const controller = new AbortController();
       answerAbortRef.current = controller;
+      const request = { question: cleanQuestion, action, previousAnswer, persistQuestion };
+      lastRequestRef.current = request;
       try {
-        if (persistQuestion) await saveTranscript(selected, "user", cleanQuestion, source);
-        if (controller.signal.aborted) return;
-        const response = await api<{ answer: string; model: string }>(
-          `/sessions/${selected.id}/answer`,
-          {
-            method: "POST",
-            signal: controller.signal,
-            body: JSON.stringify({ question: cleanQuestion }),
+        if (persistQuestion) {
+          await saveTranscript(selected, "user", cleanQuestion, source);
+          request.persistQuestion = false;
+        }
+        if (controller.signal.aborted) throw new Error("Answer cancelled.");
+        const response = await requestAnswer(
+          selected.id, { question: cleanQuestion, action, previousAnswer },
+          AbortSignal.any([controller.signal, AbortSignal.timeout(95_000)]),
+          text => {
+            if (controller.signal.aborted || selectedIdRef.current !== selected.id) return;
+            setAnswer(text); setAnswerState("streaming");
           },
         );
         if (controller.signal.aborted || selectedIdRef.current !== selected.id) return;
         setAnswer(response.answer);
-        if (selected.saveTranscript) {
-          await refreshSessions();
-        } else {
+        setAnswerState("complete");
+        setPipelineStatus("Answer complete");
+        {
           const entry: TranscriptEntry = {
             role: "assistant",
             text: response.answer,
@@ -234,13 +265,18 @@ export default function InterviewWorkspace() {
           );
         }
       } catch (cause) {
-        if (!controller.signal.aborted && selectedIdRef.current === selected.id) setError(cause instanceof Error ? cause.message : "Gemini could not answer.");
+        if (selectedIdRef.current === selected.id) {
+          setAnswerState("interrupted");
+          setError(controller.signal.aborted ? "Answer cancelled. Any partial text is not a completed answer." : cause instanceof Error ? cause.message : "Gemini could not answer. Retry when connected.");
+        }
       } finally {
-        answerInFlightRef.current = false;
-        setBusy(false);
+        if (answerAbortRef.current === controller) {
+          answerInFlightRef.current = false;
+          setBusy(false);
+        }
       }
     },
-    [refreshSessions, saveTranscript, selected],
+    [refreshSessions, saveTranscript, selected, settingsBusy],
   );
   const askRef = useRef(askGemini);
   askRef.current = askGemini;
@@ -251,7 +287,7 @@ export default function InterviewWorkspace() {
       if (!session?.autoAnswer || session.status === "ended") return;
       const token = captureTokenRef.current;
       // A manual answer can also occupy the provider lane.
-      while (answerInFlightRef.current) {
+      while (answerInFlightRef.current || settingsBusyRef.current) {
         await new Promise(resolve => setTimeout(resolve, 100));
         if (captureTokenRef.current !== token) return;
       }
@@ -273,6 +309,9 @@ export default function InterviewWorkspace() {
     setListening(false);
     setRequestingMic(false);
     setInterimTranscript("");
+    setLevels({ microphone: 0, system: 0 });
+    setChannelStatus({ microphone: "Audio off", system: "Audio off" });
+    setPipelineStatus("Audio stopped");
   }, []);
 
   useEffect(() => {
@@ -285,6 +324,12 @@ export default function InterviewWorkspace() {
   useEffect(() => {
     answerAbortRef.current?.abort();
     setAnswer("");
+    setLatestQuestion("");
+    setAnswerInput("");
+    setAnswerState("idle");
+    setError(""); setNotice("");
+    lastRequestRef.current = null;
+    setReadinessOpen(false);
     setRemoteConfirmed(false);
     setLiveMode(selectedSessionRef.current?.status === "active");
     setListening(false);
@@ -345,11 +390,18 @@ export default function InterviewWorkspace() {
       const captures = sources.map(source => createDesktopAudio({
         source,
         sessionId: selected.id,
+        onLevel: (level, status) => {
+          if (captureToken !== captureTokenRef.current) return;
+          setLevels(current => ({ ...current, [source]: level }));
+          setChannelStatus(current => ({ ...current, [source]: status }));
+        },
+        onPhase: status => { if (captureToken === captureTokenRef.current) setPipelineStatus(status); },
         onText: (text, metadata) => {
           if (captureToken !== captureTokenRef.current) return;
           const activeSession = selectedSessionRef.current;
           if (!activeSession || activeSession.id !== selected.id) return;
           const speaker = !remoteConfirmed ? "unknown" : source === "microphone" ? "candidate" : "interviewer";
+          setPipelineStatus(speaker === "interviewer" ? "Collecting interviewer question" : "Listening-only for this source");
           void saveTranscript(activeSession, "user", text, metadata.source, speaker, metadata.capturedAt).then(() => {
             if (captureToken !== captureTokenRef.current) return;
             if (selectedSessionRef.current?.autoAnswer) questionsRef.current?.push(text, speaker);
@@ -499,6 +551,33 @@ export default function InterviewWorkspace() {
     }
   };
 
+  const updateLiveSettings = async (change: "autoAnswer" | "length", value: boolean | "short" | "balanced" | "long") => {
+    if (!selected || selected.status === "ended" || settingsBusyRef.current) return;
+    const id = selected.id;
+    settingsBusyRef.current = true;
+    setSettingsBusy(true); setError("");
+    try {
+      const updated = await api<CallSession>(`/sessions/${id}/preferences`, {
+        method: "PATCH", signal: AbortSignal.timeout(15000), body: JSON.stringify(change === "autoAnswer"
+          ? { autoAnswer: value }
+          : { answerPreferences: { ...sessionPreferences(selected), length: value } }),
+      });
+      settingsRevisionRef.current += 1;
+      if (!updated.autoAnswer) questionsRef.current?.reset();
+      if (selectedIdRef.current === id) selectedSessionRef.current = updated;
+      setSessions(items => items.map(item => item.id === id ? { ...updated, transcript: item.transcript } : item));
+      setNotice("Settings saved for subsequent answers.");
+    } catch (cause) { if (selectedIdRef.current === id) setError(cause instanceof Error ? cause.message : "Could not save settings."); }
+    finally { settingsBusyRef.current = false; setSettingsBusy(false); }
+  };
+  const retryAnswer = () => {
+    const request = lastRequestRef.current;
+    if (request) void askGemini(request.question, "typed", request.persistQuestion, request.action, request.previousAnswer);
+  };
+  const modifyAnswer = (action: "shorten" | "explain" | "again") => {
+    if (latestQuestion) void askGemini(latestQuestion, "typed", false, action, answer);
+  };
+
   const visibleSessions = sessions.filter((session) => {
     const matchesFilter =
       filter === "all" ||
@@ -527,6 +606,15 @@ export default function InterviewWorkspace() {
           onPreferences={() => setEditOpen(true)}
           question={answerInput} onQuestionChange={setAnswerInput}
           onAsk={() => void askGemini(answerInput)} onUseTranscript={setAnswerInput}
+          latestQuestion={latestQuestion} answerState={answerState}
+          pipelineStatus={!online ? "Offline · recording will not restart automatically. Reconnect, then retry." :
+            settingsBusy ? "Saving settings…" : pipelineStatus}
+          levels={levels} channelStatus={channelStatus}
+          onAutoAnswerChange={value => void updateLiveSettings("autoAnswer", value)}
+          onLengthChange={value => void updateLiveSettings("length", value)}
+          onAnswerAction={modifyAnswer} onRetry={retryAnswer}
+          onCancelAnswer={() => answerAbortRef.current?.abort()}
+          onReadiness={() => { stopCapture(); answerAbortRef.current?.abort(); setReadinessOpen(true); }}
         />
       ) : (<>
       <header className={`${window.sonoraDesktop ? "desktop-drag" : ""} flex h-[60px] items-center justify-between border-b border-white/10 bg-[#17181b] px-4 sm:px-6`}>
@@ -749,6 +837,10 @@ export default function InterviewWorkspace() {
           }}
         />
       )}
+      {readinessOpen && selected && (
+        <AudioReadiness key={selected.id} sessionId={selected.id}
+          onClose={() => setReadinessOpen(false)} answerBusy={busy} supportsDualAudio={supportsDualAudio} />
+      )}
       {editOpen && selected && (
         <SessionPreferencesDialog
           key={selected.id}
@@ -764,7 +856,7 @@ export default function InterviewWorkspace() {
             } else {
               setNotice("Preferences saved. New settings apply to subsequent answers.");
             }
-            setSessions((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+            setSessions((items) => items.map((item) => (item.id === updated.id ? { ...updated, transcript: item.transcript } : item)));
             setEditOpen(false);
           }}
         />

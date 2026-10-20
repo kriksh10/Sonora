@@ -123,3 +123,42 @@ test('null native protocol messages fail safely without crashing the host', asyn
   assert.equal(f.child.stopCommand, 'stop\n');
   f.child.emit('close');
 });
+
+test('idle loopback heartbeats keep a responsive helper alive beyond 20 seconds without claiming audio, but missing heartbeats fail', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const f = fixture();
+  const started = f.host.start(id, 'system');
+  await new Promise(setImmediate);
+  f.send({ type: 'ready', protocol: 2 }); await started;
+  for (let i = 1; i <= 75; i++) {
+    t.mock.timers.tick(1000);
+    f.send({ type: 'status', sampleAgeMs: i * 1000, peak: 0 });
+  }
+  assert.equal(f.events.length, 75);
+  assert.ok(f.events.every(e => e.type === 'status' && e.peak === 0));
+  assert.equal(f.child.stopCommand, undefined);
+  t.mock.timers.tick(20001);
+  assert.equal(f.events.at(-1).type, 'error');
+  assert.match(f.events.at(-1).message, /stopped responding/);
+  assert.equal(f.child.stopCommand, 'stop\n');
+  f.child.emit('close');
+});
+
+test('native status messages are validated and real device failures still stop capture', async () => {
+  for (const invalid of [{ peak: 2, sampleAgeMs: 0 }, { peak: 0, sampleAgeMs: -1 }, { peak: 'bad', sampleAgeMs: 4 }]) {
+    const f = fixture();
+    const started = f.host.start(id, 'system'); await new Promise(setImmediate);
+    f.send({ type: 'ready', protocol: 2 }); await started;
+    f.send({ type: 'status', ...invalid });
+    assert.equal(f.events.at(-1).type, 'error');
+    f.child.emit('close');
+  }
+  const f = fixture();
+  const started = f.host.start(id, 'microphone'); await new Promise(setImmediate);
+  f.send({ type: 'ready', protocol: 2 }); await started;
+  f.send({ type: 'status', sampleAgeMs: 0, peak: .2 });
+  f.send({ type: 'error', message: 'The audio device disconnected or stopped.' });
+  assert.match(f.events.at(-1).message, /disconnected/);
+  assert.equal(f.child.stopCommand, 'stop\n');
+  f.child.emit('close');
+});

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { EyeOff, GripHorizontal, Pin, Settings2, ShieldCheck, Square } from "lucide-react";
+import DesktopMaintenance from "@/components/desktop-maintenance";
 
 type DesktopState = Awaited<ReturnType<NonNullable<Window["sonoraDesktop"]>["getState"]>>;
 
@@ -86,6 +87,7 @@ export default function DesktopVisibilityControls() {
             <p className="mt-2">{state?.contentProtection ? "Capture exclusion requested" : "Capture exclusion off"} — not guaranteed. macOS ScreenCaptureKit and some sharing apps may still capture Sonora. Transparency does not mean hidden from sharing.</p>
             <p className="mt-2">Hiding does not stop audio. Use Stop audio here or in the tray.</p>
             {state?.preferencesError && <p className="mt-2 text-amber-200">{state.preferencesError}</p>}
+             <DesktopMaintenance />
           </div>
         </details>
       </div>

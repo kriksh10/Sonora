@@ -1,0 +1,16 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "8IrCiap_0G2-VAUjjlhqg"
+uri = "file://generated-artifacts/sonora-desktop-build-kit-0.3.0.zip"
+type = "unspecified"
+title = "Sonora 0.3.0 — Windows build kit"
+description = "Source archive, not an installer. Includes BUILD-WINDOWS.cmd, the audio and answer updates, and local verification instructions. Publish the hosted changes before building on Windows. No GitHub account required."
+logical_id = "6bd26737-4138-4eda-8d68-494efbc78765"
+content_hash = "sha256:afb6402de6552110869d116390f42e894602e6dee775805fc2765be23bbf1cda"
+size = 401829
+mtime_ms = 1792461778289
+storage_uri = "gcs://replit-rams-assets-spock/rams/assets/repl:87c45247-c74b-45db-b8e5-2e324bcf7153/6bd26737-4138-4eda-8d68-494efbc78765/ff3c3a62-7beb-4f8d-94f5-d20c723a684b"
+storage_version_token = "1792461836895570"
+content_type = "application/octet-stream"

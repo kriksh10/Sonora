@@ -173,6 +173,7 @@ export const UpdateSessionPreferencesResponse = zod.object({
  * @summary Health check
  */
 export const HealthCheckResponse = zod.object({
+  "desktopAnswerProtocol": zod.literal(1).optional(),
   "desktopAuthProtocol": zod.literal(1).optional(),
   "desktopAudioProtocol": zod.literal(2).optional(),
   "status": zod.string()
@@ -448,10 +449,16 @@ export const GenerateSessionAnswerParams = zod.object({
 
 export const generateSessionAnswerBodyQuestionMax = 8000;
 
+export const generateSessionAnswerBodyPreviousAnswerMax = 24000;
+
 
 
 export const GenerateSessionAnswerBody = zod.object({
-  "question": zod.string().min(1).max(generateSessionAnswerBodyQuestionMax)
+  "question": zod.string().min(1).max(generateSessionAnswerBodyQuestionMax),
+  "stream": zod.boolean().optional(),
+  "action": zod.enum(['answer', 'shorten', 'explain', 'again']).optional(),
+  "previousAnswer": zod.string().max(generateSessionAnswerBodyPreviousAnswerMax).optional(),
+  "test": zod.boolean().optional()
 })
 
 export const GenerateSessionAnswerResponse = zod.object({

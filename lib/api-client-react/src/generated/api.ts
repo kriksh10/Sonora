@@ -1062,9 +1062,9 @@ export const getGenerateSessionAnswerUrl = (id: string,) => {
  * @summary Generate a Gemini suggestion using the session's context
  */
 export const generateSessionAnswer = async (id: string,
-    sessionAnswerRequest: SessionAnswerRequest, options?: Parameters<typeof customFetch>[1]): Promise<SessionAnswer> => {
+    sessionAnswerRequest: SessionAnswerRequest, options?: Parameters<typeof customFetch>[1]): Promise<SessionAnswer | string> => {
 
-  return customFetch<SessionAnswer>(getGenerateSessionAnswerUrl(id),
+  return customFetch<SessionAnswer | string>(getGenerateSessionAnswerUrl(id),
   {
     ...options,
     method: 'POST',

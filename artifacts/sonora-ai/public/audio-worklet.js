@@ -9,6 +9,8 @@ class SonoraPcm extends AudioWorkletProcessor {
     this.count = 0;
     this.peak = 0;
     this.silentChunks = 0;
+    this.meterFrames = 0;
+    this.meterPeak = 0;
   }
   process(inputs) {
     const channel = inputs[0]?.[0];
@@ -17,6 +19,11 @@ class SonoraPcm extends AudioWorkletProcessor {
       this.sum += value;
       this.count++;
       this.peak = Math.max(this.peak, Math.abs(value));
+      this.meterPeak = Math.max(this.meterPeak, Math.abs(value));
+      if (++this.meterFrames >= sampleRate / 4) {
+        this.port.postMessage({ peak: Math.min(1, this.meterPeak) });
+        this.meterFrames = 0; this.meterPeak = 0;
+      }
       this.phase += 16000;
       if (this.phase >= sampleRate) {
         this.phase -= sampleRate;

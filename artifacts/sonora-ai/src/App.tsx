@@ -88,6 +88,8 @@ type DesktopState = {
   audioProtocol?: number;
   backgroundOpacity?: number;
   preferencesError?: string;
+  version?: string;
+  nativeAudioProtocol?: number;
 };
 
 type SonoraDesktopBridge = {
@@ -109,9 +111,14 @@ type SonoraDesktopBridge = {
   startNativeCapture?: (captureId: string, source: "microphone" | "system") => Promise<{ captureId: string }>;
   stopNativeCapture?: (captureId: string) => Promise<boolean>;
   stopAllCapture?: () => Promise<void>;
+  checkForUpdates?: () => Promise<{ available: boolean; version: string; url?: string; signing?: string; sha256?: string }>;
+  openUpdate?: () => Promise<void>;
+  getDiagnostics?: () => Promise<Record<string, string | number | boolean>>;
+  exportDiagnostics?: () => Promise<boolean>;
   onNativeAudio?: (listener: (event: {
-    captureId: string; type: "audio" | "silence" | "error";
+    captureId: string; type: "audio" | "silence" | "error" | "status";
     audio?: string; prolonged?: boolean; message?: string; source?: "microphone" | "system"; capturedAt?: string;
+    peak?: number; sampleAgeMs?: number;
   }) => void) => () => void;
   onStopCapture: (listener: () => void) => () => void;
   onStateChange: (listener: (state: DesktopState) => void) => () => void;

@@ -2,14 +2,17 @@
 
 ## Live view and separate audio channels
 
-The current source is version 0.2.1. Native transparency, saved window placement and two-channel capture require rebuilding and installing this shell; republishing only replaces the hosted interface.
+The current source is version 0.3.0. Native transparency, saved window placement, idle-channel health, activity meters and maintenance tools require rebuilding and installing this shell; republishing only replaces the hosted interface.
 
 - Drag the persistent Sonora top bar to move the window, including while the content is scrolling. Resize from window edges. Window settings provide background opacity from 45% to 100% and an opaque fallback. This changes the backdrop, not the text opacity or screen-sharing protection.
-- Opening a session switches to the transcript-first live view. Answers have their own pane; both panes follow the latest content until you scroll up, and Jump to latest resumes following. Answers arrive as complete responses; audio transcription uses six-second chunks, not word-by-word streaming.
+- Opening a session switches to the answer-first live view. The transcript is collapsed by default and opens on demand without enabling saving. Panes follow the latest content until you scroll up; Jump to latest resumes following. Gemini answer text streams as received; audio transcription still uses six-second chunks, not word-by-word transcription.
+- Readiness opens a pre-interview check with explicit Start/Stop, separate local source meters and a 45-second automatic stop. This level check sends no audio to Gemini. A separate fixed question tests real Gemini answer connectivity without adding question/answer history; it does not prove audio-to-answer or start recording automatically.
+- Live length controls affect subsequent answers. Shorten, Explain more and Answer again use the current question without duplicating interviewer transcript lines. Ctrl/Cmd+Enter asks the draft, or re-asks the current question when focus is outside text fields. Enter in the question box asks; Shift+Enter adds a line.
+- Interrupted output is marked partial with Retry, and Cancel stops the request. Current answer/draft stay visible through network failures; offline detection stops capture and reconnecting never restarts it silently. Sign-out/session switches clear protected live state.
 - On desktop, choose Call audio for remote speech or Both for separately captured microphone and system audio. Confirm “Mic = me · call = interviewer” only when that is true for your setup. Enable Auto Generate in Answer settings if desired; its state is shown in the live title.
 - Microphone speech never independently triggers automatic answers. Confirmed remote question turns can trigger them; uncertain sources stay Unknown/Remote and can be selected manually. Source mapping is not voice identification or multi-person diarization. System audio can include other applications, multiple people, or your voice if your system monitors it. Use headphones, and leave the mapping unconfirmed if uncertain.
 - Both channels require separate native permissions. Denial/failure cancels the group and stops already-started capture. Stop, End, session switch, sign-out and Quit clean up every channel. Hiding retains the documented active-capture behavior; use the window or tray Stop control.
-- Current packaging requires hosted health support for authentication protocol 1 and audio protocol 2. Publish the latest service before building. No current installer is advertised as verified until real platform checks pass.
+- Current packaging requires hosted health support for authentication protocol 1, audio protocol 2 and answer protocol 1. Publish the latest service before building. No current installer is advertised as verified until real platform checks pass.
 
 ## Release status
 
@@ -39,12 +42,20 @@ The desktop keeps a random verifier only in native memory. The browser URL carri
 - Packaged apps use a bundled Rust helper: CPAL microphone capture, Windows WASAPI output loopback through CPAL, and a macOS Core Audio process tap adapted from Meetily. This path captures no screen video. The older Chromium/audio-worklet path remains only for compatibility with older desktop bridges; a failed native start never silently falls back.
 - The helper downsamples to independent six-second mono 16 kHz PCM WAV chunks. Gemini `generateContent` transcribes these chunks through the existing authenticated API with rate limiting and bounded retries. This is **not Gemini Live** and is not word-by-word transcription. Sonora's interface and Gemini answer generation are unchanged; no speech models are downloaded.
 - The main process fixes the helper path and accepted sources, restricts native IPC to the trusted hosted main frame, validates WAV messages, and does not pass provider secrets to the helper. Capture stops on renderer exit/navigation, Quit, tray Stop, control-pipe EOF, protocol/queue errors, or startup timeout. Native captures keep the tray active until the helper exits.
-- The helper has no network client or audio-file output. Audio remains in bounded memory buffers until sent to Gemini by the existing client. Silence is skipped; no-data/permission failures are visible rather than silently returning fabricated transcripts.
+- The helper has no network client or audio-file output. Audio remains in bounded memory buffers until sent to Gemini by the existing client. It emits validated status heartbeats independently of complete audio chunks. Idle system loopback is not treated as a dead process: bounded silence padding finishes short speech chunks, while UI source status still reports the absence of actual samples. Microphone no-data, device errors, helper loss and stalled pipes remain explicit failures; no fabricated transcripts are returned.
 - Raw audio is request-scoped and not stored by Sonora. Provider processing applies. Recognized text follows the session's Save Transcript setting.
 - Silence is not sent. After 18 seconds of silence the UI asks users to check source, volume, and permissions. A silent track is not proof that OS audio access works.
 - If processing falls more than two waiting chunks behind, the app stops with an error instead of silently dropping speech. Stopping discards an unfinished final chunk and cancels in-flight client work; the server/provider may finish a request already received.
 - Stop, End, session switching, sign-out/unmount, reload, source-end, failure, and Quit release the tracks. Permission cancellation also stops any stream granted late.
 - **Hide does not stop audio.** Capture state and Stop remain available in the tray; the assistant also displays a clear warning before hiding. Quit terminates capture with the app.
+
+### Maintenance and updates
+
+Open the native title-bar Window settings → About, diagnostics & updates, including on sign-in pages. It displays installed native version/protocol information and checks hosted compatibility separately.
+
+Diagnostic export is manual, previewable and allowlisted; no audio, transcripts, questions, answers, credentials, account information, local paths or device identifiers are exported or uploaded. Native report contents are fixed by the main process.
+
+Update checks read the trusted hosted `desktop-release.json`, require a matching platform/architecture and valid version, SHA-256 and signing description. Available installer URLs must be same-origin HTTPS, without credentials/query/fragment, ending in `.exe` or `.dmg`; redirects are rejected. HEAD responses must serve a binary installer content type (for example `application/octet-stream`); HTML/JSON fallback pages are rejected. The app checks availability before offering a download and asks for native confirmation before opening the browser. Compare the downloaded file’s SHA-256 with the displayed hash before installing: downloaded bytes are not automatically verified. Installation remains manual, with no forced restart. The publisher must upload a real installer to a durable same-origin download route before marking a manifest build available. Missing/unavailable manifests never imply the installed app is current.
 
 ### Window privacy
 

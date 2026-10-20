@@ -18,6 +18,7 @@ async function checkHostedService(value = process.env.SONORA_RELEASE_URL, fetche
   if (health.status !== 'ok' || release.product !== 'sonora') throw new Error('This URL did not identify a healthy Sonora service.');
   if (health.desktopAuthProtocol !== 1) throw new Error('Publish the latest Sonora browser sign-in service before building this desktop app.');
   if (health.desktopAudioProtocol !== 2) throw new Error('Publish the latest Sonora separate-channel audio service before building this desktop app.');
+  if (health.desktopAnswerProtocol !== 1) throw new Error('Publish the latest Sonora streaming answer service before building this desktop app.');
   return serviceUrl;
 }
 
@@ -30,7 +31,7 @@ async function prepare({ arch = process.arch } = {}) {
   // Release staging is generated output, never carry files from an older target.
   fs.rmSync(stage, { recursive: true, force: true });
   fs.mkdirSync(stage, { recursive: true });
-  for (const file of ['main.cjs', 'security.cjs', 'preload.cjs', 'native-audio-host.cjs', 'browser-auth.cjs', 'window-preferences.cjs']) fs.copyFileSync(path.join(__dirname, file), path.join(stage, file));
+  for (const file of ['main.cjs', 'security.cjs', 'preload.cjs', 'native-audio-host.cjs', 'browser-auth.cjs', 'window-preferences.cjs', 'maintenance.cjs']) fs.copyFileSync(path.join(__dirname, file), path.join(stage, file));
   fs.mkdirSync(path.join(stage, 'native'), { recursive: true });
   fs.copyFileSync(nativeBinary, path.join(stage, 'native', binaryName));
   fs.chmodSync(path.join(stage, 'native', binaryName), 0o755);

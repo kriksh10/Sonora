@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { SessionAnswerRequestAction } from './sessionAnswerRequestAction';
 
 export interface SessionAnswerRequest {
   /**
@@ -12,4 +13,9 @@ export interface SessionAnswerRequest {
      * @maxLength 8000
      */
   question: string;
+  stream?: boolean;
+  action?: SessionAnswerRequestAction;
+  /** @maxLength 24000 */
+  previousAnswer?: string;
+  test?: boolean;
 }

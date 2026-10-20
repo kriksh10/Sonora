@@ -5,12 +5,13 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { createRequire } = require('node:module');
 const { transformSync } = require('esbuild');
+const { EventEmitter } = require('node:events');
 
 const serverRoot = path.resolve(__dirname, '../../../api-server/src');
 function loadTs(file, requireModule) {
   const context = { exports: {}, module: { exports: {} }, require: requireModule, Buffer, Date, Set,
     process: { env: { AI_INTEGRATIONS_GEMINI_BASE_URL: 'https://test.invalid', AI_INTEGRATIONS_GEMINI_API_KEY: 'unit-test-only' } },
-    setTimeout };
+    setTimeout, clearTimeout, AbortController };
   vm.runInNewContext(transformSync(fs.readFileSync(file, 'utf8'), { loader: 'ts', format: 'cjs' }).code, context);
   return context.module.exports;
 }
@@ -59,7 +60,7 @@ test('ending wins over late activation; repeated activation cannot reset the sta
   assert.equal((await f.call('patch', '/sessions/:id', { status: 'active' }, 'other-user')).code, 404);
 });
 
-function fixture() {
+function fixture(options = {}) {
   const handlers = new Map(), rows = [], defaults = [], requests = [];
   const sessionTable = Object.fromEntries(['id', 'userId', 'status', 'saveTranscript', 'transcript', 'createdAt'].map(k => [k, k]));
   const defaultsTable = { userId: 'userId', preferences: 'preferences' };
@@ -118,18 +119,85 @@ function fixture() {
       sql: (strings, ...values) => ({ sql: strings.join(''), values }),
     };
     if (name === '@google/genai') return { GoogleGenAI: class {
-      models = { generateContent: async request => { requests.push(request); return { text: 'Test answer' }; } };
+      models = {
+        generateContent: async request => { requests.push(request); return { text: 'Test answer' }; },
+        generateContentStream: async request => {
+          requests.push(request);
+          return (async function* () {
+            yield { text: 'Test ' };
+            options.betweenChunks?.();
+            if (options.failStream) throw new Error('Provider interrupted');
+            yield { text: 'answer' };
+          })();
+        },
+      };
     } };
     throw new Error(`Unexpected import: ${name}`);
   });
   async function call(method, route, body, user = 'user-a') {
-    const response = { code: 200, status(code) { this.code = code; return this; },
-      json(data) { this.body = plain(data); return this; } };
+    const response = Object.assign(new EventEmitter(), {
+      code: 200, frames: [], headers: {}, headersSent: false, writableEnded: false,
+      status(code) { this.code = code; return this; },
+      json(data) { this.body = plain(data); this.writableEnded = true; return this; },
+      setHeader(name, value) { this.headers[name] = value; },
+      flushHeaders() { this.headersSent = true; },
+      write(value) { this.frames.push(value); options.onWrite?.(this, value); return true; },
+      end() { this.writableEnded = true; return this; },
+    });
     await handlers.get(`${method} ${route}`)({ testUser: user, params: { id }, body }, response, error => { throw error; });
     return response;
   }
   return { call, rows, defaults, requests };
 }
+
+test('streamed answers emit real chunks and one completion, persist once, and accept contextual answer actions', async () => {
+  const f = fixture();
+  f.rows.push({ id, userId: 'user-a', status: 'active', saveTranscript: true, transcript: [] });
+  const response = await f.call('post', '/sessions/:id/answer', { question: 'Explain an API', stream: true, action: 'shorten', previousAnswer: 'An earlier answer' });
+  assert.equal(response.code, 200);
+  assert.equal(response.headers['Content-Type'], 'text/event-stream');
+  const events = response.frames.map(frame => JSON.parse(frame.slice(6)));
+  assert.deepEqual(events.map(e => e.content).filter(Boolean), ['Test ', 'answer']);
+  assert.equal(events.at(-1).done, true);
+  assert.equal(events.at(-1).answer, 'Test answer');
+  assert.equal(f.rows[0].transcript.filter(t => t.role === 'assistant').length, 1);
+  assert.ok(f.requests[0].contents.includes('An earlier answer'));
+  assert.ok(f.requests[0].contents.includes('more briefly'));
+});
+
+test('readiness tests and Save Transcript disabled during streaming never store an assistant answer', async () => {
+  const f = fixture();
+  f.rows.push({ id, userId: 'user-a', status: 'ready', saveTranscript: true, transcript: [] });
+  await f.call('post', '/sessions/:id/answer', { question: 'API check', stream: true, test: true });
+  assert.equal(f.rows[0].transcript.length, 0);
+  const edited = fixture({ betweenChunks() { edited.rows[0].saveTranscript = false; } });
+  edited.rows.push({ id, userId: 'user-a', status: 'active', saveTranscript: true, transcript: [] });
+  await edited.call('post', '/sessions/:id/answer', { question: 'API check', stream: true });
+  assert.equal(edited.rows[0].transcript.length, 0);
+});
+
+test('interrupted or disconnected streams do not save partial output and release the generation lane', async () => {
+  const f = fixture({ failStream: true });
+  f.rows.push({ id, userId: 'user-a', status: 'active', saveTranscript: true, transcript: [] });
+  const failed = await f.call('post', '/sessions/:id/answer', { question: 'API check', stream: true });
+  assert.ok(failed.frames.at(-1).includes('interrupted'));
+  assert.equal(f.rows[0].transcript.length, 0);
+  assert.equal((await f.call('post', '/sessions/:id/answer', { question: 'API check' })).code, 200);
+  const disconnect = fixture({ onWrite(response) { response.emit('close'); } });
+  disconnect.rows.push({ id, userId: 'user-a', status: 'active', saveTranscript: true, transcript: [] });
+  const stopped = await disconnect.call('post', '/sessions/:id/answer', { question: 'API check', stream: true });
+  assert.equal(stopped.frames.length, 1);
+  assert.equal(disconnect.rows[0].transcript.length, 0);
+});
+
+test('answer actions and stream access retain validation and owner restrictions', async () => {
+  const f = fixture();
+  f.rows.push({ id, userId: 'user-a', status: 'active', transcript: [] });
+  assert.equal((await f.call('post', '/sessions/:id/answer', { question: 'API', stream: true }, 'user-b')).code, 404);
+  assert.equal((await f.call('post', '/sessions/:id/answer', { question: 'API', action: 'shorten' })).code, 400);
+  assert.equal((await f.call('post', '/sessions/:id/answer', { question: 'API', action: 'invent' })).code, 400);
+  assert.equal((await f.call('post', '/sessions/:id/answer', { question: 'API', previousAnswer: 'x'.repeat(24001) })).code, 400);
+});
 
 test('legacy sessions get compatible structured preferences without changing stored data', () => {
   for (const [legacy, expected] of [['concise', 'short'], ['detailed', 'long'], ['technical', 'balanced']]) {

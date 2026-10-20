@@ -295,6 +295,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SessionAnswer"
+            text/event-stream:
+              schema:
+                type: string
+              example: 'data: {"content":"Answer text"}\n\ndata: {"done":true,"answer":"Answer text","model":"gemini-2.5-flash"}\n\n'
         default:
           $ref: "#/components/responses/SessionError"
   /sessions/{id}/transcribe:
@@ -495,6 +499,16 @@ components:
           type: string
           minLength: 1
           maxLength: 8000
+        stream:
+          type: boolean
+        action:
+          type: string
+          enum: [answer, shorten, explain, again]
+        previousAnswer:
+          type: string
+          maxLength: 24000
+        test:
+          type: boolean
     NewCallSession:
       type: object
       required: [sessionType]
@@ -617,6 +631,9 @@ components:
     HealthStatus:
       type: object
       properties:
+        desktopAnswerProtocol:
+          type: integer
+          enum: [1]
         desktopAuthProtocol:
           type: integer
           enum: [1]

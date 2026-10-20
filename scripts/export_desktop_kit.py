@@ -27,7 +27,8 @@ This ZIP contains SOURCE for local builds, not an installer. It contains no
 credentials or user-uploaded files. Windows builds do not need a GitHub account.
 
 1. The publisher must first republish the latest Sonora service. The builder
-   deliberately stops if that service lacks the new browser sign-in protocol.
+   deliberately stops if that service lacks browser sign-in protocol 1,
+   separate-channel audio protocol 2 or streaming-answer protocol 1.
 2. Extract this ZIP to a normal folder. On Windows x64, read
    artifacts/sonora-ai/desktop/WINDOWS.md for Node, pnpm, Rust, and compiler/SDK
    prerequisites. Double-click BUILD-WINDOWS.cmd and supply the published URL.
@@ -35,12 +36,12 @@ credentials or user-uploaded files. Windows builds do not need a GitHub account.
    unsigned preview unless a signing identity is configured on your build PC.
 4. Install it, choose Sign in with browser, sign in using Google or email,
    and enter the desktop's six-digit code in the browser. Return to Sonora.
-5. Follow desktop/VERIFICATION.md on the target computer: real sign-in,
+5. Follow artifacts/sonora-ai/desktop/VERIFICATION.md on the target computer: real sign-in,
    microphone AND interviewer/system audio, Gemini answers, Stop/Quit,
    Hide/tray restore, and receiver-side screen sharing. A toggle alone does not
    prove screen-share exclusion. macOS ScreenCaptureKit may ignore protection.
 
-Mac builds must run on a Mac; see desktop/README.md. Signing/notarization and
+Mac builds must run on a Mac; see artifacts/sonora-ai/desktop/README.md. Signing/notarization and
 native receiver-side verification are still required before a verified release.
 Do not distribute a build as verified merely because the build command passed.
 """

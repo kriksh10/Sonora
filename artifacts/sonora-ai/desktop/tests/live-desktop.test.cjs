@@ -26,7 +26,7 @@ test('opacity validates rather than silently accepting unsafe values', () => {
 test('saved window bounds recover across removed monitors, scaling, and invalid input', () => {
   const displays = [{ workArea: { x: -1280, y: 0, width: 1280, height: 720 } }, { workArea: { x: 0, y: 0, width: 1920, height: 1080 } }];
   assert.deepEqual(safeBounds({ x: -1100, y: 50, width: 600, height: 500 }, displays),
-    { x: -1100, y: 50, width: 600, height: 500 });
+    { x: -1100, y: 50, width: 600, height: 620 });
   const recovered = safeBounds({ x: 8000, y: -3000, width: 2000, height: 2000 }, displays);
   assert.equal(recovered.x, -1280); assert.equal(recovered.y, 0);
   assert.equal(recovered.width, 1280); assert.equal(recovered.height, 720);
@@ -128,6 +128,32 @@ test('separate capture clients share the provider lane and retain source/time me
       ['Candidate speech', 'microphone', capturedAt], ['Remote speech', 'system', capturedAt],
     ]);
   } finally { one.stop(); two.stop(); }
+});
+
+test('readiness capture exposes levels locally, sends no audio to Gemini, and unsubscribes on Stop', async () => {
+  let listener, id, stopped = false;
+  const levels = [];
+  const { createDesktopAudio } = load('../../src/lib/desktop-audio.ts', {
+    window: { sonoraDesktop: {
+      onNativeAudio(fn) { listener = fn; return () => { listener = null; }; },
+      startNativeCapture: async value => { id = value; },
+      stopNativeCapture: async () => { stopped = true; },
+    } }, crypto: require('node:crypto'), AbortController, AbortSignal,
+    fetch: () => assert.fail('Readiness levels must never send audio to transcription'),
+  });
+  const capture = createDesktopAudio({ source: 'system', sessionId: 's', transcribe: false,
+    onNotice() {}, onError(error) { throw error; }, onText() { assert.fail('No transcription expected'); },
+    onLevel: (level, state) => levels.push({ level, state }),
+  });
+  await capture.start();
+  listener({ type: 'status', captureId: id, peak: .2, sampleAgeMs: 0 });
+  listener({ type: 'audio', captureId: id, audio: 'fixed-wav' });
+  listener({ type: 'status', captureId: id, peak: 0, sampleAgeMs: 25000 });
+  await new Promise(setImmediate);
+  assert.equal(levels[0].level, .2);
+  assert.match(levels[1].state, /No audio samples/);
+  capture.stop(); await new Promise(setImmediate);
+  assert.equal(stopped, true); assert.equal(listener, null);
 });
 
 function questions(answer = async () => {}) {

@@ -1,6 +1,21 @@
-# Session setup and answer preferences
+# Sonora desktop verification
 
-## Current source update — desktop 0.2.1
+## Current source update — desktop 0.3.0
+
+Implemented an answer-first live layout with optional collapsed transcript, real SSE answer delivery, independent answer state/partial interruption display, Retry/Cancel, live length controls, contextual Shorten/Explain more/Answer again, and local keyboard shortcuts. Audio readiness uses locally processed activity meters with explicit consent, Stop/close cleanup and a 45-second limit; a separate real Gemini test does not save test history. Offline detection stops capture rather than silently restarting it on reconnect. Native title-bar maintenance exposes a manual allowlisted diagnostic export and user-approved installer discovery; no update is advertised without a compatible manifest and an available binary-served file.
+
+The native helper emits status independently of complete chunks. Responsive quiet loopback is no longer classified as a dead helper; bounded silence padding finishes short speech chunks while reporting real source inactivity separately. Real device errors, microphone no-data and stalled processes remain failures. The compact window keeps enough minimum height for an answer rather than shrinking to a few unreadable lines.
+
+Verified in this Linux workspace:
+- JavaScript regression coverage includes real progressive SSE parsing, completion validation, interrupted/disconnected/no-save streams, authenticated owner restrictions, contextual actions, locally processed readiness levels with zero transcription requests, 75 seconds of simulated idle-loopback health, malformed status/device failure, answer-first control wiring and per-session transcript collapse, update approval boundaries, missing/HTML installer rejection, and diagnostics content exclusion.
+- Three Rust PCM tests pass, including short speech followed by loopback padding, silence handling and format/error behavior. These test the encoder, not Windows or macOS capture drivers.
+- API/frontend type checks, a frontend production build and desktop CommonJS syntax checks pass.
+- A real `gemini-2.5-flash` streaming SDK request returned non-empty content through the configured integration. It is not an installed-desktop or authenticated-browser end-to-end check and does not establish latency under interview conditions.
+- Both managed development workflows restarted successfully; the proxied health response reports authentication 1, audio 2 and answer 1. The real live-view component was rendered with fictional data and inspected at desktop and narrow widths. This visual-only fixture has no working controls, authentication or audio access.
+
+**Still blocked for release:** this workspace cannot run a Windows or Mac installer and has no attached native runner. Publishing remains user-controlled. Republish the hosted changes, build the current shell on the Windows PC, then verify installed sign-in, long-running real microphone/system audio, automatic remote-question answers, permission/device recovery, native window translucency/dragging, and receiver-side sharing. Mac packaging and native verification still require a Mac. No new installer, signature/notarization result, or screen-share invisibility result has been certified. The desktop release task remains in progress.
+
+## Previous source update — desktop 0.2.1
 
 The live view is transcript-first, with a separate answer pane, independent follow/pause/jump scrolling, a compact consolidated window toolbar, background-opacity controls and persistent safe window bounds. Native capture supports two independently permissioned helper processes with source/time metadata; microphone speech cannot trigger automatic answers, and remote speech requires explicit source confirmation. Question assembly, bounded buffering and deduplication replace single-chunk/question-punctuation triggering.
 

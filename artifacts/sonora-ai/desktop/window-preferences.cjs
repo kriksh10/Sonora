@@ -13,7 +13,8 @@ function safeBounds(saved, displays) {
     saved.x < a.x + a.width - 40 && saved.y + saved.height > a.y + 40 &&
     saved.y < a.y + a.height - 40) || areas[0];
   const width = Math.min(area.width, Math.max(390, valid ? saved.width : 780));
-  const height = Math.min(area.height, Math.max(460, valid ? saved.height : 720));
+  // Below this, wrapped call controls leave almost no room to read an answer.
+  const height = Math.min(area.height, Math.max(620, valid ? saved.height : 720));
   return {
     width: Math.round(width), height: Math.round(height),
     x: Math.round(Math.max(area.x, Math.min(valid ? saved.x : area.x + (area.width - width) / 2, area.x + area.width - width))),

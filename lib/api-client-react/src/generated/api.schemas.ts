@@ -200,12 +200,27 @@ export interface AppendTranscriptRequest {
   capturedAt?: string;
 }
 
+export type SessionAnswerRequestAction = typeof SessionAnswerRequestAction[keyof typeof SessionAnswerRequestAction];
+
+
+export const SessionAnswerRequestAction = {
+  answer: 'answer',
+  shorten: 'shorten',
+  explain: 'explain',
+  again: 'again',
+} as const;
+
 export interface SessionAnswerRequest {
   /**
      * @minLength 1
      * @maxLength 8000
      */
   question: string;
+  stream?: boolean;
+  action?: SessionAnswerRequestAction;
+  /** @maxLength 24000 */
+  previousAnswer?: string;
+  test?: boolean;
 }
 
 export type NewCallSessionSessionType = typeof NewCallSessionSessionType[keyof typeof NewCallSessionSessionType];
@@ -349,6 +364,13 @@ export interface SessionAnswer {
   model: string;
 }
 
+export type HealthStatusDesktopAnswerProtocol = typeof HealthStatusDesktopAnswerProtocol[keyof typeof HealthStatusDesktopAnswerProtocol];
+
+
+export const HealthStatusDesktopAnswerProtocol = {
+  NUMBER_1: 1,
+} as const;
+
 export type HealthStatusDesktopAuthProtocol = typeof HealthStatusDesktopAuthProtocol[keyof typeof HealthStatusDesktopAuthProtocol];
 
 
@@ -364,6 +386,7 @@ export const HealthStatusDesktopAudioProtocol = {
 } as const;
 
 export interface HealthStatus {
+  desktopAnswerProtocol?: HealthStatusDesktopAnswerProtocol;
   desktopAuthProtocol?: HealthStatusDesktopAuthProtocol;
   desktopAudioProtocol?: HealthStatusDesktopAudioProtocol;
   status: string;
