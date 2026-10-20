@@ -71,11 +71,11 @@ Make the hosted Sonora site publicly reachable while retaining Sonora sign-in an
 
 ## Live desktop priorities
 
-The user wants a transparent, freely movable desktop app. Once a session starts, live transcription must be the main focus, answers must be visually separated, and new answers must automatically scroll into view rather than requiring navigation through a crowded setup page.
+The user wants a transparent, freely movable desktop app. Once a session starts, answers must be the main focus, with the transcript collapsed by default and available on demand. New answers must automatically scroll into view rather than requiring navigation through a crowded setup page.
 
-**Why:** The user reported these usability problems after using the installed app and explicitly prioritized the live transcript.
+**Why:** After using the installed app, the user clarified that the candidate needs to see answers rather than a dominant transcript. This supersedes their earlier transcript-primary request.
 
-**How to apply:** Preserve transcript-first live mode when revising the desktop layout. Keep setup/history separate from active-call content, and distinguish visual transparency from screen-share exclusion.
+**How to apply:** Use answer-first live mode with optional transcript access. Keep setup/history separate from active-call content, and distinguish visual transparency from screen-share exclusion.
 
 ## Source attribution is not speaker identity
 
