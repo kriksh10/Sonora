@@ -62,10 +62,13 @@ test('ending wins over late activation; repeated activation cannot reset the sta
 
 function fixture(options = {}) {
   const handlers = new Map(), rows = [], defaults = [], requests = [];
-  const sessionTable = Object.fromEntries(['id', 'userId', 'status', 'saveTranscript', 'transcript', 'createdAt'].map(k => [k, k]));
+  const sessionTable = Object.fromEntries(['id', 'userId', 'status', 'saveTranscript', 'transcript', 'createdAt', 'roundNumber'].map(k => [k, k]));
   const defaultsTable = { userId: 'userId', preferences: 'preferences' };
   const collection = table => table === sessionTable ? rows : defaults;
-  const matches = (row, expr) => !expr || (expr.and ? expr.and.every(e => matches(row, e)) : row[expr.key] === expr.value);
+  const matches = (row, expr) => !expr || (expr.and ? expr.and.every(e => matches(row, e))
+    : expr.or ? expr.or.some(e => matches(row, e))
+    : expr.sql ? row.status !== 'ended'
+    : (expr.key === 'roundNumber' ? row.roundNumber ?? 1 : row[expr.key]) === expr.value);
   const db = {
     select: () => ({ from: table => ({
       where: expr => {
@@ -113,9 +116,15 @@ function fixture(options = {}) {
     if (name === '@workspace/db') return { db, callSessionsTable: sessionTable, answerDefaultsTable: defaultsTable };
     if (name === '@workspace/api-zod') return validators;
     if (name === '../lib/answer-preferences') return preferences;
+    if (name === '../lib/session-lifecycle') return {
+      roundMatches: (current, requested) => (current ?? 1) === (requested ?? 1),
+      approvedWriteCondition: () => ({ sql: 'approved account' }),
+      watchSession: () => () => {}, stopSessionOperations() {},
+      sessionStillUsable: async (sessionId, userId, round) => rows.some(row => row.id === sessionId && row.userId === userId && row.status !== 'ended' && (row.roundNumber ?? 1) === round),
+    };
     if (name === '../lib/logger') return { logger: { error() {} } };
     if (name === 'drizzle-orm') return {
-      and: (...and) => ({ and }), eq: (key, value) => ({ key, value }), desc: value => value,
+      and: (...and) => ({ and }), or: (...or) => ({ or }), eq: (key, value) => ({ key, value }), desc: value => value,
       sql: (strings, ...values) => ({ sql: strings.join(''), values }),
     };
     if (name === '@google/genai') return { GoogleGenAI: class {

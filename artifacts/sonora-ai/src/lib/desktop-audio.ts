@@ -6,6 +6,7 @@ let transcriptionLane: Promise<void> = Promise.resolve();
 type Options = {
   source: "microphone" | "system";
   sessionId: string;
+  roundNumber?: number;
   onText: (text: string, metadata: { source: "microphone" | "system"; capturedAt: string }) => void;
   onNotice: (text: string) => void;
   onError: (error: Error) => void;
@@ -75,7 +76,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
         const response = await fetch(`/api/sessions/${options.sessionId}/transcribe`, {
           method: "POST", credentials: "include", signal: AbortSignal.any([abort.signal, AbortSignal.timeout(30_000)]),
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ audio, mimeType: "audio/wav", source: options.source }),
+          body: JSON.stringify({ audio, mimeType: "audio/wav", source: options.source, ...(options.roundNumber ? { roundNumber: options.roundNumber } : {}) }),
         });
         const result = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(result.error || `Transcription failed (${response.status}).`);

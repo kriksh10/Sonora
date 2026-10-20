@@ -6,6 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './accessChangeInput';
+export * from './accessChangeInputAction';
+export * from './accessStatus';
+export * from './accessStatusRole';
+export * from './accessStatusStatus';
+export * from './accessUser';
 export * from './answerPreferences';
 export * from './answerPreferencesFormat';
 export * from './answerPreferencesLength';
@@ -26,15 +32,18 @@ export * from './desktopAuthStarted';
 export * from './desktopAuthStartInput';
 export * from './desktopAuthState';
 export * from './desktopAuthStateStatus';
+export * from './extractedText';
 export * from './healthStatus';
 export * from './healthStatusDesktopAnswerProtocol';
 export * from './healthStatusDesktopAudioProtocol';
 export * from './healthStatusDesktopAuthProtocol';
+export * from './interviewRound';
 export * from './newCallSession';
 export * from './newCallSessionAnswerPreference';
 export * from './newCallSessionLanguage';
 export * from './newCallSessionModel';
 export * from './newCallSessionSessionType';
+export * from './roundStartInput';
 export * from './sessionAnswer';
 export * from './sessionAnswerRequest';
 export * from './sessionAnswerRequestAction';

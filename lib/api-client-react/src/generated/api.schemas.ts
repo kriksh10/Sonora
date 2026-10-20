@@ -5,6 +5,70 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export type AccessStatusStatus = typeof AccessStatusStatus[keyof typeof AccessStatusStatus];
+
+
+export const AccessStatusStatus = {
+  pending: 'pending',
+  approved: 'approved',
+  denied: 'denied',
+  revoked: 'revoked',
+} as const;
+
+export type AccessStatusRole = typeof AccessStatusRole[keyof typeof AccessStatusRole];
+
+
+export const AccessStatusRole = {
+  owner: 'owner',
+  approver: 'approver',
+  user: 'user',
+} as const;
+
+export interface AccessStatus {
+  status: AccessStatusStatus;
+  role: AccessStatusRole;
+  email: string;
+  requested: boolean;
+}
+
+export type AccessUser = AccessStatus & {
+  userId: string;
+  updatedAt: string;
+};
+
+export type AccessChangeInputAction = typeof AccessChangeInputAction[keyof typeof AccessChangeInputAction];
+
+
+export const AccessChangeInputAction = {
+  approve: 'approve',
+  deny: 'deny',
+  revoke: 'revoke',
+} as const;
+
+export interface AccessChangeInput {
+  action: AccessChangeInputAction;
+}
+
+export interface ExtractedText {
+  /** @maxLength 2000000 */
+  text: string;
+}
+
+export interface RoundStartInput {
+  requestId: string;
+  /** @minimum 1 */
+  roundNumber?: number;
+}
+
+export interface InterviewRound {
+  /** @minimum 1 */
+  number: number;
+  /** @nullable */
+  startedAt: string | null;
+  /** @nullable */
+  endedAt: string | null;
+}
+
 export interface DesktopAuthStartInput {
   /** @pattern ^[a-f0-9]{64}$ */
   challenge: string;
@@ -133,6 +197,8 @@ export const SessionAudioChunkSource = {
 } as const;
 
 export interface SessionAudioChunk {
+  /** @minimum 1 */
+  roundNumber?: number;
   /**
      * Base64 PCM WAV, mono 16 kHz, at most eight seconds
      * @minLength 60
@@ -158,6 +224,8 @@ export const UpdateCallSessionRequestStatus = {
 } as const;
 
 export interface UpdateCallSessionRequest {
+  /** @minimum 1 */
+  roundNumber?: number;
   status: UpdateCallSessionRequestStatus;
 }
 
@@ -189,6 +257,8 @@ export const AppendTranscriptRequestSpeaker = {
 } as const;
 
 export interface AppendTranscriptRequest {
+  /** @minimum 1 */
+  roundNumber?: number;
   /**
      * @minLength 1
      * @maxLength 8000
@@ -211,6 +281,8 @@ export const SessionAnswerRequestAction = {
 } as const;
 
 export interface SessionAnswerRequest {
+  /** @minimum 1 */
+  roundNumber?: number;
   /**
      * @minLength 1
      * @maxLength 8000
@@ -308,6 +380,8 @@ export const TranscriptEntrySpeaker = {
 } as const;
 
 export interface TranscriptEntry {
+  /** @minimum 1 */
+  roundNumber?: number;
   role: TranscriptEntryRole;
   text: string;
   source: TranscriptEntrySource;
@@ -334,6 +408,9 @@ export const CallSessionStatus = {
 } as const;
 
 export interface CallSession {
+  /** @minimum 1 */
+  roundNumber?: number;
+  rounds?: InterviewRound[];
   id: string;
   sessionType: CallSessionSessionType;
   title: string;

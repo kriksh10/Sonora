@@ -8,5 +8,7 @@
 import type { UpdateCallSessionRequestStatus } from './updateCallSessionRequestStatus';
 
 export interface UpdateCallSessionRequest {
+  /** @minimum 1 */
+  roundNumber?: number;
   status: UpdateCallSessionRequestStatus;
 }

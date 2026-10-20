@@ -7,6 +7,7 @@ import { StartDesktopAuthBody, ApproveDesktopAuthBody, PollDesktopAuthBody } fro
 import { getClerkProxyHost } from "../middlewares/clerkProxyMiddleware";
 import { logger } from "../lib/logger";
 import { createDesktopAuthLimiter, desktopAuthLifetimeMs, matchesProof, proofHash, sameOriginApproval } from "../lib/desktop-auth-security";
+import { ensureAccess, hasApprovedAccess } from "../lib/app-access";
 
 const router = Router();
 const permit = createDesktopAuthLimiter();
@@ -47,6 +48,9 @@ router.get(`${path}/:id`, async (req, res) => {
 router.post(`${path}/:id/approve`, async (req, res) => {
   const userId = getAuth(req).userId;
   if (!userId) { res.status(401).json({ error: "Sign in before connecting Sonora desktop." }); return; }
+  if ((await ensureAccess(userId)).status !== "approved") {
+    res.status(403).json({ error: "Your Sonora account must be approved before connecting the desktop app." }); return;
+  }
   if (!sameOriginApproval(req.get("origin"), getClerkProxyHost(req), req.get("sec-fetch-site"))) {
     res.status(403).json({ error: "Approve from the Sonora browser page." }); return;
   }
@@ -84,8 +88,19 @@ router.post(`${path}/:id/poll`, async (req, res) => {
     .where(and(active(id), eq(requests.status, "approved"))).returning();
   if (!claimed) { res.json({ status: "pending" }); return; }
   try {
+    if (!await hasApprovedAccess(claimed.userId!)) {
+      await db.update(requests).set({ status: "cancelled", userId: null })
+        .where(and(active(id), eq(requests.status, "exchanging")));
+      res.status(403).json({ error: "App access was removed. Contact the owner before connecting." }); return;
+    }
     const client = clerkClient;
     const token = await client.signInTokens.createSignInToken({ userId: claimed.userId!, expiresInSeconds: 60 });
+    if (!await hasApprovedAccess(claimed.userId!)) {
+      await client.signInTokens.revokeSignInToken(token.id);
+      await db.update(requests).set({ status: "cancelled", userId: null })
+        .where(and(active(id), eq(requests.status, "exchanging")));
+      res.status(403).json({ error: "App access was removed before sign-in completed." }); return;
+    }
     const [consumed] = await db.update(requests).set({ status: "consumed", userId: null })
       .where(and(active(id), eq(requests.status, "exchanging"))).returning();
     if (!consumed) {

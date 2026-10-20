@@ -13,6 +13,96 @@ tags:
   - name: sessions
     description: Private interview and regular-call sessions
 paths:
+  /access/status:
+    get:
+      operationId: getAccessStatus
+      responses:
+        "200":
+          description: Current user's application access
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessStatus"
+  /access/request:
+    post:
+      operationId: requestAppAccess
+      responses:
+        "200":
+          description: Access request status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessStatus"
+  /access/users:
+    get:
+      operationId: listAccessUsers
+      responses:
+        "200":
+          description: Owner sees users; approver sees pending requests only
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AccessUser"
+  /access/users/{userId}:
+    patch:
+      operationId: changeUserAccess
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 200 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccessChangeInput"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessUser"
+  /files/extract:
+    post:
+      operationId: extractWordText
+      description: Transient in-memory DOC/DOCX extraction; raw files are never saved.
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: Extracted text
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExtractedText"
+  /sessions/{id}/restart:
+    post:
+      operationId: restartSession
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoundStartInput"
+      responses:
+        "200":
+          description: Next round ready; explicit audio start still required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallSession"
   /desktop-auth/requests:
     post:
       operationId: startDesktopAuth
@@ -204,6 +294,11 @@ paths:
         default:
           $ref: "#/components/responses/SessionError"
   /sessions/{id}:
+    delete:
+      operationId: deleteSession
+      responses:
+        "204":
+          description: Ended interview and saved history permanently deleted
     parameters:
       - name: id
         in: path
@@ -349,6 +444,45 @@ components:
               error:
                 type: string
   schemas:
+    AccessStatus:
+      type: object
+      required: [status, role, email, requested]
+      properties:
+        status: { type: string, enum: [pending, approved, denied, revoked] }
+        role: { type: string, enum: [owner, approver, user] }
+        email: { type: string }
+        requested: { type: boolean }
+    AccessUser:
+      allOf:
+        - $ref: "#/components/schemas/AccessStatus"
+        - type: object
+          required: [userId, updatedAt]
+          properties:
+            userId: { type: string }
+            updatedAt: { type: string, format: date-time }
+    AccessChangeInput:
+      type: object
+      required: [action]
+      properties:
+        action: { type: string, enum: [approve, deny, revoke] }
+    ExtractedText:
+      type: object
+      required: [text]
+      properties:
+        text: { type: string, maxLength: 2000000 }
+    RoundStartInput:
+      type: object
+      required: [requestId]
+      properties:
+        requestId: { type: string, format: uuid }
+        roundNumber: { type: integer, minimum: 1 }
+    InterviewRound:
+      type: object
+      required: [number, startedAt, endedAt]
+      properties:
+        number: { type: integer, minimum: 1 }
+        startedAt: { type: [string, "null"], format: date-time }
+        endedAt: { type: [string, "null"], format: date-time }
     DesktopAuthStartInput:
       type: object
       additionalProperties: false
@@ -446,6 +580,7 @@ components:
       type: object
       required: [audio, mimeType]
       properties:
+        roundNumber: { type: integer, minimum: 1 }
         audio:
           type: string
           minLength: 60
@@ -468,6 +603,7 @@ components:
       type: object
       required: [status]
       properties:
+        roundNumber: { type: integer, minimum: 1 }
         status:
           type: string
           enum: [ready, active, ended]
@@ -475,6 +611,7 @@ components:
       type: object
       required: [text, role, source]
       properties:
+        roundNumber: { type: integer, minimum: 1 }
         text:
           type: string
           minLength: 1
@@ -495,6 +632,7 @@ components:
       type: object
       required: [question]
       properties:
+        roundNumber: { type: integer, minimum: 1 }
         question:
           type: string
           minLength: 1
@@ -553,6 +691,7 @@ components:
       type: object
       required: [role, text, source, createdAt]
       properties:
+        roundNumber: { type: integer, minimum: 1 }
         role:
           type: string
           enum: [user, assistant]
@@ -574,6 +713,11 @@ components:
       type: object
       required: [id, sessionType, title, company, description, resumeText, documentsText, instructions, answerPreference, model, language, autoAnswer, saveTranscript, status, transcript, createdAt, startedAt, endedAt]
       properties:
+        roundNumber: { type: integer, minimum: 1 }
+        rounds:
+          type: array
+          items:
+            $ref: "#/components/schemas/InterviewRound"
         id:
           type: string
           format: uuid

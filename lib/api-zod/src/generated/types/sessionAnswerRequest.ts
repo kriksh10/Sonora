@@ -8,6 +8,8 @@
 import type { SessionAnswerRequestAction } from './sessionAnswerRequestAction';
 
 export interface SessionAnswerRequest {
+  /** @minimum 1 */
+  roundNumber?: number;
   /**
      * @minLength 1
      * @maxLength 8000

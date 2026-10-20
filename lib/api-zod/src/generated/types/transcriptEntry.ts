@@ -10,6 +10,8 @@ import type { TranscriptEntrySource } from './transcriptEntrySource';
 import type { TranscriptEntrySpeaker } from './transcriptEntrySpeaker';
 
 export interface TranscriptEntry {
+  /** @minimum 1 */
+  roundNumber?: number;
   role: TranscriptEntryRole;
   text: string;
   source: TranscriptEntrySource;

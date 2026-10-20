@@ -3,10 +3,18 @@ import healthRouter from "./health";
 import sessionsRouter from "./sessions";
 import transcriptionRouter from "./transcription";
 import desktopAuthRouter from "./desktop-auth";
+import accessRouter from "./access";
+import filesRouter from "./files";
+import lifecycleRouter from "./session-lifecycle";
+import { requireApprovedAccess } from "../lib/app-access";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(accessRouter);
+router.use(["/sessions", "/answer-preferences", "/files"], requireApprovedAccess);
+router.use(filesRouter);
+router.use(lifecycleRouter);
 router.use(sessionsRouter);
 router.use(transcriptionRouter);
 router.use(desktopAuthRouter);

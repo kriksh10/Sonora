@@ -10,6 +10,8 @@ import type { AppendTranscriptRequestSource } from './appendTranscriptRequestSou
 import type { AppendTranscriptRequestSpeaker } from './appendTranscriptRequestSpeaker';
 
 export interface AppendTranscriptRequest {
+  /** @minimum 1 */
+  roundNumber?: number;
   /**
      * @minLength 1
      * @maxLength 8000

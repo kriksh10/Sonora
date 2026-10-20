@@ -8,9 +8,13 @@
 import type { AnswerPreferences } from './answerPreferences';
 import type { CallSessionSessionType } from './callSessionSessionType';
 import type { CallSessionStatus } from './callSessionStatus';
+import type { InterviewRound } from './interviewRound';
 import type { TranscriptEntry } from './transcriptEntry';
 
 export interface CallSession {
+  /** @minimum 1 */
+  roundNumber?: number;
+  rounds?: InterviewRound[];
   id: string;
   sessionType: CallSessionSessionType;
   title: string;

@@ -1,5 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { bootstrapConfiguredAccess } from "./lib/bootstrap-access";
 
 const rawPort = process.env["PORT"];
 
@@ -22,4 +23,7 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+  void bootstrapConfiguredAccess().catch(() => {
+    logger.warn("Access bootstrap could not complete. Verified configured accounts can retry through sign-in; other users remain gated.");
+  });
 });

@@ -1,6 +1,7 @@
 import {
   boolean,
   jsonb,
+  integer,
   pgTable,
   text,
   timestamp,
@@ -8,6 +9,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 export type TranscriptEntry = {
+  roundNumber?: number;
   role: "user" | "assistant";
   text: string;
   source: "typed" | "microphone" | "system" | "ai";
@@ -50,6 +52,9 @@ export const callSessionsTable = pgTable("call_sessions", {
     .defaultNow(),
   startedAt: timestamp("started_at", { withTimezone: true }),
   endedAt: timestamp("ended_at", { withTimezone: true }),
+  roundNumber: integer("round_number").notNull().default(1),
+  rounds: jsonb("rounds").$type<{ number: number; startedAt: string | null; endedAt: string | null }[]>().notNull().default([]),
+  restartRequestId: text("restart_request_id"),
 });
 
 export type CallSession = typeof callSessionsTable.$inferSelect;

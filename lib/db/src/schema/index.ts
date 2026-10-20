@@ -18,4 +18,5 @@
 //   export type Post = typeof postsTable.$inferSelect;
 
 export * from "./call-sessions";
+export * from "./app-access";
 export * from "./desktop-auth";

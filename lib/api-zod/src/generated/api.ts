@@ -8,6 +8,129 @@
 import * as zod from 'zod';
 
 
+export const GetAccessStatusResponse = zod.object({
+  "status": zod.enum(['pending', 'approved', 'denied', 'revoked']),
+  "role": zod.enum(['owner', 'approver', 'user']),
+  "email": zod.string(),
+  "requested": zod.boolean()
+})
+
+
+export const RequestAppAccessResponse = zod.object({
+  "status": zod.enum(['pending', 'approved', 'denied', 'revoked']),
+  "role": zod.enum(['owner', 'approver', 'user']),
+  "email": zod.string(),
+  "requested": zod.boolean()
+})
+
+
+export const ListAccessUsersResponseItem = zod.object({
+  "status": zod.enum(['pending', 'approved', 'denied', 'revoked']),
+  "role": zod.enum(['owner', 'approver', 'user']),
+  "email": zod.string(),
+  "requested": zod.boolean()
+}).and(zod.object({
+  "userId": zod.string(),
+  "updatedAt": zod.coerce.date()
+}))
+export const ListAccessUsersResponse = zod.array(ListAccessUsersResponseItem)
+
+
+export const changeUserAccessPathUserIdMax = 200;
+
+
+
+export const ChangeUserAccessParams = zod.object({
+  "userId": zod.coerce.string().min(1).max(changeUserAccessPathUserIdMax)
+})
+
+export const ChangeUserAccessBody = zod.object({
+  "action": zod.enum(['approve', 'deny', 'revoke'])
+})
+
+export const ChangeUserAccessResponse = zod.object({
+  "status": zod.enum(['pending', 'approved', 'denied', 'revoked']),
+  "role": zod.enum(['owner', 'approver', 'user']),
+  "email": zod.string(),
+  "requested": zod.boolean()
+}).and(zod.object({
+  "userId": zod.string(),
+  "updatedAt": zod.coerce.date()
+}))
+
+
+/**
+ * Transient in-memory DOC/DOCX extraction; raw files are never saved.
+ */
+export const extractWordTextResponseTextMax = 2000000;
+
+
+
+export const ExtractWordTextResponse = zod.object({
+  "text": zod.string().max(extractWordTextResponseTextMax)
+})
+
+
+export const RestartSessionParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+
+
+
+export const RestartSessionBody = zod.object({
+  "requestId": zod.string().uuid(),
+  "roundNumber": zod.number().int().min(1).optional()
+})
+
+
+
+
+
+
+export const RestartSessionResponse = zod.object({
+  "roundNumber": zod.number().int().min(1).optional(),
+  "rounds": zod.array(zod.object({
+  "number": zod.number().int().min(1),
+  "startedAt": zod.coerce.date().nullable(),
+  "endedAt": zod.coerce.date().nullable()
+})).optional(),
+  "id": zod.string().uuid(),
+  "sessionType": zod.enum(['interview', 'call']),
+  "title": zod.string(),
+  "company": zod.string().nullable(),
+  "description": zod.string().nullable(),
+  "resumeText": zod.string(),
+  "documentsText": zod.string(),
+  "instructions": zod.string(),
+  "answerPreference": zod.string(),
+  "answerPreferences": zod.object({
+  "format": zod.enum(['full_script', 'script_bullets', 'bullet_points']),
+  "length": zod.enum(['short', 'balanced', 'long']),
+  "tone": zod.enum(['simple', 'formal']),
+  "starMethod": zod.boolean(),
+  "fillerWords": zod.boolean()
+}).optional(),
+  "model": zod.string(),
+  "language": zod.string(),
+  "autoAnswer": zod.boolean(),
+  "saveTranscript": zod.boolean(),
+  "status": zod.enum(['ready', 'active', 'ended']),
+  "transcript": zod.array(zod.object({
+  "roundNumber": zod.number().int().min(1).optional(),
+  "role": zod.enum(['user', 'assistant']),
+  "text": zod.string(),
+  "source": zod.enum(['typed', 'microphone', 'system', 'ai']),
+  "speaker": zod.enum(['candidate', 'interviewer', 'unknown']).optional(),
+  "capturedAt": zod.coerce.date().optional(),
+  "createdAt": zod.coerce.date()
+})),
+  "createdAt": zod.coerce.date(),
+  "startedAt": zod.coerce.date().nullable(),
+  "endedAt": zod.coerce.date().nullable()
+})
+
+
 export const startDesktopAuthBodyChallengeRegExp = new RegExp('^[a-f0-9]{64}$');
 
 
@@ -132,7 +255,18 @@ export const UpdateSessionPreferencesBody = zod.object({
   "saveTranscript": zod.boolean().optional()
 })
 
+
+
+
+
+
 export const UpdateSessionPreferencesResponse = zod.object({
+  "roundNumber": zod.number().int().min(1).optional(),
+  "rounds": zod.array(zod.object({
+  "number": zod.number().int().min(1),
+  "startedAt": zod.coerce.date().nullable(),
+  "endedAt": zod.coerce.date().nullable()
+})).optional(),
   "id": zod.string().uuid(),
   "sessionType": zod.enum(['interview', 'call']),
   "title": zod.string(),
@@ -155,6 +289,7 @@ export const UpdateSessionPreferencesResponse = zod.object({
   "saveTranscript": zod.boolean(),
   "status": zod.enum(['ready', 'active', 'ended']),
   "transcript": zod.array(zod.object({
+  "roundNumber": zod.number().int().min(1).optional(),
   "role": zod.enum(['user', 'assistant']),
   "text": zod.string(),
   "source": zod.enum(['typed', 'microphone', 'system', 'ai']),
@@ -183,7 +318,18 @@ export const HealthCheckResponse = zod.object({
 /**
  * @summary List the signed-in user's sessions
  */
+
+
+
+
+
 export const ListSessionsResponseItem = zod.object({
+  "roundNumber": zod.number().int().min(1).optional(),
+  "rounds": zod.array(zod.object({
+  "number": zod.number().int().min(1),
+  "startedAt": zod.coerce.date().nullable(),
+  "endedAt": zod.coerce.date().nullable()
+})).optional(),
   "id": zod.string().uuid(),
   "sessionType": zod.enum(['interview', 'call']),
   "title": zod.string(),
@@ -206,6 +352,7 @@ export const ListSessionsResponseItem = zod.object({
   "saveTranscript": zod.boolean(),
   "status": zod.enum(['ready', 'active', 'ended']),
   "transcript": zod.array(zod.object({
+  "roundNumber": zod.number().int().min(1).optional(),
   "role": zod.enum(['user', 'assistant']),
   "text": zod.string(),
   "source": zod.enum(['typed', 'microphone', 'system', 'ai']),
@@ -259,7 +406,18 @@ export const CreateSessionBody = zod.object({
   "saveTranscript": zod.boolean().optional()
 })
 
+
+
+
+
+
 export const CreateSessionResponse = zod.object({
+  "roundNumber": zod.number().int().min(1).optional(),
+  "rounds": zod.array(zod.object({
+  "number": zod.number().int().min(1),
+  "startedAt": zod.coerce.date().nullable(),
+  "endedAt": zod.coerce.date().nullable()
+})).optional(),
   "id": zod.string().uuid(),
   "sessionType": zod.enum(['interview', 'call']),
   "title": zod.string(),
@@ -282,6 +440,7 @@ export const CreateSessionResponse = zod.object({
   "saveTranscript": zod.boolean(),
   "status": zod.enum(['ready', 'active', 'ended']),
   "transcript": zod.array(zod.object({
+  "roundNumber": zod.number().int().min(1).optional(),
   "role": zod.enum(['user', 'assistant']),
   "text": zod.string(),
   "source": zod.enum(['typed', 'microphone', 'system', 'ai']),
@@ -295,6 +454,13 @@ export const CreateSessionResponse = zod.object({
 })
 
 
+export const DeleteSessionParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const DeleteSessionResponse = zod.void()
+
+
 /**
  * @summary Reopen a private session
  */
@@ -302,7 +468,18 @@ export const GetSessionParams = zod.object({
   "id": zod.coerce.string().uuid()
 })
 
+
+
+
+
+
 export const GetSessionResponse = zod.object({
+  "roundNumber": zod.number().int().min(1).optional(),
+  "rounds": zod.array(zod.object({
+  "number": zod.number().int().min(1),
+  "startedAt": zod.coerce.date().nullable(),
+  "endedAt": zod.coerce.date().nullable()
+})).optional(),
   "id": zod.string().uuid(),
   "sessionType": zod.enum(['interview', 'call']),
   "title": zod.string(),
@@ -325,6 +502,7 @@ export const GetSessionResponse = zod.object({
   "saveTranscript": zod.boolean(),
   "status": zod.enum(['ready', 'active', 'ended']),
   "transcript": zod.array(zod.object({
+  "roundNumber": zod.number().int().min(1).optional(),
   "role": zod.enum(['user', 'assistant']),
   "text": zod.string(),
   "source": zod.enum(['typed', 'microphone', 'system', 'ai']),
@@ -345,11 +523,26 @@ export const UpdateSessionParams = zod.object({
   "id": zod.coerce.string().uuid()
 })
 
+
+
+
 export const UpdateSessionBody = zod.object({
+  "roundNumber": zod.number().int().min(1).optional(),
   "status": zod.enum(['ready', 'active', 'ended'])
 })
 
+
+
+
+
+
 export const UpdateSessionResponse = zod.object({
+  "roundNumber": zod.number().int().min(1).optional(),
+  "rounds": zod.array(zod.object({
+  "number": zod.number().int().min(1),
+  "startedAt": zod.coerce.date().nullable(),
+  "endedAt": zod.coerce.date().nullable()
+})).optional(),
   "id": zod.string().uuid(),
   "sessionType": zod.enum(['interview', 'call']),
   "title": zod.string(),
@@ -372,6 +565,7 @@ export const UpdateSessionResponse = zod.object({
   "saveTranscript": zod.boolean(),
   "status": zod.enum(['ready', 'active', 'ended']),
   "transcript": zod.array(zod.object({
+  "roundNumber": zod.number().int().min(1).optional(),
   "role": zod.enum(['user', 'assistant']),
   "text": zod.string(),
   "source": zod.enum(['typed', 'microphone', 'system', 'ai']),
@@ -392,11 +586,13 @@ export const AppendTranscriptParams = zod.object({
   "id": zod.coerce.string().uuid()
 })
 
+
 export const appendTranscriptBodyTextMax = 8000;
 
 
 
 export const AppendTranscriptBody = zod.object({
+  "roundNumber": zod.number().int().min(1).optional(),
   "text": zod.string().min(1).max(appendTranscriptBodyTextMax),
   "role": zod.enum(['user', 'assistant']),
   "source": zod.enum(['typed', 'microphone', 'system', 'ai']),
@@ -404,7 +600,18 @@ export const AppendTranscriptBody = zod.object({
   "capturedAt": zod.coerce.date().optional()
 })
 
+
+
+
+
+
 export const AppendTranscriptResponse = zod.object({
+  "roundNumber": zod.number().int().min(1).optional(),
+  "rounds": zod.array(zod.object({
+  "number": zod.number().int().min(1),
+  "startedAt": zod.coerce.date().nullable(),
+  "endedAt": zod.coerce.date().nullable()
+})).optional(),
   "id": zod.string().uuid(),
   "sessionType": zod.enum(['interview', 'call']),
   "title": zod.string(),
@@ -427,6 +634,7 @@ export const AppendTranscriptResponse = zod.object({
   "saveTranscript": zod.boolean(),
   "status": zod.enum(['ready', 'active', 'ended']),
   "transcript": zod.array(zod.object({
+  "roundNumber": zod.number().int().min(1).optional(),
   "role": zod.enum(['user', 'assistant']),
   "text": zod.string(),
   "source": zod.enum(['typed', 'microphone', 'system', 'ai']),
@@ -447,6 +655,7 @@ export const GenerateSessionAnswerParams = zod.object({
   "id": zod.coerce.string().uuid()
 })
 
+
 export const generateSessionAnswerBodyQuestionMax = 8000;
 
 export const generateSessionAnswerBodyPreviousAnswerMax = 24000;
@@ -454,6 +663,7 @@ export const generateSessionAnswerBodyPreviousAnswerMax = 24000;
 
 
 export const GenerateSessionAnswerBody = zod.object({
+  "roundNumber": zod.number().int().min(1).optional(),
   "question": zod.string().min(1).max(generateSessionAnswerBodyQuestionMax),
   "stream": zod.boolean().optional(),
   "action": zod.enum(['answer', 'shorten', 'explain', 'again']).optional(),
@@ -474,12 +684,14 @@ export const TranscribeSessionAudioParams = zod.object({
   "id": zod.coerce.string().uuid()
 })
 
+
 export const transcribeSessionAudioBodyAudioMin = 60;
 export const transcribeSessionAudioBodyAudioMax = 400000;
 
 
 
 export const TranscribeSessionAudioBody = zod.object({
+  "roundNumber": zod.number().int().min(1).optional(),
   "audio": zod.string().min(transcribeSessionAudioBodyAudioMin).max(transcribeSessionAudioBodyAudioMax).describe('Base64 PCM WAV, mono 16 kHz, at most eight seconds'),
   "mimeType": zod.enum(['audio/wav']),
   "source": zod.enum(['microphone', 'system']).optional()

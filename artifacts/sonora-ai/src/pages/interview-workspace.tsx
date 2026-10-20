@@ -7,10 +7,12 @@ import {
   LogOut,
   Mic,
   Plus,
+  RotateCcw,
   Search,
   Send,
   ShieldCheck,
   Sparkles,
+  Trash2,
   Upload,
   X,
 } from "lucide-react";
@@ -24,6 +26,8 @@ import { createDesktopAudio, createAudioGroup, type AudioCapture } from "@/lib/d
 import { createInterviewerQuestions } from "@/lib/interviewer-questions";
 import { requestAnswer } from "@/lib/answer-stream";
 import AudioReadiness from "@/components/audio-readiness";
+import Modal from "@/components/modal";
+import { useAccess } from "@/components/access-gate";
 
 type SpeechResult = {
   isFinal: boolean;
@@ -63,6 +67,13 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
+const roundOf = (entry: TranscriptEntry) => entry.roundNumber ?? 1;
+const fmtDate = (value: string | null | undefined) => {
+  if (!value) return "unknown";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "unknown" : date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+};
+
 function formatDuration(startedAt: string | null, now: number) {
   if (!startedAt) return "00:00";
   const elapsed = Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000));
@@ -72,8 +83,10 @@ function formatDuration(startedAt: string | null, now: number) {
 export default function InterviewWorkspace() {
   const { user } = useUser();
   const { signOut } = useClerk();
+  const access = useAccess();
+  const storageKey = `sonora:selected-session:${user?.id ?? "me"}`;
   const [sessions, setSessions] = useState<CallSession[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(() => { try { return localStorage.getItem(storageKey); } catch { return null; } });
   const [filter, setFilter] = useState<"all" | "active" | "ended">("all");
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
@@ -87,6 +100,11 @@ export default function InterviewWorkspace() {
   const [interimTranscript, setInterimTranscript] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [restarting, setRestarting] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [roundView, setRoundView] = useState<"current" | "all" | number>("current");
+  const restartRef = useRef<{ sessionId: string; round: number; requestId: string } | null>(null);
   const [now, setNow] = useState(Date.now());
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const desktopCaptureRef = useRef<AudioCapture[]>([]);
@@ -116,8 +134,14 @@ export default function InterviewWorkspace() {
   const selectedSessionRef = useRef<CallSession | null>(selected);
   selectedSessionRef.current = selected;
   const settingsRevisionRef = useRef(0);
+  const currentRound = selected?.roundNumber ?? 1;
+  const currentEntries = (selected?.transcript ?? []).filter((entry) => roundOf(entry) === currentRound);
+  const liveSession = selected ? { ...selected, transcript: currentEntries } : null;
+  const shownEntries = (selected?.transcript ?? []).filter((entry) => roundView === "all" || roundOf(entry) === (roundView === "current" ? currentRound : roundView));
+  const roundList = [...(selected?.rounds ?? []).filter((round) => round.number !== currentRound), { number: currentRound, startedAt: selected?.startedAt ?? null, endedAt: selected?.endedAt ?? null }]
+    .sort((a, b) => a.number - b.number);
   const visibleAnswer = answer ||
-      [...(selected?.transcript ?? [])].reverse().find((entry) => entry.role === "assistant")?.text ||
+      [...currentEntries].reverse().find((entry) => entry.role === "assistant")?.text ||
       "";
 
   useEffect(() => {
@@ -127,6 +151,10 @@ export default function InterviewWorkspace() {
     }).catch(() => { /* Old shells continue to support one explicitly chosen source. */ });
     return () => { mounted = false; };
   }, []);
+
+  useEffect(() => {
+    try { if (selectedId) localStorage.setItem(storageKey, selectedId); else localStorage.removeItem(storageKey); } catch { /* storage unavailable */ }
+  }, [selectedId, storageKey]);
 
   const refreshSessions = useCallback(async () => {
     const revision = settingsRevisionRef.current;
@@ -181,24 +209,26 @@ export default function InterviewWorkspace() {
         speaker,
         ...(capturedAt ? { capturedAt } : {}),
         createdAt: new Date().toISOString(),
+        roundNumber: session.roundNumber ?? 1,
       };
+       const sameRound = (item: CallSession) => item.id === session.id && (item.roundNumber ?? 1) === (session.roundNumber ?? 1);
        if ((selectedSessionRef.current?.id === session.id ? selectedSessionRef.current : session).saveTranscript) {
         const updated = await api<CallSession>(
           `/sessions/${session.id}/transcript`,
           {
             method: "POST",
-            body: JSON.stringify({ role, text, source, speaker, capturedAt }),
+            body: JSON.stringify({ role, text, source, speaker, capturedAt, roundNumber: session.roundNumber }),
           },
         );
         setSessions((items) =>
-          items.map((item) => (item.id === session.id ? {
+          items.map((item) => (sameRound(item) ? {
             ...item, transcript: updated.saveTranscript ? updated.transcript : [...item.transcript, entry],
           } : item)),
         );
       } else {
         setSessions((items) =>
           items.map((item) =>
-            item.id === session.id
+            sameRound(item)
               ? { ...item, transcript: [...item.transcript, entry] }
               : item,
           ),
@@ -229,6 +259,8 @@ export default function InterviewWorkspace() {
       setError("");
       const controller = new AbortController();
       answerAbortRef.current = controller;
+      const askRound = selected.roundNumber ?? 1;
+      const stale = () => controller.signal.aborted || selectedIdRef.current !== selected.id || (selectedSessionRef.current?.roundNumber ?? 1) !== askRound;
       const request = { question: cleanQuestion, action, previousAnswer, persistQuestion };
       lastRequestRef.current = request;
       try {
@@ -238,14 +270,14 @@ export default function InterviewWorkspace() {
         }
         if (controller.signal.aborted) throw new Error("Answer cancelled.");
         const response = await requestAnswer(
-          selected.id, { question: cleanQuestion, action, previousAnswer },
+          selected.id, { question: cleanQuestion, action, previousAnswer, roundNumber: selected.roundNumber },
           AbortSignal.any([controller.signal, AbortSignal.timeout(95_000)]),
           text => {
-            if (controller.signal.aborted || selectedIdRef.current !== selected.id) return;
+            if (stale()) return;
             setAnswer(text); setAnswerState("streaming");
           },
         );
-        if (controller.signal.aborted || selectedIdRef.current !== selected.id) return;
+        if (stale()) return;
         setAnswer(response.answer);
         setAnswerState("complete");
         setPipelineStatus("Answer complete");
@@ -255,17 +287,18 @@ export default function InterviewWorkspace() {
             text: response.answer,
             source: "ai",
             createdAt: new Date().toISOString(),
+            roundNumber: askRound,
           };
           setSessions((items) =>
             items.map((item) =>
-              item.id === selected.id
+              item.id === selected.id && (item.roundNumber ?? 1) === askRound
                 ? { ...item, transcript: [...item.transcript, entry] }
                 : item,
             ),
           );
         }
       } catch (cause) {
-        if (selectedIdRef.current === selected.id) {
+        if (selectedIdRef.current === selected.id && (selectedSessionRef.current?.roundNumber ?? 1) === askRound) {
           setAnswerState("interrupted");
           setError(controller.signal.aborted ? "Answer cancelled. Any partial text is not a completed answer." : cause instanceof Error ? cause.message : "Gemini could not answer. Retry when connected.");
         }
@@ -352,13 +385,64 @@ export default function InterviewWorkspace() {
     try {
       const updated = await api<CallSession>(`/sessions/${selected.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ status: "ended" }),
+        body: JSON.stringify({ status: "ended", roundNumber: selected.roundNumber }),
       });
       setSessions((items) => items.map((item) => (item.id === updated.id ? updated : item)));
       setNotice("Session ended. Its transcript is saved if Save Transcript was enabled.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not end the session.");
     }
+  };
+
+  const resetRoundState = () => {
+    stopCapture();
+    answerAbortRef.current?.abort();
+    answerInFlightRef.current = false;
+    questionsRef.current?.reset();
+    setBusy(false); setAnswer(""); setLatestQuestion(""); setAnswerInput(""); setAnswerState("idle");
+    setInterimTranscript(""); setRemoteConfirmed(false); setLiveMode(false); setReadinessOpen(false);
+    lastRequestRef.current = null; setRoundView("current");
+  };
+
+  const startNextRound = async () => {
+    if (!selected || selected.status !== "ended" || restarting) return;
+    const id = selected.id;
+    const round = selected.roundNumber ?? 1;
+    if (!restartRef.current || restartRef.current.sessionId !== id || restartRef.current.round !== round) {
+      restartRef.current = { sessionId: id, round, requestId: crypto.randomUUID() };
+    }
+    const requestId = restartRef.current.requestId;
+    setRestarting(true); setError(""); setNotice("");
+    try {
+      const updated = await api<CallSession>(`/sessions/${id}/restart`, { method: "POST", body: JSON.stringify({ requestId, roundNumber: round }) });
+      restartRef.current = null;
+      settingsRevisionRef.current += 1;
+      if (selectedIdRef.current === id) { selectedSessionRef.current = updated; resetRoundState(); }
+      setSessions((items) => items.map((item) => (item.id === id ? updated : item)));
+      if (selectedIdRef.current === id) setNotice(`Round ${updated.roundNumber ?? round + 1} is ready. Audio is off until you enable it.`);
+    } catch (cause) {
+      if (selectedIdRef.current === id) setError(cause instanceof Error ? cause.message : "Could not start the next round. Your interview is unchanged; try again.");
+    } finally { setRestarting(false); }
+  };
+
+  const deleteInterview = async () => {
+    if (!selected || selected.status !== "ended" || deleting) return;
+    const id = selected.id;
+    setDeleting(true); setError("");
+    try {
+      await api<unknown>(`/sessions/${id}`, { method: "DELETE" });
+      settingsRevisionRef.current += 1;
+      setDeleteOpen(false);
+      resetRoundState();
+      const remaining = sessions.filter((item) => item.id !== id);
+      selectedSessionRef.current = null;
+      setSessions(remaining);
+      setSelectedId(remaining[0]?.id ?? null);
+      setNotice("Interview deleted.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not delete the interview. Nothing was removed.");
+      setDeleteOpen(false);
+    } finally { setDeleting(false); }
   };
 
   const toggleMicrophone = async () => {
@@ -390,6 +474,7 @@ export default function InterviewWorkspace() {
       const captures = sources.map(source => createDesktopAudio({
         source,
         sessionId: selected.id,
+        roundNumber: selected.roundNumber,
         onLevel: (level, status) => {
           if (captureToken !== captureTokenRef.current) return;
           setLevels(current => ({ ...current, [source]: level }));
@@ -399,7 +484,7 @@ export default function InterviewWorkspace() {
         onText: (text, metadata) => {
           if (captureToken !== captureTokenRef.current) return;
           const activeSession = selectedSessionRef.current;
-          if (!activeSession || activeSession.id !== selected.id) return;
+          if (!activeSession || activeSession.id !== selected.id || (activeSession.roundNumber ?? 1) !== (selected.roundNumber ?? 1)) return;
           const speaker = !remoteConfirmed ? "unknown" : source === "microphone" ? "candidate" : "interviewer";
           setPipelineStatus(speaker === "interviewer" ? "Collecting interviewer question" : "Listening-only for this source");
           void saveTranscript(activeSession, "user", text, metadata.source, speaker, metadata.capturedAt).then(() => {
@@ -425,7 +510,7 @@ export default function InterviewWorkspace() {
         if (captureToken !== captureTokenRef.current) { group.stop(); return; }
         if (selected.status === "ready") {
           const updated = await api<CallSession>(`/sessions/${selected.id}`, {
-            method: "PATCH", body: JSON.stringify({ status: "active" }),
+            method: "PATCH", body: JSON.stringify({ status: "active", roundNumber: selected.roundNumber }),
           });
           if (captureToken !== captureTokenRef.current) { group.stop(); return; }
           setSessions(items => items.map(item => item.id === updated.id ? updated : item));
@@ -516,7 +601,7 @@ export default function InterviewWorkspace() {
       if (selected.status === "ready") {
         const updated = await api<CallSession>(`/sessions/${selected.id}`, {
           method: "PATCH",
-          body: JSON.stringify({ status: "active" }),
+          body: JSON.stringify({ status: "active", roundNumber: selected.roundNumber }),
         });
         if (captureToken !== captureTokenRef.current) {
           stream.getTracks().forEach((track) => track.stop());
@@ -594,9 +679,9 @@ export default function InterviewWorkspace() {
   return (
     <main className={`${liveMode && selected ? "" : "min-h-screen"} text-[#e7e8eb]`}
       style={{ background: window.sonoraDesktop ? "rgba(16,17,19,var(--sonora-background-opacity,0.85))" : "#101113" }}>
-      {liveMode && selected ? (
+      {liveMode && selected && liveSession ? (
         <LiveSessionView
-          session={selected} answer={answer} busy={busy} listening={listening}
+          session={liveSession} answer={answer} busy={busy} listening={listening}
           requestingAudio={requestingMic} interimTranscript={interimTranscript}
           duration={formatDuration(selected.startedAt, now)} notice={notice} error={error}
           audioSource={audioSource} remoteConfirmed={remoteConfirmed} supportsDualAudio={supportsDualAudio}
@@ -624,6 +709,7 @@ export default function InterviewWorkspace() {
         </a>
         <div className="flex items-center gap-3 text-sm text-white/65">
           <span className="hidden sm:inline">{user?.primaryEmailAddress?.emailAddress}</span>
+          {(access.role === "owner" || access.role === "approver") && <button data-testid="button-access" onClick={access.openAdmin} className="rounded-lg border border-white/10 px-3 py-2 text-xs hover:bg-white/5">{access.role === "owner" ? "Access" : "Approvals"}</button>}
           {!window.sonoraDesktop && <a href={`${import.meta.env.BASE_URL}download`} className="rounded-lg border border-white/10 px-3 py-2 text-xs hover:bg-white/5">Desktop downloads</a>}
           <button
             className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 hover:bg-white/5"
@@ -721,6 +807,7 @@ export default function InterviewWorkspace() {
                   <div className="flex items-center gap-2">
                     <h2 className="truncate text-lg font-semibold text-white">{selected.title}</h2>
                     <span className="rounded-md bg-white/5 px-2 py-1 text-[10px] uppercase tracking-wide text-white/50">{selected.sessionType}</span>
+                    <span data-testid="text-current-round" className="rounded-md bg-emerald-400/10 px-2 py-1 text-[10px] uppercase tracking-wide text-emerald-200">Round {currentRound}</span>
                   </div>
                   <p className="mt-1 truncate text-sm text-white/45">{selected.description || selected.company || "No description added"}</p>
                 </div>
@@ -730,7 +817,11 @@ export default function InterviewWorkspace() {
                     <span className="flex items-center gap-2 rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-2 text-sm text-red-200"><i className="h-2 w-2 animate-pulse rounded-full bg-red-400" /><Clock3 size={14} /> {formatDuration(selected.startedAt, now)}</span>
                     <button onClick={() => void endSession()} className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm hover:bg-white/5"><CircleStop size={15} /> End</button>
                   </>}
-                  {selected.status === "ended" && <span className="rounded-lg bg-white/5 px-3 py-2 text-sm text-white/55">Ended</span>}
+                  {selected.status === "ended" && <>
+                    <span className="rounded-lg bg-white/5 px-3 py-2 text-sm text-white/55">Ended</span>
+                    <button data-testid="button-next-round" disabled={restarting || deleting} onClick={() => void startNextRound()} className="inline-flex items-center gap-2 rounded-lg bg-[#257c3c] px-3 py-2 text-sm font-semibold text-white hover:bg-[#2c9147] disabled:opacity-50"><RotateCcw size={15} /> {restarting ? "Starting…" : "Start next round"}</button>
+                    <button data-testid="button-delete-interview" disabled={restarting || deleting} onClick={() => setDeleteOpen(true)} className="inline-flex items-center gap-2 rounded-lg border border-red-400/25 px-3 py-2 text-sm text-red-200 hover:bg-red-500/10 disabled:opacity-50"><Trash2 size={15} /> Delete interview</button>
+                  </>}
                 </div>
               </div>
 
@@ -779,7 +870,7 @@ export default function InterviewWorkspace() {
                         <button disabled={busy || !answerInput.trim()} aria-label="Ask Gemini" className="self-end rounded-lg bg-[#257c3c] p-3 text-white disabled:cursor-not-allowed disabled:opacity-40"><Send size={17} /></button>
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-white/40"><Sparkles size={12} /> {selected.model} · {summarizePreferences(sessionPreferences(selected))} · {selected.language} <button type="button" data-testid="button-edit-preferences" onClick={() => setEditOpen(true)} className="ml-2 rounded-md border border-white/10 px-2 py-1 text-white/70 hover:bg-white/5">Edit preferences</button></div>
-                      {selected.transcript.some((entry) => entry.source === "microphone") && <button type="button" onClick={() => setAnswerInput([...selected.transcript].reverse().find((entry) => entry.source === "microphone")?.text ?? "")} className="mt-3 text-xs font-medium text-emerald-300 hover:text-emerald-200">Use latest microphone transcript as the question</button>}
+                      {currentEntries.some((entry) => entry.source === "microphone") && <button type="button" onClick={() => setAnswerInput([...currentEntries].reverse().find((entry) => entry.source === "microphone")?.text ?? "")} className="mt-3 text-xs font-medium text-emerald-300 hover:text-emerald-200">Use latest microphone transcript as the question</button>}
                     </form>
                   </div>
                   <div className="rounded-xl border border-white/10 bg-[#101113] p-4">
@@ -800,13 +891,23 @@ export default function InterviewWorkspace() {
                     <h3 className="text-sm font-semibold text-white">Transcript</h3>
                     <span className="text-[11px] text-white/40">{selected.saveTranscript ? "Saved to this session" : "Not saved"}</span>
                   </div>
+                  {roundList.length > 1 && <div className="mt-3 rounded-xl border border-white/10 bg-[#101113] p-3 text-xs" data-testid="panel-rounds">
+                    <div className="mb-2 flex flex-wrap gap-1">
+                      {([["current", "Current"], ["all", "All rounds"], ...roundList.filter((round) => round.number !== currentRound).map((round) => [round.number, `Round ${round.number}`] as const)] as const).map(([value, label]) => (
+                        <button key={String(value)} onClick={() => setRoundView(value as "current" | "all" | number)} className={`rounded-md px-2 py-1 ${roundView === value ? "bg-[#2b2d31] text-white" : "text-white/50 hover:text-white/80"}`}>{label}</button>
+                      ))}
+                    </div>
+                    <ul className="space-y-1 text-white/45">
+                      {roundList.map((round) => <li key={round.number}><span className="text-white/70">Round {round.number}{round.number === currentRound ? " (current)" : ""}</span> · {round.startedAt || round.endedAt ? `${fmtDate(round.startedAt)} to ${round.number === currentRound && selected.status !== "ended" ? "in progress" : fmtDate(round.endedAt)}` : "dates unknown"}</li>)}
+                    </ul>
+                  </div>}
                   <div className="mt-3 max-h-[440px] min-h-[300px] space-y-3 overflow-y-auto rounded-xl border border-white/10 bg-[#101113] p-4">
-                    {selected.transcript.length ? selected.transcript.map((entry, index) => (
+                    {shownEntries.length ? shownEntries.map((entry, index) => (
                       <div key={`${entry.createdAt}-${index}`} className={`rounded-lg p-3 ${entry.role === "assistant" ? "border border-emerald-300/10 bg-emerald-300/[.05]" : "bg-white/[.035]"}`}>
                         <div className="mb-1 flex items-center gap-2 text-[10px] uppercase tracking-wide text-white/40">{entry.role === "assistant" ? <Sparkles size={11} /> : <FileText size={11} />}{entry.role === "assistant" ? "Gemini suggestion" : entry.source === "microphone" ? (window.sonoraDesktop ? "Audio transcript" : "You · mic transcript") : "Question"}</div>
                         <p className="whitespace-pre-wrap text-sm leading-5 text-white/75">{entry.text}</p>
                       </div>
-                    )) : <div className="flex min-h-[250px] flex-col items-center justify-center px-4 text-center text-sm text-white/40"><FileText size={22} className="mb-3 text-white/25" />No transcript yet. Ask Gemini or enable the microphone.</div>}
+                    )) : <div className="flex min-h-[250px] flex-col items-center justify-center px-4 text-center text-sm text-white/40"><FileText size={22} className="mb-3 text-white/25" />{roundView === "current" && roundList.length > 1 ? "Nothing in this round yet." : "No transcript yet. Ask Gemini or enable the microphone."}</div>}
                     {interimTranscript && <p className="rounded-lg bg-white/5 p-3 text-sm italic text-white/45">{interimTranscript}</p>}
                   </div>
                   <p className="mt-3 text-xs leading-5 text-white/35">{window.sonoraDesktop ? "Desktop audio is sent to Gemini in six-second chunks. Audio is not retained by Sonora; recognized text is saved only when Save Transcript is on. System audio may include other apps. Stopping discards the incomplete final chunk." : "Speech recognition is provided by your browser. Sonora sends recognized text to Gemini only when it generates an answer."}</p>
@@ -836,6 +937,16 @@ export default function InterviewWorkspace() {
             setCreateOpen(false);
           }}
         />
+      )}
+      {deleteOpen && selected && (
+        <Modal label="Delete interview" onClose={() => setDeleteOpen(false)} busy={deleting} width="max-w-[440px]">
+          <h2 className="text-lg font-semibold text-white">Delete this interview?</h2>
+          <p className="mt-2 text-sm leading-6 text-white/60">&ldquo;{selected.title}&rdquo; and all of its rounds, saved transcripts and answers will be permanently removed. This cannot be undone.</p>
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <button data-autofocus disabled={deleting} onClick={() => setDeleteOpen(false)} className="rounded-xl border border-white/10 px-4 py-3 text-sm font-semibold text-white/70 hover:bg-white/5">Cancel</button>
+            <button data-testid="button-confirm-delete" disabled={deleting} onClick={() => void deleteInterview()} className="rounded-xl bg-red-600 px-4 py-3 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50">{deleting ? "Deleting…" : "Delete permanently"}</button>
+          </div>
+        </Modal>
       )}
       {readinessOpen && selected && (
         <AudioReadiness key={selected.id} sessionId={selected.id}

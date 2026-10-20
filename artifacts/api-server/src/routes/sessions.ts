@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { getAuth } from "@clerk/express";
 import { GoogleGenAI } from "@google/genai";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, or, sql } from "drizzle-orm";
 import { db, callSessionsTable, answerDefaultsTable, type TranscriptEntry } from "@workspace/db";
 import {
   AppendTranscriptBody,
@@ -12,6 +12,7 @@ import {
   UpdateSessionPreferencesBody,
   SaveAnswerDefaultsBody,
 } from "@workspace/api-zod";
+import { approvedWriteCondition, roundMatches, sessionStillUsable, stopSessionOperations, watchSession } from "../lib/session-lifecycle";
 import { logger } from "../lib/logger";
 import { answerPreferenceInstructions, standardAnswerPreferences, withAnswerPreferences } from "../lib/answer-preferences";
 
@@ -173,21 +174,22 @@ router.patch("/sessions/:id", async (req, res, next) => {
   }
   try {
     const updates: Partial<typeof callSessionsTable.$inferInsert> = { status };
-    if (status === "active") updates.startedAt = new Date();
+    if (status === "active") { updates.startedAt = new Date(); updates.endedAt = null; }
     if (status === "ended") updates.endedAt = new Date();
     const [session] = await db
       .update(callSessionsTable)
       .set(updates)
-      .where(status === "ended"
-        ? ownedSessionQuery(req.params.id, userId)
-        : and(ownedSessionQuery(req.params.id, userId), eq(callSessionsTable.status, "ready")))
+      .where(and(ownedSessionQuery(req.params.id, userId),
+        eq(callSessionsTable.roundNumber, req.body.roundNumber ?? 1),
+        status === "ended" ? or(eq(callSessionsTable.status, "active"), eq(callSessionsTable.status, "ready")) : eq(callSessionsTable.status, "ready")))
       .returning();
     if (!session) {
       const [existing] = await db.select().from(callSessionsTable).where(ownedSessionQuery(req.params.id, userId)).limit(1);
       if (!existing) return res.status(404).json({ error: "Session not found." });
-      if (existing.status === status) return res.json(withAnswerPreferences(existing));
+      if (existing.status === status && roundMatches(existing.roundNumber, req.body.roundNumber)) return res.json(withAnswerPreferences(existing));
       return res.status(400).json({ error: "This session cannot return to that status. Create a new session if it has ended." });
     }
+    if (status === "ended") stopSessionOperations(req.params.id, userId);
     return res.json(withAnswerPreferences(session));
   } catch (error) {
     return next(error);
@@ -217,7 +219,11 @@ router.post("/sessions/:id/transcript", async (req, res, next) => {
       .where(ownedSessionQuery(req.params.id, userId))
       .limit(1);
     if (!session) return res.status(404).json({ error: "Session not found." });
+    if (session.status === "ended" || !roundMatches(session.roundNumber, parsedEntry.data.roundNumber)) {
+      return res.status(409).json({ error: "This round has ended or changed. Refresh the interview." });
+    }
     const entry: TranscriptEntry = {
+      roundNumber: session.roundNumber ?? 1,
       role,
       text,
       source,
@@ -232,8 +238,10 @@ router.post("/sessions/:id/transcript", async (req, res, next) => {
           THEN ${callSessionsTable.transcript} || ${JSON.stringify([entry])}::jsonb
           ELSE ${callSessionsTable.transcript} END`,
       })
-      .where(ownedSessionQuery(req.params.id, userId))
+      .where(and(ownedSessionQuery(req.params.id, userId),
+        eq(callSessionsTable.roundNumber, session.roundNumber ?? 1), sql`${callSessionsTable.status} <> 'ended'`, approvedWriteCondition(userId)))
       .returning();
+    if (!updated) return res.status(409).json({ error: "Interview changed before the transcript was saved." });
     return res.json(withAnswerPreferences(updated));
   } catch (error) {
     return next(error);
@@ -257,6 +265,7 @@ router.post("/sessions/:id/answer", async (req, res, next) => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 90_000);
   const disconnect = () => { if (!res.writableEnded) controller.abort(); };
+  let stopWatching: (() => void) | undefined;
   res.on?.("close", disconnect);
   const send = (data: object) => {
     if (!controller.signal.aborted && !res.destroyed) res.write(`data: ${JSON.stringify(data)}\n\n`);
@@ -268,6 +277,10 @@ router.post("/sessions/:id/answer", async (req, res, next) => {
       .where(ownedSessionQuery(req.params.id, userId))
       .limit(1);
     if (!session) return res.status(404).json({ error: "Session not found." });
+    if (session.status === "ended" || !roundMatches(session.roundNumber, parsedAnswer.data.roundNumber)) {
+      return res.status(409).json({ error: "This round has ended or changed. Refresh the interview." });
+    }
+    stopWatching = watchSession(req.params.id, userId, session.roundNumber ?? 1, controller);
 
     const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
     const apiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
@@ -299,7 +312,7 @@ router.post("/sessions/:id/answer", async (req, res, next) => {
       `Candidate resume: ${session.sessionType === "interview" ? session.resumeText || "not provided" : "not applicable to Regular Call"}`,
       `Reference documents: ${session.documentsText || "not provided"}`,
       `Candidate instructions: ${session.instructions || "none"}`,
-      `Recent transcript (speaker labels are user-confirmed source mappings, not verified identity): ${(session.transcript ?? []).slice(-12).map((entry) => `${entry.role === "assistant" ? "Assistant" : entry.speaker || "Unknown speaker"} [${entry.source}]: ${entry.text}`).join("\n") || "none"}`,
+      `Current round transcript (speaker labels are user-confirmed source mappings, not verified identity): ${(session.transcript ?? []).filter(entry => (entry.roundNumber ?? 1) === (session.roundNumber ?? 1)).slice(-12).map((entry) => `${entry.role === "assistant" ? "Assistant" : entry.speaker || "Unknown speaker"} [${entry.source}]: ${entry.text}`).join("\n") || "none"}`,
       `Question or latest interviewer statement: ${question}`,
       action === "shorten" ? "Rewrite the previous answer more briefly. Preserve its meaning and essential facts." :
         action === "explain" ? "Explain the previous answer in more depth, with useful reasoning. Do not invent personal facts." :
@@ -345,20 +358,29 @@ router.post("/sessions/:id/answer", async (req, res, next) => {
     }
     if (!answer.trim()) throw new Error("Gemini returned an empty answer.");
     controller.signal.throwIfAborted();
+    if (!await sessionStillUsable(req.params.id, userId, session.roundNumber ?? 1)) {
+      throw new Error("Interview or access changed while generating an answer.");
+    }
 
     if (session.saveTranscript && !parsedAnswer.data.test) {
       const entry: TranscriptEntry = {
+        roundNumber: session.roundNumber ?? 1,
         role: "assistant",
         text: answer,
         source: "ai",
         createdAt: new Date().toISOString(),
       };
-      await db
+      const savedAnswer = await db
         .update(callSessionsTable)
         .set({
           transcript: sql`${callSessionsTable.transcript} || ${JSON.stringify([entry])}::jsonb`,
         })
-        .where(and(ownedSessionQuery(req.params.id, userId), eq(callSessionsTable.saveTranscript, true)));
+        .where(and(ownedSessionQuery(req.params.id, userId), eq(callSessionsTable.saveTranscript, true),
+          eq(callSessionsTable.roundNumber, session.roundNumber ?? 1), sql`${callSessionsTable.status} <> 'ended'`, approvedWriteCondition(userId)))
+        .returning({ id: callSessionsTable.id });
+      if (!savedAnswer.length && !await sessionStillUsable(req.params.id, userId, session.roundNumber ?? 1)) {
+        throw new Error("Interview or access changed before saving the answer.");
+      }
     }
     if (wantsStream) {
       send({ done: true, answer, model: session.model });
@@ -380,6 +402,7 @@ router.post("/sessions/:id/answer", async (req, res, next) => {
     });
   } finally {
     clearTimeout(timeout);
+    stopWatching?.();
     res.off?.("close", disconnect);
     runningAnswers.delete(userId);
   }

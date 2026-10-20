@@ -1,5 +1,9 @@
 # Sonora desktop verification
 
+## Access, resume and round update — source 0.3.2
+
+See [ACCESS-AND-RESUMES.md](ACCESS-AND-RESUMES.md) for the hosted changes, private API integration checks and remaining target-environment checks. Source kits are not native installer artifacts; the desktop release remains unverified until the Windows/Mac checks below are performed.
+
 ## Opacity repair — desktop 0.3.1
 
 The title bar now uses a dedicated drag handle; interactive controls and the complete settings subtree explicitly opt out of native dragging. The range previews background alpha immediately, serializes/coalesces native writes, ignores older broadcasts while a newer choice is pending, restores the confirmed value on failure, and reports a five-second timeout rather than staying stuck. The native minimum is now 15%; older shells without the new minimum capability retain their 45% limit, and missing methods have explicit rebuild instructions. Settings remain opaque, but the live answer backdrop uses the shared alpha variable without fading text.

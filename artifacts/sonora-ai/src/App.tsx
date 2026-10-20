@@ -14,6 +14,7 @@ import DesktopDownloads from '@/components/desktop-downloads';
 import DesktopVisibilityControls from '@/components/desktop-visibility-controls';
 import DesktopBrowserSignIn from '@/components/desktop-browser-sign-in';
 import DesktopConnect from '@/pages/desktop-connect';
+import AccessGate from '@/components/access-gate';
 
 const queryClient = new QueryClient();
 const clerkPubKey = publishableKeyFromHost(
@@ -205,7 +206,7 @@ function ClerkProviderWithRoutes() {
           <RoutedErrorBoundary>
             <Switch>
               <Route path="/download">{() => <main className="min-h-screen bg-[#101113]"><DesktopDownloads /></main>}</Route>
-              <Route path="/desktop-connect/:id">{(params) => <DesktopConnect key={params.id} params={params} />}</Route>
+              <Route path="/desktop-connect/:id">{(params) => <GatedDesktopConnect key={params.id} params={params} />}</Route>
               <Route path="/sign-in/*?" component={SignInPage} />
               <Route path="/sign-up/*?" component={SignUpPage} />
               <Route path="/" component={HomeRedirect} />
@@ -279,10 +280,16 @@ function Router() {
   );
 }
 
+function GatedDesktopConnect({ params }: { params: { id: string } }) {
+  const { isLoaded, isSignedIn } = useAuth();
+  if (isLoaded && isSignedIn) return <AccessGate><DesktopConnect params={params} /></AccessGate>;
+  return <DesktopConnect params={params} />;
+}
+
 function HomeRedirect() {
   const { isLoaded, isSignedIn, userId } = useAuth();
   if (!isLoaded) return <div className="min-h-screen bg-[#101113]" />;
-  return isSignedIn ? <InterviewWorkspace key={userId} /> : window.sonoraDesktop ? <SignInPage /> : <LandingHome />;
+  return isSignedIn ? <AccessGate key={userId}><InterviewWorkspace key={userId} /></AccessGate> : window.sonoraDesktop ? <SignInPage /> : <LandingHome />;
 }
 
 function DesktopOverlay() {

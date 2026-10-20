@@ -28,3 +28,17 @@ mtime_ms = 1792468013451
 storage_uri = "gcs://replit-rams-assets-spock/rams/assets/repl:87c45247-c74b-45db-b8e5-2e324bcf7153/e33156e4-b734-4aa0-8d83-54901af8aa33/797923a4-56f7-47d0-bcb0-5a26cd891efa"
 storage_version_token = "1792468021951605"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "IME9wO6aaiI1F3dg-n5uD"
+uri = "file://generated-artifacts/sonora-desktop-build-kit-0.3.2.zip"
+type = "unspecified"
+title = "Sonora 0.3.2 — Windows source build kit"
+description = "Updated source archive, not an installer. Includes resume imports, interview rounds and approval-gated access. Extract and run BUILD-WINDOWS.cmd on a prepared Windows PC after republishing the hosted service."
+logical_id = "afdfae58-36ff-4b8b-81a1-debcf2fa1c17"
+content_hash = "sha256:018a65df39ce817e2cb58d5db6eb0563a1483330cb8ef9d461a390afe3122106"
+size = 441823
+mtime_ms = 1792470303175
+storage_uri = "gcs://replit-rams-assets-spock/rams/assets/repl:87c45247-c74b-45db-b8e5-2e324bcf7153/afdfae58-36ff-4b8b-81a1-debcf2fa1c17/a68288e8-ee49-4e4c-9998-f1c50e899a52"
+storage_version_token = "1792470389953653"
+content_type = "application/octet-stream"

@@ -20,7 +20,7 @@ const wrong = 'b'.repeat(64);
 const id = '550e8400-e29b-41d4-a716-446655440000';
 const base = '/desktop-auth/requests';
 const clone = value => structuredClone(value);
-function fixture(issue = async () => ({ id: 'test-token-id', token: 'test-ticket' })) {
+function fixture(issue = async () => ({ id: 'test-token-id', token: 'test-ticket' }), approval = { allowed: true }) {
   const rows = [], handlers = new Map(), issued = [], revoked = [];
   const table = Object.fromEntries(['id', 'challenge', 'codeHash', 'status', 'userId', 'attempts', 'expiresAt'].map(k => [k, k]));
   const matches = (row, cond) => !cond ? true : cond.and ? cond.and.every(c => matches(row, c)) :
@@ -52,6 +52,10 @@ function fixture(issue = async () => ({ id: 'test-token-id', token: 'test-ticket
     if (name === '../middlewares/clerkProxyMiddleware') return { getClerkProxyHost: () => 'sonora.example' };
     if (name === '../lib/desktop-auth-security') return security;
     if (name === '../lib/logger') return { logger: { error() {} } };
+    if (name === '../lib/app-access') return {
+      ensureAccess: async () => ({ status: approval.allowed ? 'approved' : 'revoked' }),
+      hasApprovedAccess: async () => approval.allowed,
+    };
     if (name === 'drizzle-orm') return { and: (...and) => ({ and }),
       eq: (key, value) => ({ key, value, op: 'eq' }), gt: (key, value) => ({ key, value, op: 'gt' }),
       lt: (key, value) => ({ key, value, op: 'lt' }), sql: (...values) => ({ sql: true, values }) };
@@ -84,6 +88,26 @@ test('proof and same-origin checks fail closed; rate limit expires', () => {
   assert.ok(!security.sameOriginApproval(undefined, 'sonora.example', undefined));
   const permit = security.createDesktopAuthLimiter();
   assert.ok(permit('test', 1, 0)); assert.ok(!permit('test', 1, 1)); assert.ok(permit('test', 1, 300001));
+});
+test('desktop pairing requires approved access at approval, redemption and after token issuance', async () => {
+  const approval = { allowed: false };
+  const f = fixture(undefined, approval);
+  const started = await f.start();
+  assert.equal((await f.approve(started.body.code)).code, 403);
+  approval.allowed = true;
+  await f.approve(started.body.code);
+  approval.allowed = false;
+  assert.equal((await f.call('/:id/poll', { verifier })).code, 403);
+  assert.equal(f.issued.length, 0);
+  const changed = { allowed: true };
+  const second = fixture(async () => {
+    changed.allowed = false;
+    return { id: 'test-token-id', token: 'must-never-return' };
+  }, changed);
+  const next = await second.start(); await second.approve(next.body.code);
+  const result = await second.call('/:id/poll', { verifier });
+  assert.equal(result.code, 403); assert.equal(result.body.ticket, undefined);
+  assert.deepEqual(second.revoked, ['test-token-id']);
 });
 test('real route protocol binds authenticated approval to one native proof and one ticket', async () => {
   const f = fixture(), started = await f.start();

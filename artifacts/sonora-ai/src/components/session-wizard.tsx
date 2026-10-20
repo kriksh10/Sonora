@@ -16,6 +16,7 @@ const emptyDraft: Draft = {
   sessionType: "interview", company: "", description: "", title: "", resumeText: "", documentsText: "",
   instructions: "", model: "gemini-2.5-flash", language: "English", autoAnswer: false, saveTranscript: true,
 };
+const LIMIT = 40_000;
 const field = "mt-1.5 w-full rounded-lg border border-white/10 bg-[#191a1d] px-3 py-2.5 text-sm text-white outline-none placeholder:text-white/35 focus:border-white/25";
 
 export function SwitchRow({ label, hint, checked, onChange }: { label: string; hint?: string; checked: boolean; onChange: (v: boolean) => void }) {
@@ -36,7 +37,10 @@ export default function SessionWizard({ onClose, onCreated }: { onClose: () => v
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState("");
   const [creating, setCreating] = useState(false);
-  const [uploading, setUploading] = useState<"resume" | "documents" | null>(null);
+  const [readingResume, setReadingResume] = useState(false);
+  const [readingDocs, setReadingDocs] = useState(false);
+  const [resumeFile, setResumeFile] = useState("");
+  const [pendingName, setPendingName] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const targetRef = useRef<"resume" | "documents">("resume");
   const prefsTouched = useRef(false);
@@ -57,29 +61,74 @@ export default function SessionWizard({ onClose, onCreated }: { onClose: () => v
   const validate = () => {
     const next: Record<string, string> = {};
     if (interview && !draft.company.trim() && !draft.description.trim()) next.company = "Add a company or paste the job description.";
+    if (interview && draft.resumeText.length > LIMIT) next.resumeText = `Resume is ${draft.resumeText.length.toLocaleString()} characters. Trim it to ${LIMIT.toLocaleString()} or fewer before creating the session.`;
+    if (draft.documentsText.length > LIMIT) next.documentsText = `Documents total ${draft.documentsText.length.toLocaleString()} characters. Trim them to ${LIMIT.toLocaleString()} or fewer before creating the session.`;
     setErrors(next);
     return Object.keys(next).length === 0;
   };
+
+  const resumeVer = useRef(0);
+  const docsVer = useRef(0);
+  const resumeAbort = useRef<AbortController | null>(null);
+  const docsAbort = useRef<AbortController | null>(null);
+  const cancelResume = () => { resumeVer.current += 1; resumeAbort.current?.abort(); resumeAbort.current = null; setReadingResume(false); };
+  const cancelDocs = () => { docsVer.current += 1; docsAbort.current?.abort(); docsAbort.current = null; setReadingDocs(false); };
+  useEffect(() => () => { resumeAbort.current?.abort(); docsAbort.current?.abort(); }, []);
+  const close = () => { cancelResume(); cancelDocs(); onClose(); };
+  const uploading = readingResume || readingDocs;
 
   const upload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
     event.target.value = "";
     if (!files.length) return;
     const target = targetRef.current;
-    setUploading(target); setFormError("");
+    setFormError("");
+    if (target === "resume") {
+      const file = files[0];
+      cancelResume();
+      const ver = resumeVer.current;
+      const ctrl = new AbortController();
+      resumeAbort.current = ctrl;
+      setReadingResume(true); setPendingName(file.name);
+      try {
+        const text = await extractFileText(file, ctrl.signal);
+        if (ver !== resumeVer.current) return;
+        if (!text.trim()) throw new Error("No selectable text was found. Paste the text below instead.");
+        setDraft((d) => ({ ...d, resumeText: text })); setResumeFile(file.name); setErrors((e) => ({ ...e, resumeText: "" }));
+      } catch (cause) {
+        if (ver !== resumeVer.current) return;
+        setFormError(cause instanceof Error ? cause.message : "Could not read that file. Your previous resume text was kept.");
+      } finally { if (ver === resumeVer.current) { setReadingResume(false); setPendingName(""); } }
+      return;
+    }
+    cancelDocs();
+    const ver = docsVer.current;
+    const ctrl = new AbortController();
+    docsAbort.current = ctrl;
+    setReadingDocs(true);
     try {
-      const joined = (await Promise.all(files.map(extractFileText))).join("\n\n").slice(0, 40_000);
+      const parts = await Promise.all(files.map((f) => extractFileText(f, ctrl.signal)));
+      if (ver !== docsVer.current) return;
+      const joined = parts.join("\n\n");
       if (!joined.trim()) throw new Error("No selectable text was found. Paste the text below instead.");
-      setDraft((d) => target === "resume"
-        ? { ...d, resumeText: joined }
-        : { ...d, documentsText: [d.documentsText, joined].filter(Boolean).join("\n\n").slice(0, 40_000) });
-    } catch (cause) { setFormError(cause instanceof Error ? cause.message : "Could not read that file."); }
-    finally { setUploading(null); }
+      setDraft((d) => ({ ...d, documentsText: [d.documentsText, joined].filter(Boolean).join("\n\n") }));
+      setErrors((e) => ({ ...e, documentsText: "" }));
+    } catch (cause) {
+      if (ver !== docsVer.current) return;
+      setFormError(cause instanceof Error ? cause.message : "Could not read that file.");
+    } finally { if (ver === docsVer.current) setReadingDocs(false); }
   };
-  const pick = (target: "resume" | "documents") => { targetRef.current = target; fileRef.current?.click(); };
+  const pick = (target: "resume" | "documents") => { targetRef.current = target; if (fileRef.current) fileRef.current.multiple = target === "documents"; fileRef.current?.click(); };
+  const removeResume = () => { cancelResume(); setResumeFile(""); setPendingName(""); setFormError(""); set("resumeText", ""); setErrors((e) => ({ ...e, resumeText: "" })); };
+  const edit = (key: "resumeText" | "documentsText", value: string) => {
+    if (key === "resumeText") cancelResume(); else cancelDocs();
+    set(key, value);
+    if (value.length <= LIMIT) setErrors((e) => ({ ...e, [key]: "" }));
+  };
 
   const create = async () => {
-    if (creating || !prefs || !validate()) return;
+    if (creating || uploading || !prefs) return;
+    if (!validate()) { setStep("details"); return; }
     setCreating(true); setFormError("");
     const body: NewCallSession = {
       sessionType: draft.sessionType,
@@ -99,21 +148,35 @@ export default function SessionWizard({ onClose, onCreated }: { onClose: () => v
     } catch (cause) { setFormError(cause instanceof Error ? cause.message : "Could not create session."); setCreating(false); }
   };
 
-  const textArea = (id: string, label: string, key: "resumeText" | "documentsText", target: "resume" | "documents") => (
+  const textArea = (id: string, label: string, key: "resumeText" | "documentsText", target: "resume" | "documents") => {
+    const reading = target === "resume" ? readingResume : readingDocs;
+    const count = draft[key].length;
+    const over = count > LIMIT;
+    const fileName = target === "resume" ? (reading ? pendingName : resumeFile) : "";
+    return (
     <div className="mb-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <label htmlFor={id} className="text-sm font-semibold">{label} <span className="font-normal text-white/40">(Optional)</span></label>
-        <button type="button" disabled={uploading !== null} onClick={() => pick(target)} className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-white/70 hover:bg-white/5 disabled:opacity-50">
-          <Upload size={13} /> {uploading === target ? "Reading…" : "Upload PDF, TXT, MD"}
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button type="button" onClick={() => pick(target)} className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-white/70 hover:bg-white/5">
+            <Upload size={13} /> {target === "resume" && (resumeFile || reading) ? "Replace file" : target === "resume" ? "Upload DOCX, DOC, PDF, TXT" : "Upload files"}
+          </button>
+          {target === "resume" && (resumeFile || reading) && <button type="button" data-testid="button-remove-resume" onClick={removeResume} className="rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-white/70 hover:bg-white/5">Remove</button>}
+        </div>
       </div>
-      <textarea id={id} value={draft[key]} onChange={(e) => set(key, e.target.value.slice(0, 40_000))} className={`${field} min-h-24`} placeholder="Paste text here or upload a file. Only its text is used." />
+      {fileName && <div className="mt-1.5 flex items-center gap-2 text-xs text-white/55" aria-live="polite"><span className="truncate font-medium text-white/75">{fileName}</span>{reading ? <span className="text-emerald-300">Reading…</span> : <span>Extracted. Review and edit below.</span>}</div>}
+      {target === "documents" && reading && <div className="mt-1.5 text-xs text-emerald-300" aria-live="polite">Reading…</div>}
+      <textarea id={id} value={draft[key]} onChange={(e) => edit(key, e.target.value)} aria-invalid={over} className={`${field} ${fileName ? "min-h-40" : "min-h-24"} ${over ? "border-red-400/50" : ""}`} placeholder="Paste text here or upload a file. Only its text is used." />
+      <div className="mt-1 flex items-start justify-between gap-3 text-xs">
+        <span>{errors[key] && <span role="alert" className="text-red-300">{errors[key]}</span>}</span>
+        <span className={`shrink-0 tabular-nums ${over ? "text-red-300" : "text-white/40"}`}>{count.toLocaleString()} / {LIMIT.toLocaleString()}</span>
+      </div>
     </div>
-  );
+  ); };
 
   return (
-    <Modal label="Create session" onClose={onClose} busy={creating} focusKey={step} width={step === "answers" ? "max-w-[900px]" : "max-w-[760px]"}>
-      <input ref={fileRef} type="file" accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown" multiple className="hidden" onChange={upload} />
+    <Modal label="Create session" onClose={close} busy={creating} focusKey={step} width={step === "answers" ? "max-w-[900px]" : "max-w-[760px]"}>
+      <input ref={fileRef} type="file" accept=".docx,.doc,.pdf,.txt,.md,application/pdf,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword" className="hidden" onChange={upload} />
       {step === "answers" && prefs ? (
         <AnswerPreferencesEditor initial={prefs} saveLabel="Select" onBack={() => setStep("preferences")}
           onSave={(value) => { prefsTouched.current = true; setPrefs(value); setStep("preferences"); }} />
@@ -128,7 +191,7 @@ export default function SessionWizard({ onClose, onCreated }: { onClose: () => v
                 <li aria-current={step === "preferences" ? "step" : undefined} className={step === "preferences" ? "font-semibold text-emerald-300" : ""}>2 Preferences</li>
               </ol>
             </div>
-            <button type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-2 text-white/50 hover:bg-white/5 hover:text-white"><X size={20} /></button>
+            <button type="button" onClick={close} aria-label="Close" className="rounded-lg p-2 text-white/50 hover:bg-white/5 hover:text-white"><X size={20} /></button>
           </div>
 
           {step === "details" ? <>
@@ -136,7 +199,7 @@ export default function SessionWizard({ onClose, onCreated }: { onClose: () => v
             <div role="radiogroup" aria-label="Session type" className="mb-5 grid grid-cols-2 rounded-xl bg-[#242528] p-1">
               {(["interview", "call"] as const).map((type) => (
                 <button type="button" role="radio" aria-checked={draft.sessionType === type} key={type} data-testid={`button-type-${type}`}
-                  onClick={() => { set("sessionType", type); setErrors({}); }}
+                  onClick={() => { if (type !== draft.sessionType) cancelResume(); set("sessionType", type); setErrors({}); }}
                   className={`rounded-lg py-2.5 text-sm font-medium ${draft.sessionType === type ? "bg-[#3a3c41] text-white" : "text-white/50 hover:text-white"}`}>
                   {type === "interview" ? "Interview" : "Regular call"}
                 </button>
@@ -163,8 +226,8 @@ export default function SessionWizard({ onClose, onCreated }: { onClose: () => v
             {textArea("wiz-docs", "Documents", "documentsText", "documents")}
             {formError && <p role="alert" className="mb-4 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-200">{formError}</p>}
             <div className="grid grid-cols-2 gap-3">
-              <button type="button" onClick={onClose} className="rounded-xl border border-white/10 px-4 py-3 text-sm font-semibold text-white/70 hover:bg-white/5">Cancel</button>
-              <button type="button" data-testid="button-wizard-next" disabled={uploading !== null} onClick={() => { if (validate()) setStep("preferences"); }} className="rounded-xl bg-[#f0f1f3] px-4 py-3 text-sm font-semibold text-[#151619] hover:bg-white disabled:opacity-50">Next</button>
+              <button type="button" onClick={close} className="rounded-xl border border-white/10 px-4 py-3 text-sm font-semibold text-white/70 hover:bg-white/5">Cancel</button>
+              <button type="button" data-testid="button-wizard-next" onClick={() => { if (validate()) setStep("preferences"); }} className="rounded-xl bg-[#f0f1f3] px-4 py-3 text-sm font-semibold text-[#151619] hover:bg-white disabled:opacity-50">Next</button>
             </div>
           </> : <>
             <div className="mb-4 grid gap-3 sm:grid-cols-2">
@@ -197,9 +260,9 @@ export default function SessionWizard({ onClose, onCreated }: { onClose: () => v
             </div>
             {formError && <p role="alert" className="mb-4 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-200">{formError}</p>}
             <div className="grid grid-cols-3 gap-3">
-              <button type="button" onClick={onClose} className="rounded-xl border border-white/10 px-4 py-3 text-sm font-semibold text-white/70 hover:bg-white/5">Cancel</button>
+              <button type="button" onClick={close} className="rounded-xl border border-white/10 px-4 py-3 text-sm font-semibold text-white/70 hover:bg-white/5">Cancel</button>
               <button type="button" onClick={() => setStep("details")} className="rounded-xl border border-white/10 px-4 py-3 text-sm font-semibold text-white hover:bg-white/5">Back</button>
-              <button type="button" data-testid="button-create-session" disabled={creating || !prefs} onClick={() => void create()} className="rounded-xl bg-[#f0f1f3] px-4 py-3 text-sm font-semibold text-[#151619] hover:bg-white disabled:opacity-50">{creating ? "Creating…" : "Create session"}</button>
+              <button type="button" data-testid="button-create-session" disabled={creating || uploading || !prefs} onClick={() => void create()} className="rounded-xl bg-[#f0f1f3] px-4 py-3 text-sm font-semibold text-[#151619] hover:bg-white disabled:opacity-50">{creating ? "Creating…" : uploading ? "Reading file…" : "Create session"}</button>
             </div>
           </>}
           </fieldset>

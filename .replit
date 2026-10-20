@@ -22,3 +22,9 @@ timeoutMs = 20000
 [nix]
 channel = "stable-25_05"
 packages = ["glib", "gtk3", "nss", "atk", "cups", "libdrm", "mesa", "pango", "alsa-lib", "xorg.libX11", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXext", "xorg.libXfixes", "xorg.libXrandr", "xorg.libXrender", "xorg.libxcb", "xorg.libXScrnSaver", "xorg.libXi", "xorg.libXtst", "xorg.libxshmfence", "libgbm", "libglvnd", "libxkbcommon", "xorg.xvfb", "xorg.xauth"]
+
+[userenv]
+
+[userenv.shared]
+SONORA_APPROVER_EMAIL = "aishwarya@wavey18.com"
+SONORA_OWNER_EMAIL = "accounts@tekgalaxysolutions.com"

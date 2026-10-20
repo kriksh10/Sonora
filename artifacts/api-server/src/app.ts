@@ -1,4 +1,4 @@
-import express, { type Express } from "express";
+import express, { type Express, type ErrorRequestHandler } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import { clerkMiddleware } from "@clerk/express";
@@ -46,5 +46,13 @@ app.use(
 );
 
 app.use("/api", router);
+const errors: ErrorRequestHandler = (error, req, res, _next) => {
+  if (res.headersSent) { res.end(); return; }
+  const status = error.status === 413 ? 413 : [400, 401, 403, 503].includes(error.status) ? error.status : 500;
+  if (status === 500) req.log.error({ name: error.name }, "Request failed");
+  res.status(status).json({ error: status === 413 ? "File is larger than the 12 MB limit."
+    : status === 503 || status === 403 ? error.message : "Request could not be completed. Please retry." });
+};
+app.use(errors);
 
 export default app;

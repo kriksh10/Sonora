@@ -9,6 +9,8 @@ import type { SessionAudioChunkMimeType } from './sessionAudioChunkMimeType';
 import type { SessionAudioChunkSource } from './sessionAudioChunkSource';
 
 export interface SessionAudioChunk {
+  /** @minimum 1 */
+  roundNumber?: number;
   /**
      * Base64 PCM WAV, mono 16 kHz, at most eight seconds
      * @minLength 60
