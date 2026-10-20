@@ -21,18 +21,31 @@ different installer nested in the uploaded full-project archive.
 The existing **Desktop downloads** option now loads protected release metadata.
 Both metadata and installer GET/HEAD requests use the existing approval guard.
 Download bytes are streamed through the backend; no public storage URL or
-credential is returned. The client preflights access before handing the transfer
-to the browser/native download manager, and GET checks approval again.
+credential is returned. The browser requests authenticated 4 MiB byte ranges,
+retries an interrupted part up to twice, and displays progress and cancellation.
+Each range checks approval again. Only after assembling the exact byte count and
+verifying the complete SHA-256 does the client offer the local EXE for saving.
 Already downloaded installers cannot be recalled or prevented from being copied;
 application usage still requires current sign-in and approval.
 
-Checks for this update: **113 JavaScript tests**, **three Rust encoder tests**,
-API/frontend typechecks and production builds passed. The JS suite includes
+Prior upload checks: **113 JavaScript tests**, **three Rust encoder tests**,
+API/frontend typechecks and production builds passed. That JS suite includes
 actual Rust encoder output through microphone/system host delivery and server WAV
 validation, pause-based routing, and real approval middleware with controlled
 identity/database/storage fixtures for HTTP download cases. Anonymous requests
 to the running metadata/download endpoints return 401 with private/no-store
 headers. The signed-out download page renders correctly.
+
+Download repair checks: the five targeted download tests passed, including an
+opt-in real-storage transfer of all 110,902,033 installer bytes through the HTTP
+range handler and the client assembler (27 parts, final SHA-256 matched).
+Controlled tests cover invalid/suffix/open ranges, approval revocation, interrupted
+part retry, auth errors, corrupt bytes, stale servers and cancellation.
+API/frontend typechecks and production builds passed again. Both managed services
+started cleanly and the signed-out page rendered. The deployed version logged
+successful HEAD followed by aborted GET transfers; its underlying interruption
+cause was not conclusively identified. A signed-in browser download on the
+published repaired version remains to be confirmed after republishing.
 
 **Not established:** native Windows installation/launch, real microphone/meeting/
 phone-speaker acoustics, real-call transcription/answer latency, receiver-side

@@ -3,4 +3,5 @@
 - [Native release dependencies](native-release-dependencies.md) — Preserve optional binaries for supported desktop platforms; Linux-only install success does not establish native runner compatibility.
 - [GitHub authorization paths](github-authorization-paths.md) — Git-provider connection notices do not prove Git push access or connector API authorization; verify each path separately.
 - [Sonora access policy](access-policy.md) — The owner chose approval-gated access for website and desktop users, not automatic access after signup.
+- [Private installer delivery](private-downloads.md) — Metadata and approval success do not prove a large download works; verify actual full-size transport and checksum.
 - [Answers without resume coverage](missing-resume-answers.md) — Missing resume topics still need experienced, practical answers at the selected length; do not invent personal experience.

@@ -58,19 +58,48 @@ export function createDesktopReleasesRouter(
       res.status(503).json({ error: "The installer is temporarily unavailable. Please retry later." });
       return;
     }
+    // Small authenticated range requests avoid fragile single large proxy transfers.
+    const range = req.get("Range");
+    let start = 0, end = release.sizeBytes - 1;
+    if (range) {
+      const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+      if (match && (match[1] || match[2])) {
+        if (!match[1]) start = Math.max(0, release.sizeBytes - Number(match[2]));
+        else {
+          start = Number(match[1]);
+          if (match[2]) end = Math.min(Number(match[2]), end);
+        }
+      } else start = -1;
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 ||
+          start >= release.sizeBytes || end < start) {
+        res.set("Content-Range", `bytes */${release.sizeBytes}`);
+        res.status(416).end();
+        return;
+      }
+      res.status(206);
+      res.set("Content-Range", `bytes ${start}-${end}/${release.sizeBytes}`);
+    }
     res.set({
       "Content-Type": "application/octet-stream",
       "Content-Disposition": `attachment; filename="${release.filename}"`,
-      "Content-Length": String(release.sizeBytes),
+      "Content-Length": String(end - start + 1),
       "X-Installer-SHA256": release.sha256,
+      "Accept-Ranges": "bytes",
+      "ETag": `"${release.sha256}"`,
     });
     if (req.method === "HEAD") { res.end(); return; }
-    const input = file.createReadStream({ validation: "crc32c" });
+    // GCS cannot validate a whole-object CRC on a partial range. The download client
+    // verifies the assembled SHA-256 against the pinned release before saving.
+    const input = file.createReadStream(range
+      ? { start, end, validation: false }
+      : { validation: "crc32c" });
     const disconnect = () => { if (!res.writableFinished) input.destroy(); };
     res.once("close", disconnect);
     try { await pipeline(input, res); }
-    catch {
-      req.log?.warn("Installer download interrupted");
+    catch (error) {
+      const cause = error as { name?: string; code?: string };
+      req.log?.warn({ errorName: cause.name, errorCode: cause.code, start, end,
+        clientDisconnected: req.destroyed }, "Installer download interrupted");
       if (!res.headersSent && !res.destroyed) {
         res.removeHeader("Content-Length");
         res.removeHeader("Content-Disposition");

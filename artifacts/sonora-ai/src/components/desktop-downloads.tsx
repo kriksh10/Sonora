@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Download, Info, RefreshCw } from "lucide-react";
 import { getDesktopRelease, type DesktopRelease, type DesktopBuild } from "@workspace/api-client-react";
 import { installerDownloadPath } from "@/lib/installer-download";
+import { fetchInstaller } from "@/lib/installer-transfer";
 
 const statusText = { unavailable: "Unavailable", preview: "Preview, untested", verified: "Tested release" } as const;
 
@@ -11,6 +12,10 @@ export default function DesktopDownloads() {
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState("");
+  const [progress, setProgress] = useState<number | null>(null);
+  const [saved, setSaved] = useState(false);
+  const transfer = useRef<AbortController | null>(null);
+  useEffect(() => () => transfer.current?.abort(), []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -33,25 +38,35 @@ export default function DesktopDownloads() {
 
   const download = async (build: DesktopBuild) => {
     const url = installerDownloadPath(build.url, import.meta.env.BASE_URL);
-    if (!url || downloading) return;
+    if (!url || transfer.current) return;
+    const controller = new AbortController();
+    transfer.current = controller;
     setDownloading(true);
     setDownloadError("");
+    setSaved(false);
+    setProgress(0);
     try {
-      // Preflight reports access/storage errors in the page without buffering a large EXE.
-      const response = await fetch(url, { method: "HEAD", credentials: "include", cache: "no-store" });
-      if (!response.ok) {
-        if (response.status === 401 || response.status === 403) throw new Error("Sign in with an approved Sonora account to download.");
-        throw new Error("The installer is temporarily unavailable. Please retry.");
+      if (!build.sizeBytes || !build.sha256) {
+        throw new Error("Installer verification details are missing. Refresh the page.");
       }
+      const blob = await fetchInstaller(url, { sizeBytes: build.sizeBytes, sha256: build.sha256 }, {
+        signal: controller.signal,
+        onProgress: (received, total) => setProgress(Math.floor(received / total * 100)),
+      });
+      const objectUrl = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
-      anchor.href = url;
+      anchor.href = objectUrl;
       anchor.download = `Sonora-${release?.version}-win-x64.exe`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
+      // Give the browser time to accept the save, including inside the preview iframe.
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      setSaved(true);
     } catch (cause) {
-      setDownloadError(cause instanceof Error ? cause.message : "Could not start the download. Please retry.");
-    } finally { setDownloading(false); }
+      setDownloadError(controller.signal.aborted ? "Download cancelled." :
+        cause instanceof Error ? cause.message : "Could not download the installer. Please retry.");
+    } finally { transfer.current = null; setDownloading(false); setProgress(null); }
   };
 
   const isPublicRoute = typeof window !== "undefined" && window.location.pathname.replace(import.meta.env.BASE_URL.replace(/\/$/, ""), "").startsWith("/download");
@@ -104,7 +119,7 @@ export default function DesktopDownloads() {
                   <div className="mt-3">
                     {live ? (
                       <button type="button" disabled={downloading} onClick={() => void download(b)} data-testid={`link-download-${key}`} className="inline-flex min-h-[40px] items-center gap-2 rounded-lg bg-[#257c3c] px-4 text-sm font-semibold text-white hover:bg-[#2c9147] disabled:opacity-50">
-                        <Download size={15} /> {downloading ? "Preparing download…" : `Download ${b.status === "preview" ? "preview" : ""}`}
+                        <Download size={15} /> {downloading ? progress === 100 ? "Verifying installer…" : `Downloading ${progress ?? 0}%` : `Download ${b.status === "preview" ? "preview" : ""}`}
                       </button>
                     ) : (
                       <span data-testid={`status-pending-${key}`} className="inline-flex min-h-[40px] items-center rounded-lg border border-dashed border-white/15 px-4 text-sm text-white/45">
@@ -118,6 +133,14 @@ export default function DesktopDownloads() {
           </>
         )}
       </div>
+      {downloading && <div className="mt-4 text-sm text-white/65" role="status">
+        <progress className="w-full accent-[#257c3c]" value={progress ?? 0} max={100} aria-label="Installer download progress" />
+        <div className="mt-2 flex items-center justify-between gap-3">
+          <span>Keep this page open. The installer will be verified before saving.</span>
+          <button type="button" onClick={() => transfer.current?.abort()} className="rounded-lg border border-white/20 px-3 py-1">Cancel</button>
+        </div>
+      </div>}
+      {saved && <p role="status" className="mt-4 text-sm text-emerald-300">Installer downloaded and checksum verified. Check your browser’s downloads; if saving was blocked, allow downloads for this site and retry.</p>}
       {downloadError && <p role="alert" className="mt-4 rounded-lg bg-red-500/10 p-3 text-sm text-red-200">{downloadError}</p>}
 
       <div className="mt-6 flex gap-3 rounded-xl border border-white/10 bg-[#101113] p-4 text-xs leading-5 text-white/50">

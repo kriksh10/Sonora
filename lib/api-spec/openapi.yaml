@@ -34,6 +34,13 @@ paths:
     get:
       operationId: downloadWindowsInstaller
       summary: Download the Windows installer with current approval checked
+      parameters:
+        - in: header
+          name: Range
+          required: false
+          schema:
+            type: string
+          description: A single byte range, for example bytes=0-4194303
       responses:
         "200":
           description: Windows installer attachment
@@ -42,6 +49,19 @@ paths:
               schema:
                 type: string
                 format: binary
+        "206":
+          description: Installer byte range; Content-Range identifies the returned bytes
+          headers:
+            Content-Range:
+              schema:
+                type: string
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "416":
+          description: Invalid or unsatisfiable single byte range
         "401":
           description: Sign-in required
         "403":

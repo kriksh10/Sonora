@@ -31,6 +31,10 @@ export const GetDesktopReleaseResponse = zod.object({
 /**
  * @summary Download the Windows installer with current approval checked
  */
+export const DownloadWindowsInstallerHeader = zod.object({
+  "Range": zod.string().optional().describe('A single byte range, for example bytes=0-4194303')
+})
+
 export const DownloadWindowsInstallerResponse = zod.unknown()
 
 
