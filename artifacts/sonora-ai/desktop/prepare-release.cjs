@@ -2,6 +2,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { validateServiceUrl } = require('./security.cjs');
 const { buildAssets } = require('./build-assets.cjs');
+const { runtimeFiles } = require('./runtime-files.cjs');
+const { verifyStagedRuntime } = require('./verify-runtime.cjs');
 const root = path.resolve(__dirname, '../../..');
 const stage = path.join(root, 'generated-artifacts/desktop-app');
 
@@ -31,7 +33,7 @@ async function prepare({ arch = process.arch } = {}) {
   // Release staging is generated output, never carry files from an older target.
   fs.rmSync(stage, { recursive: true, force: true });
   fs.mkdirSync(stage, { recursive: true });
-  for (const file of ['main.cjs', 'security.cjs', 'preload.cjs', 'native-audio-host.cjs', 'audio-devices.cjs', 'browser-auth.cjs', 'window-preferences.cjs', 'maintenance.cjs']) fs.copyFileSync(path.join(__dirname, file), path.join(stage, file));
+  for (const file of runtimeFiles) fs.copyFileSync(path.join(__dirname, file), path.join(stage, file));
   fs.mkdirSync(path.join(stage, 'native'), { recursive: true });
   fs.copyFileSync(nativeBinary, path.join(stage, 'native', binaryName));
   fs.chmodSync(path.join(stage, 'native', binaryName), 0o755);
@@ -43,6 +45,7 @@ async function prepare({ arch = process.arch } = {}) {
     private: true, main: 'main.cjs',
   }, null, 2));
   buildAssets(path.join(stage, 'assets'));
+  verifyStagedRuntime(stage);
   console.log('Desktop release staging prepared with a reachable hosted Sonora service.');
 }
 if (require.main === module) prepare().catch(error => { console.error(error.message); process.exitCode = 1; });

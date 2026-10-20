@@ -1,5 +1,19 @@
 # Sonora desktop verification
 
+## Startup packaging repair — source 0.3.4
+
+The reported 0.3.3 installed startup crash (`Cannot find module './audio-devices.cjs'`)
+was caused by the electron-builder allowlist omitting a module that staging included.
+Staging and packaging now share one runtime-module list. Staged imports are audited,
+and the post-pack hook reads the actual `app.asar`, rejecting missing runtime files or
+relative CommonJS imports before installer creation can succeed. Regression checks
+build a real ASAR with the configured allowlist and reject an archive with the
+reported omission. These are archive checks, not a Windows-native launch test.
+
+Extract the 0.3.4 kit into a new directory, rebuild with BUILD-WINDOWS.cmd, close the
+old Sonora process (including tray), then run the newly produced 0.3.4 installer.
+Republishing the hosted site cannot repair files inside an already installed ASAR.
+
 ## Call-output routing and answer policy — source 0.3.3
 
 Windows builds now offer local output-device discovery and explicit Meeting output selection. Match this to Meet's Settings → Audio → Speakers; capturing the Windows default alone does not establish capture of a separately routed headset. Names never enter session history or diagnostic exports. Missing/ambiguous selected devices fail visibly instead of silently switching output. Stop capture before changing output, then restart explicitly.

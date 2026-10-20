@@ -1,10 +1,13 @@
 const path = require('node:path');
+const { runtimeFiles } = require('./runtime-files.cjs');
+const { verifyPackedRuntime } = require('./verify-runtime.cjs');
 module.exports = {
   appId: 'com.sonora.assistant',
   productName: 'Sonora AI',
   electronVersion: require('electron/package.json').version,
   directories: { output: path.resolve(__dirname, '../../../generated-artifacts/installers'), buildResources: path.resolve(__dirname, '../../../generated-artifacts/desktop-app/assets') },
-  files: ['main.cjs', 'preload.cjs', 'security.cjs', 'native-audio-host.cjs', 'browser-auth.cjs', 'window-preferences.cjs', 'maintenance.cjs', 'runtime-config.json', 'assets/**', 'package.json', 'THIRD_PARTY_NOTICES.txt'],
+  files: [...runtimeFiles, 'runtime-config.json', 'assets/**', 'package.json', 'THIRD_PARTY_NOTICES.txt'],
+  afterPack: verifyPackedRuntime,
   extraResources: [{ from: path.resolve(__dirname, '../../../generated-artifacts/desktop-app/native'), to: 'native' }],
   asar: true,
   artifactName: 'Sonora-${version}-${os}-${arch}.${ext}',
