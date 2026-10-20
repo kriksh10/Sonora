@@ -2,3 +2,4 @@
 - [API codegen compatibility](api-codegen-compatibility.md) — Catalog-managed Zod needs an explicit generator target; named request schemas avoid validator/type export collisions.
 - [Native release dependencies](native-release-dependencies.md) — Preserve optional binaries for supported desktop platforms; Linux-only install success does not establish native runner compatibility.
 - [GitHub authorization paths](github-authorization-paths.md) — Git-provider connection notices do not prove Git push access or connector API authorization; verify each path separately.
+- [Sonora access policy](access-policy.md) — The owner chose approval-gated access for website and desktop users, not automatic access after signup.
