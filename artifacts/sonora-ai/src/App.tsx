@@ -206,7 +206,7 @@ function ClerkProviderWithRoutes() {
         <TooltipProvider>
           <RoutedErrorBoundary>
             <Switch>
-              <Route path="/download">{() => <main className="min-h-screen bg-[#101113]"><DesktopDownloads /></main>}</Route>
+              <Route path="/download" component={GatedDesktopDownloads} />
               <Route path="/desktop-connect/:id">{(params) => <GatedDesktopConnect key={params.id} params={params} />}</Route>
               <Route path="/sign-in/*?" component={SignInPage} />
               <Route path="/sign-up/*?" component={SignUpPage} />
@@ -236,6 +236,20 @@ function ClerkQueryClientCacheInvalidator() {
     return unsubscribe;
   }, [addListener, cache]);
   return null;
+}
+
+function GatedDesktopDownloads() {
+  const { isLoaded, isSignedIn, userId } = useAuth();
+  if (!isLoaded) return <main className="min-h-screen bg-[#101113] p-8 text-white">Checking sign-in…</main>;
+  if (!isSignedIn) return (
+    <main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-[#101113] px-4 py-8 text-white">
+      <div className="text-center"><h1 className="text-xl font-semibold">Sonora desktop downloads</h1>
+        <p className="mt-2 text-sm text-white/60">Sign in with an approved account to download the Windows app.</p></div>
+      {window.sonoraDesktop ? <DesktopBrowserSignIn /> : <SignIn routing="hash"
+        forceRedirectUrl={`${basePath}/download`} signUpForceRedirectUrl={`${basePath}/download`} />}
+    </main>
+  );
+  return <AccessGate key={userId}><main className="min-h-screen bg-[#101113]"><DesktopDownloads /></main></AccessGate>;
 }
 
 function SignInPage() {

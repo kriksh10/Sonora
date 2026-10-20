@@ -217,7 +217,7 @@ function createWindow() {
       const result = await dialog.showMessageBox(win, {
         type: 'question', title: 'Allow native audio capture?',
         message: source === 'system' ? 'Transcribe audio playing on this computer?' : 'Transcribe your microphone?',
-        detail: 'Sonora sends six-second audio chunks to its hosted Gemini transcription service. System audio can include other apps. No screen video is captured by this helper. Capture continues while hidden; stop it from Sonora or the tray.',
+        detail: 'Sonora sends 4.5-second audio chunks to its hosted Gemini transcription service. System audio can include other apps. No screen video is captured by this helper. Capture continues while hidden; stop it from Sonora or the tray.',
         buttons: ['Cancel', 'Allow audio capture'], defaultId: 0, cancelId: 0,
       });
       return result.response === 1 && !win.isDestroyed();

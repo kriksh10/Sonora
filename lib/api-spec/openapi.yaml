@@ -13,6 +13,41 @@ tags:
   - name: sessions
     description: Private interview and regular-call sessions
 paths:
+  /desktop/releases:
+    get:
+      operationId: getDesktopRelease
+      summary: Installer availability for approved accounts
+      responses:
+        "200":
+          description: Release metadata without private storage locations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DesktopRelease"
+        "401":
+          description: Sign-in required
+        "403":
+          description: Approval required
+        "503":
+          description: Installer storage unavailable
+  /desktop/installers/windows-x64:
+    get:
+      operationId: downloadWindowsInstaller
+      summary: Download the Windows installer with current approval checked
+      responses:
+        "200":
+          description: Windows installer attachment
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          description: Sign-in required
+        "403":
+          description: Approval required
+        "503":
+          description: Installer storage unavailable
   /access/status:
     get:
       operationId: getAccessStatus
@@ -444,6 +479,42 @@ components:
               error:
                 type: string
   schemas:
+    DesktopBuild:
+      type: object
+      required: [platform, architecture, label, status, url, sha256, sizeBytes, signing, minimumOs]
+      properties:
+        platform:
+          type: string
+          enum: [windows, mac]
+        architecture:
+          type: string
+        label:
+          type: string
+        status:
+          type: string
+          enum: [unavailable, preview, verified]
+        url:
+          type: [string, "null"]
+        sha256:
+          type: [string, "null"]
+        sizeBytes:
+          type: [integer, "null"]
+        signing:
+          type: string
+        minimumOs:
+          type: string
+    DesktopRelease:
+      type: object
+      required: [version, publishedAt, builds]
+      properties:
+        version:
+          type: string
+        publishedAt:
+          type: [string, "null"]
+        builds:
+          type: array
+          items:
+            $ref: "#/components/schemas/DesktopBuild"
     AccessStatus:
       type: object
       required: [status, role, email, requested]

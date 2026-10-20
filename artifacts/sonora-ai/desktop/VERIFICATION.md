@@ -1,5 +1,55 @@
 # Sonora desktop verification
 
+## Uploaded Windows candidate and private downloads
+
+The separately supplied Windows installer is the reviewed candidate, not the
+different installer nested in the uploaded full-project archive.
+
+- Filename: `Sonora-0.3.5-win-x64.exe`
+- Size: 110,902,033 bytes (105.8 MiB).
+- SHA-256: `5f91344c97fe5636e2064b3e1f04c1f370309cfb9804de1b5a449fd89dd5cb9a`
+- Signing: no Authenticode certificate table; unsigned.
+- NSIS extraction confirmed its embedded ASAR and native helper match the separate
+  archive's unpacked files. Required runtime files and local imports pass the
+  archive verifier. The embedded service configuration is HTTPS, not localhost
+  or a development-preview host.
+- The embedded host accepts the current 144044-byte audio format and includes
+  `audio-devices.cjs`. Workspace source also retains compatible six-second helpers.
+- The installer is stored privately in App Storage, not in a public static folder.
+  Upload and a full readback matched the pinned byte count and SHA-256.
+
+The existing **Desktop downloads** option now loads protected release metadata.
+Both metadata and installer GET/HEAD requests use the existing approval guard.
+Download bytes are streamed through the backend; no public storage URL or
+credential is returned. The client preflights access before handing the transfer
+to the browser/native download manager, and GET checks approval again.
+Already downloaded installers cannot be recalled or prevented from being copied;
+application usage still requires current sign-in and approval.
+
+Checks for this update: **113 JavaScript tests**, **three Rust encoder tests**,
+API/frontend typechecks and production builds passed. The JS suite includes
+actual Rust encoder output through microphone/system host delivery and server WAV
+validation, pause-based routing, and real approval middleware with controlled
+identity/database/storage fixtures for HTTP download cases. Anonymous requests
+to the running metadata/download endpoints return 401 with private/no-store
+headers. The signed-out download page renders correctly.
+
+**Not established:** native Windows installation/launch, real microphone/meeting/
+phone-speaker acoustics, real-call transcription/answer latency, receiver-side
+capture exclusion, or macOS release readiness. Fixture checks are not physical
+device checks. The desktop release task remains open for these checks.
+
+**Rollout:** publish the updated hosted API and frontend with App Storage
+configuration, then sign in with an approved account and open Desktop downloads.
+For an older installed 0.3.5 build, manually download and reinstall this candidate:
+the version alone cannot distinguish the two 0.3.5 binaries. Use its SHA-256.
+Publishing alone does not replace native code already installed on a PC.
+
+For future reviewed candidates, update the server release metadata and run the
+API package's `scripts/upload-desktop-installer.mjs` with the local EXE path.
+It rejects a file that differs from the pinned size/hash, uploads only to private
+storage, and verifies the uploaded bytes. Do not place installers in Git.
+
 ## Phone input and focused live view — source 0.3.5
 
 The active call now has a compact toolbar, an opaque readable answer surface,

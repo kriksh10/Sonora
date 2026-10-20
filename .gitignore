@@ -48,6 +48,7 @@ Thumbs.db
 .cache/
 .local/
 /generated-artifacts/
+/attached_assets/*.zip
 /artifacts/sonora-ai/desktop/assets/
 # Cargo outputs stay out of checkpoints; native builds use generated-artifacts.
 target/

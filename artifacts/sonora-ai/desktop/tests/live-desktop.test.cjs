@@ -190,6 +190,25 @@ test('remote fragments assemble across chunks, duplicate turns are suppressed, r
   assert.equal(q.sent.length, 1);
 });
 
+test('a pause submits interviewer requests without question-shaped wording, not audio checks', async () => {
+  const q = questions();
+  q.router.push('I want to hear how you handled the outage last quarter', 'interviewer', true);
+  q.flush();
+  await Promise.resolve(); await Promise.resolve();
+  assert.deepEqual(q.sent, ['I want to hear how you handled the outage last quarter']);
+  q.router.push('Can you hear me?', 'interviewer', true);
+  q.flush();
+  assert.equal(q.sent.length, 1);
+  q.router.push('I want to hear how you handled the migration last year', 'interviewer');
+  q.router.pause();
+  q.flush();
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(q.sent.length, 2);
+  q.router.push('I want to check if this is working', 'candidate', true);
+  q.router.push('I want to check if this is working', 'unknown', true);
+  q.router.pause(); q.flush();
+  assert.equal(q.sent.length, 2);
+});
 test('continuous six-second remote chunks cannot postpone automatic answers forever', () => {
   const { createInterviewerQuestions, isInterviewQuestion } = load('../../src/lib/interviewer-questions.ts');
   let now = 0, next = 0;

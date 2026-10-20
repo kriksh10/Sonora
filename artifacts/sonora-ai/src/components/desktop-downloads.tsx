@@ -1,50 +1,27 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, Download, Info, RefreshCw } from "lucide-react";
-
-interface DesktopBuild {
-  platform: "windows" | "mac";
-  architecture: string;
-  label: string;
-  status: "unavailable" | "preview" | "verified";
-  url: string | null;
-  sha256: string | null;
-  signing: string;
-  minimumOs: string;
-}
-
-interface DesktopRelease {
-  version: string;
-  publishedAt: string | null;
-  builds: DesktopBuild[];
-}
+import { getDesktopRelease, type DesktopRelease, type DesktopBuild } from "@workspace/api-client-react";
+import { installerDownloadPath } from "@/lib/installer-download";
 
 const statusText = { unavailable: "Unavailable", preview: "Preview, untested", verified: "Tested release" } as const;
-
-function isHttps(url: string | null): url is string {
-  if (!url) return false;
-  try {
-    return new URL(url).protocol === "https:";
-  } catch {
-    return false;
-  }
-}
 
 export default function DesktopDownloads() {
   const [release, setRelease] = useState<DesktopRelease | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`${import.meta.env.BASE_URL}desktop-release.json`, { cache: "no-store" });
-      if (!res.ok) throw new Error(`Status ${res.status}`);
-      const data = (await res.json()) as DesktopRelease;
+      const data = await getDesktopRelease({ cache: "no-store", credentials: "include" });
       if (!data || !Array.isArray(data.builds)) throw new Error("Malformed release data");
       setRelease(data);
     } catch {
-      setError("Could not load the release list.");
+      setRelease(null);
+      setError("Could not load installers. Sign-in and current Sonora approval are required; storage may also be temporarily unavailable.");
     } finally {
       setLoading(false);
     }
@@ -53,6 +30,29 @@ export default function DesktopDownloads() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const download = async (build: DesktopBuild) => {
+    const url = installerDownloadPath(build.url, import.meta.env.BASE_URL);
+    if (!url || downloading) return;
+    setDownloading(true);
+    setDownloadError("");
+    try {
+      // Preflight reports access/storage errors in the page without buffering a large EXE.
+      const response = await fetch(url, { method: "HEAD", credentials: "include", cache: "no-store" });
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) throw new Error("Sign in with an approved Sonora account to download.");
+        throw new Error("The installer is temporarily unavailable. Please retry.");
+      }
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `Sonora-${release?.version}-win-x64.exe`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+    } catch (cause) {
+      setDownloadError(cause instanceof Error ? cause.message : "Could not start the download. Please retry.");
+    } finally { setDownloading(false); }
+  };
 
   const isPublicRoute = typeof window !== "undefined" && window.location.pathname.replace(import.meta.env.BASE_URL.replace(/\/$/, ""), "").startsWith("/download");
 
@@ -85,7 +85,7 @@ export default function DesktopDownloads() {
             </p>
             {release.builds.length === 0 && <p className="rounded-xl border border-white/10 bg-[#17181b] p-4 text-sm text-white/55">No builds are listed.</p>}
             {release.builds.map((b) => {
-              const live = isHttps(b.url) && (b.status === "preview" || b.status === "verified");
+              const live = !!installerDownloadPath(b.url, import.meta.env.BASE_URL) && (b.status === "preview" || b.status === "verified");
               const key = `${b.platform}-${b.architecture}`;
               return (
                 <article key={key} data-testid={`card-build-${key}`} className="rounded-xl border border-white/10 bg-[#17181b] p-4 transition-colors hover:border-white/20">
@@ -99,12 +99,13 @@ export default function DesktopDownloads() {
                     </span>
                   </div>
                   <p className="mt-3 text-xs text-white/50">Signing: {b.signing}</p>
+                  {b.sizeBytes !== null && <p className="mt-1 text-xs text-white/50">Size: {(b.sizeBytes / 1024 / 1024).toFixed(1)} MiB · Approved accounts only</p>}
                   {b.sha256 && <p className="mt-1 break-all font-mono text-[10px] text-white/35">SHA-256 {b.sha256}</p>}
                   <div className="mt-3">
                     {live ? (
-                      <a href={b.url!} rel="noopener noreferrer" data-testid={`link-download-${key}`} className="inline-flex min-h-[40px] items-center gap-2 rounded-lg bg-[#257c3c] px-4 text-sm font-semibold text-white hover:bg-[#2c9147]">
-                        <Download size={15} /> Download {b.status === "preview" ? "preview" : ""}
-                      </a>
+                      <button type="button" disabled={downloading} onClick={() => void download(b)} data-testid={`link-download-${key}`} className="inline-flex min-h-[40px] items-center gap-2 rounded-lg bg-[#257c3c] px-4 text-sm font-semibold text-white hover:bg-[#2c9147] disabled:opacity-50">
+                        <Download size={15} /> {downloading ? "Preparing download…" : `Download ${b.status === "preview" ? "preview" : ""}`}
+                      </button>
                     ) : (
                       <span data-testid={`status-pending-${key}`} className="inline-flex min-h-[40px] items-center rounded-lg border border-dashed border-white/15 px-4 text-sm text-white/45">
                         {b.status === "unavailable" ? "Unavailable" : "Download link pending"}
@@ -117,6 +118,7 @@ export default function DesktopDownloads() {
           </>
         )}
       </div>
+      {downloadError && <p role="alert" className="mt-4 rounded-lg bg-red-500/10 p-3 text-sm text-red-200">{downloadError}</p>}
 
       <div className="mt-6 flex gap-3 rounded-xl border border-white/10 bg-[#101113] p-4 text-xs leading-5 text-white/50">
         <Info size={15} className="mt-0.5 shrink-0 text-white/40" />
@@ -124,7 +126,8 @@ export default function DesktopDownloads() {
           <li>Preview builds have not been through full testing; only a tested release has been verified on its listed OS.</li>
           <li>Installing may need administrator rights, and unsigned builds trigger OS security warnings. Check the SHA-256 when one is shown.</li>
             <li>Allow microphone or system-audio access when prompted. System audio can include other apps, not just the call. Native Mac system audio requires macOS 14.4 or newer.</li>
-          <li>Audio is transcribed in short Gemini-processed chunks, not word by word. Use email/password sign-in; social providers may block embedded browsers.</li>
+          <li>The Windows package contents have been inspected, but Windows launch and real-device audio have not been verified here. This is a preview, not a fully tested release.</li>
+          <li>Audio is transcribed in short Gemini-processed chunks, not word by word. Desktop sign-in uses your regular browser and an explicit app connection.</li>
           <li>Screen share exclusion is best effort. Apps and macOS ScreenCaptureKit may still capture the window.</li>
         </ul>
       </div>

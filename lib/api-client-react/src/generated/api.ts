@@ -33,6 +33,7 @@ import type {
   DesktopAuthStartInput,
   DesktopAuthStarted,
   DesktopAuthState,
+  DesktopRelease,
   ExtractedText,
   HealthStatus,
   NewCallSession,
@@ -71,6 +72,160 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   }
   return result;
 };
+
+export const getGetDesktopReleaseUrl = () => {
+
+
+
+
+  return `/api/desktop/releases`
+}
+
+/**
+ * @summary Installer availability for approved accounts
+ */
+export const getDesktopRelease = async ( options?: Parameters<typeof customFetch>[1]): Promise<DesktopRelease> => {
+
+  return customFetch<DesktopRelease>(getGetDesktopReleaseUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetDesktopReleaseQueryKey = () => {
+    return [
+    `/api/desktop/releases`
+    ] as const;
+    }
+
+
+export const getGetDesktopReleaseQueryOptions = <TData = Awaited<ReturnType<typeof getDesktopRelease>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDesktopRelease>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetDesktopReleaseQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDesktopRelease>>> = ({ signal }) => getDesktopRelease({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDesktopRelease>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetDesktopReleaseQueryResult = NonNullable<Awaited<ReturnType<typeof getDesktopRelease>>>
+export type GetDesktopReleaseQueryError = ErrorType<void>
+
+
+/**
+ * @summary Installer availability for approved accounts
+ */
+
+export function useGetDesktopRelease<TData = Awaited<ReturnType<typeof getDesktopRelease>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDesktopRelease>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetDesktopReleaseQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getDownloadWindowsInstallerUrl = () => {
+
+
+
+
+  return `/api/desktop/installers/windows-x64`
+}
+
+/**
+ * @summary Download the Windows installer with current approval checked
+ */
+export const downloadWindowsInstaller = async ( options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getDownloadWindowsInstallerUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getDownloadWindowsInstallerQueryKey = () => {
+    return [
+    `/api/desktop/installers/windows-x64`
+    ] as const;
+    }
+
+
+export const getDownloadWindowsInstallerQueryOptions = <TData = Awaited<ReturnType<typeof downloadWindowsInstaller>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof downloadWindowsInstaller>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getDownloadWindowsInstallerQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof downloadWindowsInstaller>>> = ({ signal }) => downloadWindowsInstaller({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof downloadWindowsInstaller>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type DownloadWindowsInstallerQueryResult = NonNullable<Awaited<ReturnType<typeof downloadWindowsInstaller>>>
+export type DownloadWindowsInstallerQueryError = ErrorType<void>
+
+
+/**
+ * @summary Download the Windows installer with current approval checked
+ */
+
+export function useDownloadWindowsInstaller<TData = Awaited<ReturnType<typeof downloadWindowsInstaller>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof downloadWindowsInstaller>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getDownloadWindowsInstallerQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetAccessStatusUrl = () => {
 

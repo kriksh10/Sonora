@@ -5,6 +5,45 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export type DesktopBuildPlatform = typeof DesktopBuildPlatform[keyof typeof DesktopBuildPlatform];
+
+
+export const DesktopBuildPlatform = {
+  windows: 'windows',
+  mac: 'mac',
+} as const;
+
+export type DesktopBuildStatus = typeof DesktopBuildStatus[keyof typeof DesktopBuildStatus];
+
+
+export const DesktopBuildStatus = {
+  unavailable: 'unavailable',
+  preview: 'preview',
+  verified: 'verified',
+} as const;
+
+export interface DesktopBuild {
+  platform: DesktopBuildPlatform;
+  architecture: string;
+  label: string;
+  status: DesktopBuildStatus;
+  /** @nullable */
+  url: string | null;
+  /** @nullable */
+  sha256: string | null;
+  /** @nullable */
+  sizeBytes: number | null;
+  signing: string;
+  minimumOs: string;
+}
+
+export interface DesktopRelease {
+  version: string;
+  /** @nullable */
+  publishedAt: string | null;
+  builds: DesktopBuild[];
+}
+
 export type AccessStatusStatus = typeof AccessStatusStatus[keyof typeof AccessStatusStatus];
 
 

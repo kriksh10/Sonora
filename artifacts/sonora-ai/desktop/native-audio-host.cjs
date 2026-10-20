@@ -4,9 +4,10 @@ const { StringDecoder } = require('node:string_decoder');
 const { validDeviceName } = require('./audio-devices.cjs');
 
 function validWav(value) {
-  if (typeof value !== 'string' || value.length > 260000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) return false;
+  if (typeof value !== 'string' || value.length > 260000 || value.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) return false;
   const wav = Buffer.from(value, 'base64');
-  return wav.length === 192044 && wav.toString('ascii', 0, 4) === 'RIFF' &&
+  // Current native encoder: 4.5 seconds. Retain supported six-second helpers.
+  return [144044, 192044].includes(wav.length) && wav.toString('ascii', 0, 4) === 'RIFF' &&
     wav.toString('ascii', 8, 16) === 'WAVEfmt ' && wav.readUInt32LE(4) === wav.length - 8 &&
     wav.readUInt32LE(16) === 16 && wav.readUInt16LE(20) === 1 &&
     wav.readUInt16LE(22) === 1 && wav.readUInt32LE(24) === 16000 &&

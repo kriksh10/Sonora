@@ -1,16 +1,33 @@
+function preparedTurn(text: string) {
+  return text.trim()
+    .replace(/^(hello|hi|hey)\b[,!:.\s]*/i, "")
+    .replace(/^(?:(?:okay|ok|so|then|and|now|well)[,!:.\s]+)+/i, "")
+    .replace(/^(?:(?:please|(?:i|we)(?:'d| would) like you to|(?:i|we) want you to)[,!:.\s]+)+/i, "")
+    .trim();
+}
+
+function isDismissedTurn(text: string) {
+  if (/^(hello|hi|hey)[?.!\s]*$/i.test(text.trim())) return true;
+  const clean = preparedTurn(text);
+  return !clean
+    || /^(can you hear|could you hear|are you there|is (my|the) (audio|microphone)|thank(s| you))/i.test(clean)
+    || /^(how are you|are you ready|shall we (start|begin))[?.!\s]*$/i.test(clean)
+    || /^(hello|hi|hey|okay|ok|thanks|thank you|yes|yeah|yep|no|nope)[?.!\s]*$/i.test(clean);
+}
+
 export function isInterviewQuestion(text: string) {
-  let clean = text.trim();
-  if (/^(hello|hi|hey)[?.!\s]*$/i.test(clean)) return false;
-  clean = clean.replace(/^(hello|hi|hey)\b[,!:.\s]*/i, "");
-  clean = clean.replace(/^(?:(?:okay|ok|so|then|and|now|well)[,!:.\s]+)+/i, "");
-  clean = clean.replace(/^(?:(?:please|(?:i|we)(?:'d| would) like you to|(?:i|we) want you to)[,!:.\s]+)+/i, "");
-  if (/^(can you hear|could you hear|are you there|is (my|the) (audio|microphone)|thank(s| you))/i.test(clean)) return false;
-  if (/^(how are you|are you ready|shall we (start|begin))[?.!\s]*$/i.test(clean)) return false;
+  if (isDismissedTurn(text)) return false;
+  const clean = preparedTurn(text);
   return clean.includes("?") ||
     /^(what|how|why|when|where|which|who|(?:can|could|would|have|did|do|are|will) you|tell (?:me|us)|describe|explain|walk (?:me|us)|(?:you )?give (?:me|us)|write|implement|design|compare|discuss|demonstrate|solve|outline|let(?:'s| us) (?:discuss|talk about))\b/i.test(clean) ||
     /\b(?:my|our|the next) question is\b|\b(?:can|could|would) you (?:explain|describe|tell|walk|give|compare|design|implement)\b/i.test(clean);
 }
 
+/** Only used after a pause on an explicitly allowed source; not voice identification. */
+export function isPausedInterviewerTurn(text: string) {
+  if (isDismissedTurn(text)) return false;
+  return isInterviewQuestion(text) || preparedTurn(text).split(/\s+/).filter(Boolean).length >= 4;
+}
 /** Source-based routing, not speaker recognition. State lives only for this capture. */
 export function createInterviewerQuestions({
   answer, notice, setTimer = setTimeout, clearTimer = clearTimeout, clock = Date.now,
@@ -29,6 +46,7 @@ export function createInterviewerQuestions({
   let running = false;
   let generation = 0;
   let seen: { key: string; time: number }[] = [];
+  let turnEnded = false;
   const pump = async () => {
     if (running) return;
     running = true;
@@ -45,9 +63,11 @@ export function createInterviewerQuestions({
     clearTimer(timer);
     clearTimer(deadline);
     deadline = undefined;
+    const paused = turnEnded;
+    turnEnded = false;
     const text = fragments.trim();
     fragments = "";
-    if (!isInterviewQuestion(text)) {
+    if (!(paused ? isPausedInterviewerTurn(text) : isInterviewQuestion(text))) {
       if (text) notice("Call speech received, but no question detected yet. Select a transcript line to ask manually.");
       return;
     }
@@ -73,6 +93,7 @@ export function createInterviewerQuestions({
       const token = generation;
       if (!fragments) receivedAt = typeof performance === "undefined" ? clock() : performance.now();
       fragments = `${fragments} ${text}`.trim();
+      turnEnded = endOfTurn;
       // Chunk delivery is not silence: a bounded turn deadline must survive
       // subsequent chunks, otherwise 6-second arrivals reset an 8.5-second timer forever.
       if (deadline === undefined) deadline = setTimer(() => { if (generation === token) flush(); }, 15_000);
@@ -98,6 +119,13 @@ export function createInterviewerQuestions({
     pushMixed(text: string, optedIn: boolean, endOfTurn = false) {
       if (optedIn) collect(text, endOfTurn);
     },
+    pause() {
+      if (!fragments.trim()) return;
+      turnEnded = true;
+      clearTimer(timer);
+      const token = generation;
+      timer = setTimer(() => { if (generation === token) flush(); }, 350);
+    },
     reset() {
       generation += 1;
       clearTimer(timer);
@@ -106,6 +134,7 @@ export function createInterviewerQuestions({
       fragments = "";
       pending = [];
       seen = [];
+      turnEnded = false;
     },
   };
 }

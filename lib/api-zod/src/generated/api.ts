@@ -8,6 +8,32 @@
 import * as zod from 'zod';
 
 
+/**
+ * @summary Installer availability for approved accounts
+ */
+export const GetDesktopReleaseResponse = zod.object({
+  "version": zod.string(),
+  "publishedAt": zod.string().nullable(),
+  "builds": zod.array(zod.object({
+  "platform": zod.enum(['windows', 'mac']),
+  "architecture": zod.string(),
+  "label": zod.string(),
+  "status": zod.enum(['unavailable', 'preview', 'verified']),
+  "url": zod.string().nullable(),
+  "sha256": zod.string().nullable(),
+  "sizeBytes": zod.number().int().nullable(),
+  "signing": zod.string(),
+  "minimumOs": zod.string()
+}))
+})
+
+
+/**
+ * @summary Download the Windows installer with current approval checked
+ */
+export const DownloadWindowsInstallerResponse = zod.unknown()
+
+
 export const GetAccessStatusResponse = zod.object({
   "status": zod.enum(['pending', 'approved', 'denied', 'revoked']),
   "role": zod.enum(['owner', 'approver', 'user']),

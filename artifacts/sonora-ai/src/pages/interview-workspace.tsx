@@ -574,6 +574,11 @@ export default function InterviewWorkspace() {
           });
         },
         onNotice: text => { if (captureToken === captureTokenRef.current) setNotice(text); },
+        onTurnEnded: () => {
+          if (captureToken !== captureTokenRef.current) return;
+          if (!mayAutoAnswer(inputRef.current.mode, source, remoteConfirmed, inputRef.current.phoneAuto, !!selectedSessionRef.current?.autoAnswer)) return;
+          questionsRef.current?.pause();
+        },
         onError: cause => {
           if (captureToken !== captureTokenRef.current) return;
           stopCapture();
@@ -999,7 +1004,7 @@ export default function InterviewWorkspace() {
                     )) : <div className="flex min-h-[250px] flex-col items-center justify-center px-4 text-center text-sm text-white/40"><FileText size={22} className="mb-3 text-white/25" />{roundView === "current" && roundList.length > 1 ? "Nothing in this round yet." : "No transcript yet. Ask Gemini or enable the microphone."}</div>}
                     {interimTranscript && <p className="rounded-lg bg-white/5 p-3 text-sm italic text-white/45">{interimTranscript}</p>}
                   </div>
-                  <p className="mt-3 text-xs leading-5 text-white/35">{window.sonoraDesktop ? "Desktop audio is sent to Gemini in six-second chunks. Audio is not retained by Sonora; recognized text is saved only when Save Transcript is on. System audio may include other apps. Stopping discards the incomplete final chunk." : "Speech recognition is provided by your browser. Sonora sends recognized text to Gemini only when it generates an answer."}</p>
+                  <p className="mt-3 text-xs leading-5 text-white/35">{window.sonoraDesktop ? "Desktop audio is sent to Gemini in 4.5-second chunks. Audio is not retained by Sonora; recognized text is saved only when Save Transcript is on. System audio may include other apps. Stopping discards the incomplete final chunk." : "Speech recognition is provided by your browser. Sonora sends recognized text to Gemini only when it generates an answer."}</p>
                 </div>
               </div>
             </section>

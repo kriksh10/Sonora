@@ -154,6 +154,27 @@ test('native chunks go to the existing Gemini endpoint; stale events are ignored
   capture.stop();
   assert.equal(f.stops.length, 1);
 });
+test('a pause received during transcription closes the transcribed turn', async () => {
+  let resolveRequest;
+  const texts = [], turns = [];
+  const f = nativeHarness({ fetch: () => new Promise(resolve => { resolveRequest = resolve; }) });
+  const capture = f.harness.context.subject.createDesktopAudio({
+    source: 'system', sessionId: 'session', onNotice() {}, onError() {},
+    onText: (text, meta) => texts.push({ text, endOfTurn: meta.endOfTurn }),
+    onTurnEnded: () => turns.push('ended'),
+  });
+  await capture.start();
+  f.emit({ type: 'audio', audio: 'validated-native-wav', endOfTurn: false });
+  await new Promise(setImmediate);
+  f.emit({ type: 'silence', prolonged: false });
+  resolveRequest({ ok: true, json: async () => ({ text: 'Tell me about the migration' }) });
+  await new Promise(setImmediate);
+  assert.deepEqual(texts, [{ text: 'Tell me about the migration', endOfTurn: true }]);
+  assert.deepEqual(turns, []);
+  f.emit({ type: 'silence', prolonged: false });
+  assert.deepEqual(turns, ['ended']);
+  capture.stop();
+});
 test('native start cancellation stops a late-starting helper and unsubscribes', async () => {
   let resolveStart;
   const f = nativeHarness({ start: () => new Promise(resolve => { resolveStart = resolve; }) });
