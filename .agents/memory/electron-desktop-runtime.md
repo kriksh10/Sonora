@@ -92,3 +92,11 @@ Keep microphone and system/call audio separate. Treat speaker labels as explicit
 **Why:** The user asked how interviewer and candidate are distinguished because the earlier question heuristic could answer the candidate's own speech. A system loopback may contain several people, other apps or locally monitored microphone audio.
 
 **How to apply:** Preserve source provenance through transcription, history and answer context. When supporting multiple capture streams, retain a user-wide in-flight limit but allow each source's legitimate cadence; a single shared minimum interval can reject healthy simultaneous streams.
+
+## Phone-speaker interviews
+
+Some interviews arrive as direct phone calls; the user places the phone on speaker near the computer. Treat this as a supported product scenario, separate from computer meeting audio.
+
+**Why:** The user explicitly described this real interview setup. A microphone then hears both participants, so the normal mic=candidate / call=interviewer convention does not identify speakers.
+
+**How to apply:** Keep mixed phone audio honestly attributed, with manual question submission as the reliable fallback. Any mixed-audio automation must be explicitly enabled with a warning about candidate-question misfires; it must not weaken normal computer-call speaker safeguards.

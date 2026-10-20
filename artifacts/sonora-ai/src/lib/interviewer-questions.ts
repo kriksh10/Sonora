@@ -15,7 +15,7 @@ export function isInterviewQuestion(text: string) {
 export function createInterviewerQuestions({
   answer, notice, setTimer = setTimeout, clearTimer = clearTimeout, clock = Date.now,
 }: {
-  answer: (text: string) => Promise<void>;
+  answer: (text: string, receivedAt: number, isCurrent: () => boolean) => Promise<void>;
   notice: (message: string) => void;
   setTimer?: typeof setTimeout;
   clearTimer?: typeof clearTimeout;
@@ -24,7 +24,8 @@ export function createInterviewerQuestions({
   let fragments = "";
   let timer: ReturnType<typeof setTimeout> | undefined;
   let deadline: ReturnType<typeof setTimeout> | undefined;
-  let pending: string[] = [];
+  let receivedAt = 0;
+  let pending: { text: string; receivedAt: number }[] = [];
   let running = false;
   let generation = 0;
   let seen: { key: string; time: number }[] = [];
@@ -33,8 +34,9 @@ export function createInterviewerQuestions({
     running = true;
     try {
       while (pending.length) {
-        const text = pending.shift()!;
-        try { await answer(text); }
+        const item = pending.shift()!;
+        const token = generation;
+        try { await answer(item.text, item.receivedAt, () => generation === token); }
         catch { notice("A queued answer failed. Select the question to retry."); }
       }
     } finally { running = false; }
@@ -62,14 +64,14 @@ export function createInterviewerQuestions({
     }
     seen.push({ key, time: clock() });
     seen = seen.slice(-12);
-    pending.push(text);
+    pending.push({ text, receivedAt });
     if (running) notice("Interviewer question queued while the current answer finishes.");
     void pump();
   };
-  return {
-    push(text: string, speaker: "candidate" | "interviewer" | "unknown") {
-      if (speaker !== "interviewer" || !text.trim()) return;
+  const collect = (text: string, endOfTurn = false) => {
+      if (!text.trim()) return;
       const token = generation;
+      if (!fragments) receivedAt = typeof performance === "undefined" ? clock() : performance.now();
       fragments = `${fragments} ${text}`.trim();
       // Chunk delivery is not silence: a bounded turn deadline must survive
       // subsequent chunks, otherwise 6-second arrivals reset an 8.5-second timer forever.
@@ -85,7 +87,16 @@ export function createInterviewerQuestions({
       clearTimer(timer);
       // A complete punctuated question can be used quickly; unpunctuated speech
       // gets a full chunk interval to collect its continuation.
-      timer = setTimer(() => { if (generation === token) flush(); }, /[?]\s*$/.test(fragments) ? 1500 : 8500);
+      timer = setTimer(() => { if (generation === token) flush(); },
+        endOfTurn ? 350 : /[?]\s*$/.test(fragments) ? 1500 : 8500);
+  };
+  return {
+    push(text: string, speaker: "candidate" | "interviewer" | "unknown", endOfTurn = false) {
+      if (speaker === "interviewer") collect(text, endOfTurn);
+    },
+    /** Explicit mixed-audio opt-in, not a claim that the speaker is the interviewer. */
+    pushMixed(text: string, optedIn: boolean, endOfTurn = false) {
+      if (optedIn) collect(text, endOfTurn);
     },
     reset() {
       generation += 1;

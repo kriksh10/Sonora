@@ -1,5 +1,58 @@
 # Sonora desktop verification
 
+## Phone input and focused live view — source 0.3.5
+
+The active call now has a compact toolbar, an opaque readable answer surface,
+safe emphasis/list/code rendering, and optional transcript. Session setup,
+audio devices, readiness and timing diagnostics are inside **Session**.
+
+**Phone on speaker:** open Session → Input → Phone on speaker, acknowledge the
+mixed-microphone capture notice, then press Start phone listening. Audio is not
+started by choosing the mode. Put the phone near the computer microphone.
+Both voices remain Unknown, not identified interviewer speech. Use Recent to
+review the recognized utterance and Answer recent to submit it, or type/edit
+the question. Alt+Enter is the default Answer recent shortcut while Sonora has
+focus; Session lets you choose Ctrl/Cmd+Shift+Enter instead. It is not a global
+shortcut. Optional mixed-audio automation requires a separate explicit opt-in;
+it can answer candidate questions too. Pause it in the live strip, or re-enable
+it from Session with the warning visible. Do not use it where assistance or
+recording is not permitted.
+
+The new native helper and browser worklet emit independent **4.5-second** WAVs
+instead of six-second WAVs (25% less chunk buffering). A final chunk with at
+least 700ms of trailing quiet can submit recognized questions after a 350ms
+assembly wait. Chunks without that signal retain the conservative assembly
+fallback; older installed helpers remain compatible, but do not gain the new
+native cadence or acoustic-boundary hint just by republishing.
+
+Session → Diagnostics displays the latest local transcription duration and
+time until first answer text, measured after Ask or after speech transcription.
+These measurements do not include an unmeasured acoustic question-end time and
+are not a guaranteed latency. No content or identifiers are sent as timing
+telemetry. Network/provider duration and request queuing still vary.
+
+Verified in this Linux workspace:
+- 108 deterministic JavaScript tests pass, including phone consent/manual
+  shortcuts, mixed-input routing, normal candidate suppression, reset
+  invalidation, recent-utterance bounds, Markdown safety, real ASAR inspection,
+  and 4.5-second worklet/quiet-boundary behavior.
+- Three Rust encoder tests pass for duration/WAV integrity, short speech and
+  idle-loopback padding, silence and invalid device formats.
+- Frontend type checking and production build pass. The existing large-bundle
+  warning remains nonfatal.
+- The real live-view component was inspected at 780×720 and 520×650 using
+  fictional session data. This establishes visual layout only, not sign-in,
+  recording, speech recognition, a real Gemini response or native opacity.
+
+Before release: republish the hosted frontend, extract the 0.3.5 source kit
+into a fresh folder on the Windows PC, run BUILD-WINDOWS.cmd and install the
+newly generated executable. Verify a real phone-speaker question with both
+manual and opt-in automatic answers, candidate misfire behavior, computer-call
+audio, elapsed first-text timings, permission denial, Stop, mode/session/round
+switches and quit. Existing native sign-in, install, screen-sharing and Mac
+acceptance checks below remain required. No Windows/Mac executable or real-call
+latency benchmark has been produced or certified in this Linux workspace.
+
 ## Startup packaging repair — source 0.3.4
 
 The reported 0.3.3 installed startup crash (`Cannot find module './audio-devices.cjs'`)

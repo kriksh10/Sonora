@@ -76,6 +76,8 @@ test('answer view collapses transcript by default and per session, actions are w
   f.find(tree, 'button-explain').props.onClick();
   f.find(tree, 'button-again').props.onClick();
   f.find(tree, 'button-length-long').props.onClick();
+  f.find(tree, 'button-session-menu').props.onClick();
+  tree = f.render();
   f.find(tree, 'button-auto-answer').props.onClick();
   assert.deepEqual(f.calls, ['shorten', 'explain', 'again', 'long', true]);
   assert.equal(f.props.session.saveTranscript, false);
@@ -98,8 +100,76 @@ test('live view shows interrupted state and retry, blocks busy/ended actions, an
   assert.deepEqual(f.calls, ['retry', 'ask']);
   f.props.busy = true; tree = f.render();
   assert.equal(f.find(tree, 'button-shorten').props.disabled, true);
+  f.find(tree, 'button-session-menu').props.onClick();
+  tree = f.render();
   assert.equal(f.find(tree, 'select-audio-source').props.disabled, true);
   f.props.session.status = 'ended'; f.props.busy = false; tree = f.render();
   assert.equal(f.find(tree, 'button-ask').props.disabled, true);
   assert.equal(f.find(tree, 'button-again').props.disabled, true);
+});
+
+test('live screen hides setup clutter until opened and keeps Stop and answer controls accessible', () => {
+  const f = fixture();
+  let tree = f.render();
+  assert.equal(f.find(tree, 'session-menu'), undefined);
+  assert.equal(f.find(tree, 'select-audio-source'), undefined);
+  assert.equal(f.find(tree, 'live-status'), undefined);
+  assert.ok(f.find(tree, 'button-toggle-audio'));
+  assert.ok(f.find(tree, 'input-question'));
+  f.find(tree, 'button-session-menu').props.onClick();
+  tree = f.render();
+  assert.ok(f.find(tree, 'session-menu'));
+  assert.ok(f.find(tree, 'select-audio-source'));
+});
+
+test('phone capture requires consent, hides false speaker mapping and supports manual recent answers', () => {
+  const f = fixture();
+  Object.assign(f.props, {
+    inputMode: 'phone', listening: false, phoneConsent: false, phoneAuto: false,
+    recentPhoneText: 'Explain database indexes', onAnswerRecent: () => f.calls.push('recent'),
+    onPhoneConsentChange: value => { f.props.phoneConsent = value; },
+    onPhoneAutoChange: value => { f.props.phoneAuto = value; },
+  });
+  let tree = f.render();
+  assert.equal(f.find(tree, 'button-toggle-audio').props.disabled, true);
+  assert.equal(f.find(tree, 'checkbox-phone-auto').props.disabled, true);
+  f.find(tree, 'checkbox-phone-consent').props.onChange({ target: { checked: true } });
+  tree = f.render();
+  assert.equal(f.find(tree, 'button-toggle-audio').props.disabled, false);
+  assert.equal(f.find(tree, 'checkbox-phone-auto').props.disabled, false);
+  f.find(tree, 'button-session-menu').props.onClick();
+  tree = f.render();
+  assert.equal(f.find(tree, 'checkbox-remote-confirmed'), undefined);
+  assert.equal(f.find(tree, 'select-audio-source'), undefined);
+  f.props.listening = true;
+  tree = f.render();
+  assert.ok(f.find(tree, 'phone-live-strip'));
+  f.find(tree, 'button-answer-recent').props.onClick();
+  assert.deepEqual(f.calls, ['recent']);
+  f.props.busy = true;
+  tree = f.render();
+  assert.equal(f.find(tree, 'button-answer-recent').props.disabled, true);
+});
+
+test('phone answer shortcut is configurable, focus-local and does not submit other input fields', () => {
+  const f = fixture();
+  Object.assign(f.props, {
+    inputMode: 'phone', phoneConsent: true, recentPhoneText: 'What is ETL?',
+    onAnswerRecent: () => f.calls.push('recent'), answerRecentShortcut: 'alt-enter',
+  });
+  f.render();
+  const key = f.handlers.get('keydown');
+  const event = (extra = {}) => ({ key: 'Enter', altKey: true, target: { tagName: 'BUTTON' }, preventDefault() {}, ...extra });
+  key(event());
+  assert.deepEqual(f.calls, ['recent']);
+  key(event({ target: { tagName: 'INPUT', getAttribute: () => 'other' } }));
+  assert.deepEqual(f.calls, ['recent']);
+  f.props.answerRecentShortcut = 'ctrl-shift-enter'; f.render();
+  key(event());
+  assert.deepEqual(f.calls, ['recent']);
+  key(event({ altKey: false, ctrlKey: true, shiftKey: true }));
+  assert.deepEqual(f.calls, ['recent', 'recent']);
+  f.props.session.status = 'ended'; f.render();
+  key(event({ altKey: false, ctrlKey: true, shiftKey: true }));
+  assert.deepEqual(f.calls, ['recent', 'recent']);
 });

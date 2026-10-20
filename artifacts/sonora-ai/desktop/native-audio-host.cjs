@@ -102,7 +102,7 @@ function createNativeAudioHost({ binary, confirm, emit, onActive, spawnProcess =
               resolve({ captureId: id });
             } else if (event.type === 'audio' && record.ready && validWav(event.audio)) {
               watchdog();
-              send({ type: 'audio', audio: event.audio });
+              send({ type: 'audio', audio: event.audio, endOfTurn: event.endOfTurn === true });
             } else if (event.type === 'silence' && record.ready && typeof event.prolonged === 'boolean') {
               watchdog();
               send({ type: 'silence', prolonged: event.prolonged });

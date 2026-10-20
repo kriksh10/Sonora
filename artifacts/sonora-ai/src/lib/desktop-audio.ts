@@ -10,11 +10,12 @@ type Options = {
   deviceName?: string;
   sessionId: string;
   roundNumber?: number;
-  onText: (text: string, metadata: { source: "microphone" | "system"; capturedAt: string }) => void;
+  onText: (text: string, metadata: { source: "microphone" | "system"; capturedAt: string; endOfTurn?: boolean }) => void;
   onNotice: (text: string) => void;
   onError: (error: Error) => void;
   onLevel?: (level: number, state: string) => void;
   onPhase?: (state: string) => void;
+  onTiming?: (transcriptionMs: number) => void;
   transcribe?: boolean;
 };
 export type AudioCapture = { start: () => Promise<void>; stop: () => void };
@@ -42,7 +43,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
   let stream: MediaStream | null = null;
   let node: AudioWorkletNode | null = null;
   let active = false;
-  let pending: { audio: string; capturedAt: string }[] = [];
+  let pending: { audio: string; capturedAt: string; endOfTurn?: boolean }[] = [];
   let nativeId: string | null = null;
   let unsubscribeNative: (() => void) | undefined;
   const abort = new AbortController();
@@ -68,7 +69,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
     active = true;
     try {
       while (pending.length && !stopped) {
-        const { audio, capturedAt } = pending.shift()!;
+        const { audio, capturedAt, endOfTurn } = pending.shift()!;
         const previous = transcriptionLane;
         let release!: () => void;
         transcriptionLane = new Promise<void>(resolve => { release = resolve; });
@@ -83,6 +84,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
         if (stopped) return;
         options.onPhase?.("Transcribing");
         pacing.mark(options.source);
+        const startedAt = Date.now();
         const response = await fetch(`/api/sessions/${options.sessionId}/transcribe`, {
           method: "POST", credentials: "include", signal: AbortSignal.any([abort.signal, AbortSignal.timeout(30_000)]),
           headers: { "Content-Type": "application/json" },
@@ -91,19 +93,22 @@ export function createDesktopAudio(options: Options): AudioCapture {
         const result = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(result.error || `Transcription failed (${response.status}).`);
         if (!stopped) {
+          options.onTiming?.(Date.now() - startedAt);
           options.onPhase?.(result.text ? "Speech transcribed" : "Audio received · no clear speech");
-          if (result.text) options.onText(result.text, { source: options.source, capturedAt });
+          if (result.text) options.onText(result.text, {
+            source: options.source, capturedAt, ...(endOfTurn === undefined ? {} : { endOfTurn }),
+          });
         }
         } finally { release(); }
       }
     } catch (error) { fail(error); }
     finally { active = false; }
   };
-  const enqueue = (audio: string, capturedAt = new Date().toISOString()) => {
+  const enqueue = (audio: string, capturedAt = new Date().toISOString(), endOfTurn?: boolean) => {
     if (stopped) return;
     if (options.transcribe === false) return;
     if (pending.length >= 2) { fail(new Error("Transcription is falling behind. Capture stopped to avoid dropping speech. If using Both, switch to Call audio only to prioritize interviewer answers, then restart. You can also type a question.")); return; }
-    pending.push({ audio, capturedAt });
+    pending.push({ audio, capturedAt, endOfTurn });
     void pump();
   };
   return {
@@ -118,7 +123,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
             if (event.type === "error") fail(new Error(event.message || "Native audio stopped."));
             else if (event.type === "audio" && event.audio) {
               if (event.source && event.source !== options.source) { fail(new Error("Native audio source mismatch.")); return; }
-              enqueue(event.audio, event.capturedAt);
+              enqueue(event.audio, event.capturedAt, event.endOfTurn);
             }
             else if (event.type === "silence" && event.prolonged) options.onNotice(options.source === "system"
               ? "No call speech for 18 seconds. Confirm Meet’s speaker/headset matches Meeting output. Check the Call meter while remote speech plays."
@@ -146,12 +151,12 @@ export function createDesktopAudio(options: Options): AudioCapture {
         source.connect(node);
         node.connect(context.destination);
         node.onprocessorerror = () => fail(new Error("Audio processing stopped. Retry capture."));
-        node.port.onmessage = (event: MessageEvent<{ samples?: Float32Array; silent?: boolean; prolonged?: boolean; peak?: number }>) => {
+        node.port.onmessage = (event: MessageEvent<{ samples?: Float32Array; silent?: boolean; prolonged?: boolean; peak?: number; endOfTurn?: boolean }>) => {
           if (stopped) return;
           if (typeof event.data.peak === "number") options.onLevel?.(event.data.peak, event.data.peak > 0.003 ? "Audio activity" : "Silent samples");
           if (event.data.prolonged) options.onNotice("No audible speech for 18 seconds. Check your selected source, volume, and OS audio permission.");
           if (!event.data.samples) return;
-          enqueue(wavBase64(event.data.samples));
+          enqueue(wavBase64(event.data.samples), undefined, event.data.endOfTurn);
         };
         await context.resume();
         if (stopped) return;

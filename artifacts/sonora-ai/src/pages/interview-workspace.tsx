@@ -28,6 +28,8 @@ import { requestAnswer } from "@/lib/answer-stream";
 import AudioReadiness from "@/components/audio-readiness";
 import Modal from "@/components/modal";
 import { useAccess } from "@/components/access-gate";
+import { captureSpeaker, mayAutoAnswer, createRecentUtterance, type InterviewInputMode } from "@/lib/interview-input";
+import { firstTextTiming } from "@/lib/live-timing";
 
 type SpeechResult = {
   isFinal: boolean;
@@ -110,6 +112,17 @@ export default function InterviewWorkspace() {
   const desktopCaptureRef = useRef<AudioCapture[]>([]);
   const [audioSource, setAudioSource] = useState<"microphone" | "system" | "both">(window.sonoraDesktop ? "system" : "microphone");
   const [remoteConfirmed, setRemoteConfirmed] = useState(false);
+  const [inputMode, setInputMode] = useState<InterviewInputMode>("computer");
+  const [phoneConsent, setPhoneConsent] = useState(false);
+  const [phoneAuto, setPhoneAuto] = useState(false);
+  const inputRef = useRef({ mode: inputMode, phoneAuto });
+  const inputRevisionRef = useRef(0);
+  inputRef.current = { mode: inputMode, phoneAuto };
+  const recentPhoneRef = useRef(createRecentUtterance());
+  const [recentPhoneText, setRecentPhoneText] = useState("");
+  const [answerRecentShortcut, setAnswerRecentShortcut] = useState<"alt-enter" | "ctrl-shift-enter">("alt-enter");
+  const [timingSummary, setTimingSummary] = useState("");
+  const [transcriptionTiming, setTranscriptionTiming] = useState("");
   const [systemDevice, setSystemDevice] = useState("");
   const [supportsDualAudio, setSupportsDualAudio] = useState(false);
   const [liveMode, setLiveMode] = useState(false);
@@ -245,7 +258,7 @@ export default function InterviewWorkspace() {
 
   const askGemini = useCallback(
     async (question: string, source: "typed" | "microphone" | "system" = "typed", persistQuestion = true,
-      action: "answer" | "shorten" | "explain" | "again" = "answer", previousAnswer?: string) => {
+      action: "answer" | "shorten" | "explain" | "again" = "answer", previousAnswer?: string, receivedAt?: number) => {
       if (!selected) return;
       if (selected.status === "ended") { setError("This session has ended. Create a new session to ask questions."); return; }
       const cleanQuestion = question.trim();
@@ -257,6 +270,8 @@ export default function InterviewWorkspace() {
       setBusy(true);
       setLatestQuestion(cleanQuestion);
       setAnswerState("generating");
+      setTimingSummary("");
+      setPipelineStatus("Preparing answer");
       setError("");
       const controller = new AbortController();
       answerAbortRef.current = controller;
@@ -264,6 +279,8 @@ export default function InterviewWorkspace() {
       const stale = () => controller.signal.aborted || selectedIdRef.current !== selected.id || (selectedSessionRef.current?.roundNumber ?? 1) !== askRound;
       const request = { question: cleanQuestion, action, previousAnswer, persistQuestion };
       lastRequestRef.current = request;
+      const requestedAt = performance.now();
+      let firstText = false;
       try {
         if (persistQuestion) {
           await saveTranscript(selected, "user", cleanQuestion, source);
@@ -275,6 +292,10 @@ export default function InterviewWorkspace() {
           AbortSignal.any([controller.signal, AbortSignal.timeout(95_000)]),
           text => {
             if (stale()) return;
+            if (!firstText && text.trim()) {
+              firstText = true;
+              setTimingSummary(firstTextTiming(requestedAt, receivedAt));
+            }
             setAnswer(text); setAnswerState("streaming");
           },
         );
@@ -316,17 +337,22 @@ export default function InterviewWorkspace() {
   askRef.current = askGemini;
   const questionsRef = useRef<ReturnType<typeof createInterviewerQuestions> | null>(null);
   if (!questionsRef.current) questionsRef.current = createInterviewerQuestions({
-    answer: async text => {
+    answer: async (text, receivedAt, isCurrent) => {
       const session = selectedSessionRef.current;
-      if (!session?.autoAnswer || session.status === "ended") return;
+      const permitted = () => inputRef.current.mode === "phone" ? inputRef.current.phoneAuto : selectedSessionRef.current?.autoAnswer;
+      if (!session || !permitted() || session.status === "ended") return;
       const token = captureTokenRef.current;
       // A manual answer can also occupy the provider lane.
       while (answerInFlightRef.current || settingsBusyRef.current) {
         await new Promise(resolve => setTimeout(resolve, 100));
-        if (captureTokenRef.current !== token) return;
+        if (captureTokenRef.current !== token || !isCurrent()) return;
       }
-      if (selectedSessionRef.current?.id !== session.id || !selectedSessionRef.current.autoAnswer || selectedSessionRef.current.status === "ended") return;
-      await askRef.current(text, "system", false);
+      if (!isCurrent() || selectedSessionRef.current?.id !== session.id || !permitted() || selectedSessionRef.current.status === "ended") return;
+      if (inputRef.current.mode === "phone") {
+        recentPhoneRef.current.clear();
+        setRecentPhoneText("");
+      }
+      await askRef.current(text, inputRef.current.mode === "phone" ? "microphone" : "system", false, "answer", undefined, receivedAt);
     },
     notice: setNotice,
   });
@@ -336,6 +362,8 @@ export default function InterviewWorkspace() {
     for (const capture of desktopCaptureRef.current) capture.stop();
     desktopCaptureRef.current = [];
     questionsRef.current?.reset();
+    recentPhoneRef.current.clear();
+    setRecentPhoneText("");
     recognitionRef.current?.stop();
     recognitionRef.current = null;
     streamRef.current?.getTracks().forEach(track => track.stop());
@@ -347,6 +375,34 @@ export default function InterviewWorkspace() {
     setChannelStatus({ microphone: "Audio off", system: "Audio off" });
     setPipelineStatus("Audio stopped");
   }, []);
+
+  const changeInputMode = (mode: InterviewInputMode) => {
+    if (mode === inputMode) return;
+    stopCapture();
+    answerAbortRef.current?.abort();
+    setInputMode(mode);
+    inputRef.current = { mode, phoneAuto: false };
+    setPhoneConsent(false); setPhoneAuto(false);
+    setRemoteConfirmed(false);
+    setAudioSource(mode === "phone" ? "microphone" : window.sonoraDesktop ? "system" : "microphone");
+    setNotice("Input changed. Audio is off until you explicitly start it.");
+    setTimingSummary(""); setTranscriptionTiming("");
+  };
+  const changePhoneAuto = (value: boolean) => {
+    inputRevisionRef.current += 1;
+    questionsRef.current?.reset();
+    const allowed = value && phoneConsent;
+    setPhoneAuto(allowed);
+    inputRef.current = { mode: inputMode, phoneAuto: allowed };
+  };
+  const answerRecentPhone = () => {
+    if (inputMode !== "phone" || !recentPhoneText.trim() || answerInFlightRef.current || settingsBusyRef.current) return;
+    questionsRef.current?.reset();
+    inputRevisionRef.current += 1;
+    const text = recentPhoneRef.current.take();
+    setRecentPhoneText("");
+    if (text) void askRef.current(text, "microphone", false);
+  };
 
   useEffect(() => {
     const off = window.sonoraDesktop?.onStopCapture(stopCapture);
@@ -365,6 +421,9 @@ export default function InterviewWorkspace() {
     lastRequestRef.current = null;
     setReadinessOpen(false);
     setRemoteConfirmed(false);
+    setPhoneAuto(false); setPhoneConsent(false);
+    inputRef.current = { mode: inputRef.current.mode, phoneAuto: false };
+    setTimingSummary(""); setTranscriptionTiming("");
     setLiveMode(selectedSessionRef.current?.status === "active");
     setListening(false);
     setRequestingMic(false);
@@ -402,6 +461,9 @@ export default function InterviewWorkspace() {
     questionsRef.current?.reset();
     setBusy(false); setAnswer(""); setLatestQuestion(""); setAnswerInput(""); setAnswerState("idle");
     setInterimTranscript(""); setRemoteConfirmed(false); setLiveMode(false); setReadinessOpen(false);
+    setPhoneAuto(false); setPhoneConsent(false);
+    inputRef.current = { mode: inputRef.current.mode, phoneAuto: false };
+    setTimingSummary(""); setTranscriptionTiming("");
     lastRequestRef.current = null; setRoundView("current");
   };
 
@@ -457,16 +519,20 @@ export default function InterviewWorkspace() {
       setError("This session has ended. Create a new session to start microphone transcription.");
       return;
     }
+    if (inputMode === "phone" && !phoneConsent) {
+      setError("Confirm that the laptop microphone may capture both voices before starting phone-speaker mode.");
+      return;
+    }
     setLiveMode(true);
     if (!window.sonoraDesktop && audioSource !== "microphone") {
       setError("Call audio requires the packaged desktop app. Browser transcription supports your microphone only.");
       return;
     }
-    if (window.sonoraDesktop) {
+    if (window.sonoraDesktop || inputMode === "phone") {
       const captureToken = ++captureTokenRef.current;
       setRequestingMic(true);
       setError("");
-      const sources: ("microphone" | "system")[] = audioSource === "both" ? ["microphone", "system"] : [audioSource];
+      const sources: ("microphone" | "system")[] = inputMode === "phone" ? ["microphone"] : audioSource === "both" ? ["microphone", "system"] : [audioSource];
       if (sources.length === 2 && !supportsDualAudio) {
         setRequestingMic(false);
         setError("Rebuild and install the updated desktop app to capture both channels separately.");
@@ -483,15 +549,24 @@ export default function InterviewWorkspace() {
           setChannelStatus(current => ({ ...current, [source]: status }));
         },
         onPhase: status => { if (captureToken === captureTokenRef.current) setPipelineStatus(`${source === "system" ? "Call" : "Mic"} · ${status}`); },
+        onTiming: ms => {
+          if (captureToken === captureTokenRef.current) setTranscriptionTiming(`Last transcription ${(ms / 1000).toFixed(1)}s`);
+        },
         onText: (text, metadata) => {
           if (captureToken !== captureTokenRef.current) return;
           const activeSession = selectedSessionRef.current;
           if (!activeSession || activeSession.id !== selected.id || (activeSession.roundNumber ?? 1) !== (selected.roundNumber ?? 1)) return;
-          const speaker = !remoteConfirmed ? "unknown" : source === "microphone" ? "candidate" : "interviewer";
-          setPipelineStatus(speaker === "interviewer" ? "Collecting interviewer question" : "Listening-only for this source");
+          const currentMode = inputRef.current.mode;
+          const routingRevision = inputRevisionRef.current;
+          const speaker = captureSpeaker(currentMode, source, remoteConfirmed);
+          if (currentMode === "phone") setRecentPhoneText(recentPhoneRef.current.append(text));
+          setPipelineStatus(currentMode === "phone" ? "Mixed phone speech transcribed" : speaker === "interviewer" ? "Collecting interviewer question" : "Listening-only for this source");
           void saveTranscript(activeSession, "user", text, metadata.source, speaker, metadata.capturedAt).then(() => {
-            if (captureToken !== captureTokenRef.current) return;
-            if (selectedSessionRef.current?.autoAnswer) questionsRef.current?.push(text, speaker);
+            if (captureToken !== captureTokenRef.current || routingRevision !== inputRevisionRef.current) return;
+            const optedIn = inputRef.current.phoneAuto;
+            if (!mayAutoAnswer(currentMode, source, remoteConfirmed, optedIn, !!selectedSessionRef.current?.autoAnswer)) return;
+            if (currentMode === "phone") questionsRef.current?.pushMixed(text, optedIn, metadata.endOfTurn);
+            else questionsRef.current?.push(text, speaker, metadata.endOfTurn);
           }).catch(cause => {
             if (captureToken !== captureTokenRef.current) return;
             stopCapture();
@@ -519,7 +594,9 @@ export default function InterviewWorkspace() {
         }
         if (captureToken !== captureTokenRef.current) { captures.forEach(item => item.stop()); return; }
         setListening(true);
-        setNotice(`${audioSource === "both" ? "Separate microphone and call channels are" : audioSource === "system" ? "Call audio is" : "Microphone is"} on. ${audioSource === "microphone" ? "Your microphone never triggers auto-answer; use Call audio for interviewer questions." : remoteConfirmed ? "Only confirmed remote questions can trigger auto-answer when enabled in Answer settings." : "Speaker mapping unconfirmed: auto-answer is paused. Stop audio to confirm it."} Six-second chunks are transcribed by Gemini; use headphones to reduce echo.`);
+        setNotice(inputMode === "phone"
+          ? "Phone-speaker capture is on. Both voices are mixed; use Answer recent, or explicitly enable mixed-audio automatic answers."
+          : `${audioSource === "both" ? "Separate microphone and call channels are" : audioSource === "system" ? "Call audio is" : "Microphone is"} on. ${audioSource === "microphone" ? "Your microphone never triggers auto-answer in computer-call mode." : remoteConfirmed ? "Confirmed remote questions can trigger Auto Answer." : "Speaker mapping unconfirmed: auto-answer is paused."}`);
       } catch (cause) {
         if (captureToken !== captureTokenRef.current) return;
         stopCapture();
@@ -688,6 +765,15 @@ export default function InterviewWorkspace() {
           duration={formatDuration(selected.startedAt, now)} notice={notice} error={error}
           audioSource={audioSource} remoteConfirmed={remoteConfirmed} supportsDualAudio={supportsDualAudio}
           systemDevice={systemDevice} onSystemDeviceChange={setSystemDevice}
+          inputMode={inputMode} onInputModeChange={changeInputMode}
+          phoneConsent={phoneConsent} onPhoneConsentChange={value => {
+            if (!value) { stopCapture(); answerAbortRef.current?.abort(); changePhoneAuto(false); }
+            setPhoneConsent(value);
+          }}
+          phoneAuto={phoneAuto} onPhoneAutoChange={changePhoneAuto}
+          recentPhoneText={recentPhoneText} onAnswerRecent={answerRecentPhone}
+          answerRecentShortcut={answerRecentShortcut} onAnswerRecentShortcutChange={setAnswerRecentShortcut}
+          timingSummary={[timingSummary, transcriptionTiming].filter(Boolean).join(" · ")}
           onAudioSourceChange={setAudioSource} onRemoteConfirmedChange={setRemoteConfirmed}
           onToggleAudio={() => void toggleMicrophone()} onEnd={() => void endSession()}
           onBack={() => { stopCapture(); answerAbortRef.current?.abort(); setLiveMode(false); }}

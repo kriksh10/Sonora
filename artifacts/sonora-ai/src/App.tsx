@@ -120,7 +120,7 @@ type SonoraDesktopBridge = {
   exportDiagnostics?: () => Promise<boolean>;
   onNativeAudio?: (listener: (event: {
     captureId: string; type: "audio" | "silence" | "error" | "status";
-    audio?: string; prolonged?: boolean; message?: string; source?: "microphone" | "system"; capturedAt?: string;
+    audio?: string; prolonged?: boolean; message?: string; source?: "microphone" | "system"; capturedAt?: string; endOfTurn?: boolean;
     peak?: number; sampleAgeMs?: number;
   }) => void) => () => void;
   onStopCapture: (listener: () => void) => () => void;

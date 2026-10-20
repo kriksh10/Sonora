@@ -1,8 +1,8 @@
-// Worklet runs only after user permission. Delivers independent six-second PCM chunks.
+// Explicit capture only. 4.5s chunks respect the provider's 4s per-source interval.
 class SonoraPcm extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.samples = new Float32Array(96000);
+    this.samples = new Float32Array(72000);
     this.used = 0;
     this.phase = 0;
     this.sum = 0;
@@ -11,6 +11,7 @@ class SonoraPcm extends AudioWorkletProcessor {
     this.silentChunks = 0;
     this.meterFrames = 0;
     this.meterPeak = 0;
+    this.trailingQuiet = 0;
   }
   process(inputs) {
     const channel = inputs[0]?.[0];
@@ -27,17 +28,19 @@ class SonoraPcm extends AudioWorkletProcessor {
       this.phase += 16000;
       if (this.phase >= sampleRate) {
         this.phase -= sampleRate;
-        this.samples[this.used++] = this.sum / this.count;
+        const sample = this.sum / this.count;
+        this.samples[this.used++] = sample;
+        this.trailingQuiet = Math.abs(sample) < 0.003 ? this.trailingQuiet + 1 : 0;
         this.sum = 0;
         this.count = 0;
         if (this.used === this.samples.length) {
           if (this.peak > 0.003) {
-            this.port.postMessage({ samples: this.samples }, [this.samples.buffer]);
+            this.port.postMessage({ samples: this.samples, endOfTurn: this.trailingQuiet >= 11200 }, [this.samples.buffer]);
             this.silentChunks = 0;
           } else {
-            this.port.postMessage({ silent: true, prolonged: ++this.silentChunks >= 3 });
+            this.port.postMessage({ silent: true, prolonged: ++this.silentChunks >= 4 });
           }
-          this.samples = new Float32Array(96000);
+          this.samples = new Float32Array(72000);
           this.used = 0;
           this.peak = 0;
         }

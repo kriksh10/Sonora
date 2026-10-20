@@ -88,7 +88,9 @@ fn run() -> Result<()> {
         for chunk in chunks {
             if stop.load(Ordering::Acquire) { break; }
             match chunk {
-                pcm::Chunk::Audio(wav) => write_event(json!({ "type": "audio", "audio": STANDARD.encode(wav) }))?,
+                pcm::Chunk::Audio(wav, end_of_turn) => write_event(json!({
+                    "type": "audio", "audio": STANDARD.encode(wav), "endOfTurn": end_of_turn
+                }))?,
                 pcm::Chunk::Silence { prolonged } => write_event(json!({ "type": "silence", "prolonged": prolonged }))?,
             }
         }
