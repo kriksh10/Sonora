@@ -87,6 +87,7 @@ type DesktopState = {
   platform: string;
   audioProtocol?: number;
   backgroundOpacity?: number;
+  backgroundOpacityMin?: number;
   preferencesError?: string;
   version?: string;
   nativeAudioProtocol?: number;

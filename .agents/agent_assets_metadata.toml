@@ -14,3 +14,17 @@ mtime_ms = 1792461778289
 storage_uri = "gcs://replit-rams-assets-spock/rams/assets/repl:87c45247-c74b-45db-b8e5-2e324bcf7153/6bd26737-4138-4eda-8d68-494efbc78765/ff3c3a62-7beb-4f8d-94f5-d20c723a684b"
 storage_version_token = "1792461836895570"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "-stAXZrUtsPYNGtghS41Z"
+uri = "file://generated-artifacts/sonora-desktop-build-kit-0.3.1.zip"
+type = "unspecified"
+title = "Sonora 0.3.1 — Windows build kit"
+description = "Updated source kit with the opacity-slider repair, separate drag handle, immediate background preview and 15–100% support in the rebuilt shell. Extract and run BUILD-WINDOWS.cmd on Windows to create the installer. This ZIP is source, not an EXE; real Windows verification remains outstanding."
+logical_id = "e33156e4-b734-4aa0-8d83-54901af8aa33"
+content_hash = "sha256:915f8bbb868d6155f67f1bbeffba12306f412be413dc62ff78e313744fce18ba"
+size = 406129
+mtime_ms = 1792468013451
+storage_uri = "gcs://replit-rams-assets-spock/rams/assets/repl:87c45247-c74b-45db-b8e5-2e324bcf7153/e33156e4-b734-4aa0-8d83-54901af8aa33/797923a4-56f7-47d0-bcb0-5a26cd891efa"
+storage_version_token = "1792468021951605"
+content_type = "application/octet-stream"

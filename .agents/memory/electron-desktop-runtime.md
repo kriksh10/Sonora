@@ -61,6 +61,14 @@ Use regular-browser authentication followed by an explicit desktop-code approval
 
 **How to apply:** Preserve this security boundary when revising desktop sign-in. Treat backend protocol support, browser approval, and the installed shell as a coordinated release; republishing cannot update native code in an existing installer.
 
+## Hosted controls and installed capabilities
+
+Determine desktop-control availability and supported limits from the actual installed bridge, not just the hosted UI version or a user-reported version shorthand. Keep unsupported controls explicit and actionable.
+
+**Why:** Sonora loads hosted UI inside an independently installed shell. Publishing can expose newer controls to an older native runtime, and a reported version such as "3.0" does not establish which native capabilities exist.
+
+**How to apply:** Preserve compatibility with older shells, never send values outside their supported limits, and distinguish publishing hosted fixes from rebuilding/reinstalling native changes.
+
 ## Hosted access for desktop
 
 Make the hosted Sonora site publicly reachable while retaining Sonora sign-in and owner-restricted session access.

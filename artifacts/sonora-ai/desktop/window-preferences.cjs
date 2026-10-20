@@ -1,6 +1,6 @@
 function opacity(value) {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0.45 || value > 1) {
-    throw new Error('Background opacity must be between 45% and 100%.');
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0.15 || value > 1) {
+    throw new Error('Background opacity must be between 15% and 100%.');
   }
   return value;
 }

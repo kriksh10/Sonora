@@ -27,7 +27,7 @@ const development = !app.isPackaged && process.argv.includes('--dev');
 
 function state() {
   return { visible: win?.isVisible() ?? false, alwaysOnTop, contentProtection, captureActive, shortcutRegistered, platform: process.platform,
-    audioProtocol: 2, nativeAudioProtocol: 2, version: app.getVersion(), backgroundOpacity, preferencesError };
+    audioProtocol: 2, nativeAudioProtocol: 2, version: app.getVersion(), backgroundOpacity, backgroundOpacityMin: 0.15, preferencesError };
 }
 function persistWindow() {
   if (!preferencesPath || !win || win.isDestroyed()) return;

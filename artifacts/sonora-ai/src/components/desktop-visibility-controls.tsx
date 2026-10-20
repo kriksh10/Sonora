@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { EyeOff, GripHorizontal, Pin, Settings2, ShieldCheck, Square } from "lucide-react";
 import DesktopMaintenance from "@/components/desktop-maintenance";
+import { createBackgroundOpacity } from "@/lib/background-opacity";
 
 type DesktopState = Awaited<ReturnType<NonNullable<Window["sonoraDesktop"]>["getState"]>>;
 
@@ -10,27 +11,44 @@ export default function DesktopVisibilityControls() {
   const [state, setState] = useState<DesktopState | null>(null);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+  const [backgroundOpacity, setBackgroundOpacity] = useState(0.85);
+  const [opacityError, setOpacityError] = useState("");
+  const opacityControl = useRef<ReturnType<typeof createBackgroundOpacity> | null>(null);
 
   useEffect(() => {
     if (!bridge) return;
     document.documentElement.classList.add("sonora-desktop");
     let mounted = true;
+    const control = createBackgroundOpacity({
+      save: async value => {
+        if (!bridge.setBackgroundOpacity) throw new Error("Native opacity unavailable.");
+        const next = await bridge.setBackgroundOpacity(value);
+        if (mounted) setState(next);
+        return next.backgroundOpacity ?? 0.85;
+      },
+      display: value => {
+        setBackgroundOpacity(value);
+        document.documentElement.style.setProperty("--sonora-background-opacity", String(value));
+      },
+      error: setOpacityError,
+    });
+    opacityControl.current = control;
+    control.sync(0.85);
     let received = false;
-    const off = bridge.onStateChange(next => { received = true; if (mounted) setState(next); });
+    const off = bridge.onStateChange(next => {
+      received = true;
+      if (mounted) { setState(next); control.sync(next.backgroundOpacity ?? 0.85); }
+    });
     void bridge.getState().then(next => {
-      if (mounted && !received) setState(next);
+      if (mounted && !received) { setState(next); control.sync(next.backgroundOpacity ?? 0.85); }
     }).catch(() => { if (mounted) setError("Desktop controls unavailable. Use the Sonora tray menu."); });
     return () => {
-      mounted = false; off();
+      mounted = false; off(); control.dispose(); opacityControl.current = null;
       document.documentElement.classList.remove("sonora-desktop");
       document.documentElement.style.removeProperty("--sonora-background-opacity");
       document.documentElement.style.removeProperty("--sonora-titlebar-height");
     };
   }, [bridge]);
-
-  useEffect(() => {
-    if (bridge) document.documentElement.style.setProperty("--sonora-background-opacity", String(state?.backgroundOpacity ?? 0.85));
-  }, [bridge, state?.backgroundOpacity]);
 
   useLayoutEffect(() => {
     if (!bridge || !bar.current) return;
@@ -42,6 +60,8 @@ export default function DesktopVisibilityControls() {
   }, [bridge]);
 
   if (!bridge) return null;
+  // Older shells with opacity support reject anything below 45%.
+  const minimumOpacity = state?.backgroundOpacityMin === 0.15 ? 15 : 45;
   const supported = state && ["win32", "darwin"].includes(state.platform);
   const run = async (action: () => Promise<DesktopState>) => {
     setPending(true); setError("");
@@ -51,8 +71,8 @@ export default function DesktopVisibilityControls() {
   };
 
   return (
-    <aside ref={bar} aria-label="Desktop window controls" className="sonora-window-bar desktop-drag">
-      <span className="inline-flex items-center gap-1 text-xs font-semibold text-white/80" title="Drag this bar to move Sonora">
+    <aside ref={bar} aria-label="Desktop window controls" className="sonora-window-bar">
+      <span className="sonora-window-drag-handle desktop-drag inline-flex items-center gap-1 text-xs font-semibold text-white/80" title="Drag here to move Sonora">
         <GripHorizontal size={17} /> Sonora
       </span>
       <div className="desktop-no-drag ml-auto flex items-center gap-1">
@@ -71,18 +91,22 @@ export default function DesktopVisibilityControls() {
           onClick={() => void run(() => bridge.hide())}><EyeOff size={14} /></button>
         <details className="sonora-window-settings">
           <summary className="sonora-window-action cursor-pointer list-none" aria-label="Window settings"><Settings2 size={15} /></summary>
-          <div className="sonora-window-popover">
+          <div className="sonora-window-popover desktop-no-drag">
             <label className="block text-xs font-semibold">
-              Background opacity · {Math.round((state?.backgroundOpacity ?? 1) * 100)}%
-              <input aria-label="Background opacity" type="range" min="45" max="100" step="5"
-                value={Math.round((state?.backgroundOpacity ?? 1) * 100)} disabled={!bridge.setBackgroundOpacity}
-                onChange={event => { const value = Number(event.target.value) / 100; void run(() => bridge.setBackgroundOpacity!(value)); }}
+              Background opacity · {Math.round(backgroundOpacity * 100)}%
+              <input aria-label="Background opacity" aria-describedby="sonora-opacity-help" type="range" min={minimumOpacity} max="100" step="5"
+                value={Math.round(backgroundOpacity * 100)} disabled={!state || typeof bridge.setBackgroundOpacity !== "function"}
+                onChange={event => opacityControl.current?.set(Number(event.target.value) / 100)}
                 className="mt-3 w-full accent-emerald-400" />
             </label>
-            {bridge.setBackgroundOpacity
-              ? <button className="sonora-window-action mt-1" onClick={() => void run(() => bridge.setBackgroundOpacity!(1))}>Use opaque background</button>
-              : <p className="mt-2 text-amber-200">Install the rebuilt app for native transparency and separate audio channels.</p>}
-            <p className="mt-3">Drag the top bar to move. Resize from the edges. Pin keeps the window above other apps.</p>
+            <p id="sonora-opacity-help" className="mt-2">{minimumOpacity}% is most transparent; 100% is opaque. Only the background changes, not the answer text. Settings stay opaque for readability.</p>
+            {typeof bridge.setBackgroundOpacity === "function" && state && minimumOpacity === 45 &&
+              <p className="mt-2 text-amber-200">This older shell supports 45–100%. Rebuild and install version 0.3.1 or newer for the 15% setting.</p>}
+            {typeof bridge.setBackgroundOpacity === "function"
+              ? <button disabled={!state} className="sonora-window-action mt-1" onClick={() => opacityControl.current?.set(1)}>Use opaque background</button>
+              : <p role="status" className="mt-2 text-amber-200">Opacity is unavailable in this installed app. Rebuild and reinstall the latest Windows desktop kit; publishing the website alone cannot enable it.</p>}
+            {opacityError && <p role="alert" className="mt-2 text-amber-200">{opacityError}</p>}
+            <p className="mt-3">Drag the Sonora handle on the left to move. Resize from the edges. Pin keeps the window above other apps.</p>
             <p className="mt-2">Show again: tray → Show Sonora{state?.shortcutRegistered ? ` or ${bridge.shortcut}.` : ". Shortcut unavailable."}</p>
             <p className="mt-2">{state?.contentProtection ? "Capture exclusion requested" : "Capture exclusion off"} — not guaranteed. macOS ScreenCaptureKit and some sharing apps may still capture Sonora. Transparency does not mean hidden from sharing.</p>
             <p className="mt-2">Hiding does not stop audio. Use Stop audio here or in the tray.</p>

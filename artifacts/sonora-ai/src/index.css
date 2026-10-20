@@ -13,7 +13,12 @@
 .desktop-drag textarea, .desktop-drag label, .desktop-drag details, .desktop-no-drag { -webkit-app-region: no-drag; }
 .sonora-desktop, .sonora-desktop body, .sonora-desktop #root { background: transparent !important; }
 .sonora-desktop .lsv-root { height: calc(100dvh - var(--sonora-titlebar-height, 44px)); }
-.sonora-window-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: .5rem; min-height: 44px; padding: 6px 10px; color: #e7e8eb; border-bottom: 1px solid #ffffff18; background: rgba(23,24,27,var(--sonora-background-opacity,.85)); cursor: grab; }
+.sonora-window-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: .5rem; min-height: 44px; padding: 6px 10px; color: #e7e8eb; border-bottom: 1px solid #ffffff18; background: rgba(23,24,27,var(--sonora-background-opacity,.85)); -webkit-app-region: no-drag; }
+.sonora-window-drag-handle { align-self: stretch; flex: 1; min-width: 70px; cursor: grab; user-select: none; }
+.sonora-window-popover, .sonora-window-popover * { -webkit-app-region: no-drag; }
+.sonora-window-popover input[type="range"] { display: block; height: 28px; cursor: ew-resize; touch-action: none; }
+.sonora-window-popover input[type="range"]:disabled { cursor: not-allowed; }
+.sonora-window-popover input[type="range"]:focus-visible { outline: 2px solid #75c853; outline-offset: 3px; }
 .sonora-window-action { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 30px; min-height: 30px; border-radius: 6px; padding: 4px 7px; font-size: 11px; cursor: pointer; }
 .sonora-window-action:hover { background: #ffffff12; }
 .sonora-window-action:disabled { opacity: .45; cursor: default; }

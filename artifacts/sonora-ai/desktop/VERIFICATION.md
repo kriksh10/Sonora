@@ -1,5 +1,13 @@
 # Sonora desktop verification
 
+## Opacity repair — desktop 0.3.1
+
+The title bar now uses a dedicated drag handle; interactive controls and the complete settings subtree explicitly opt out of native dragging. The range previews background alpha immediately, serializes/coalesces native writes, ignores older broadcasts while a newer choice is pending, restores the confirmed value on failure, and reports a five-second timeout rather than staying stuck. The native minimum is now 15%; older shells without the new minimum capability retain their 45% limit, and missing methods have explicit rebuild instructions. Settings remain opaque, but the live answer backdrop uses the shared alpha variable without fading text.
+
+Linux checks: 83 desktop JavaScript regressions pass, including latest-intent ordering, stale broadcasts, failure/retry, timeout, invalid ranges, opaque reset and disposal. Frontend TypeScript passes. These are source checks, not evidence that a Windows compositor or native mouse drag works. Rebuild/reinstall the 0.3.1 Windows shell and execute the contrasting-background / pointer / keyboard / relaunch checklist in WINDOWS.md before claiming native translucency verified. No Windows installer was built by this cloud workspace.
+
+The frontend production build passes with the managed PORT/BASE_PATH configuration. A rendered fixture using the real React control and a simulated bridge confirms a dispatched range-input event updates the displayed percentage, shared background variable and simulated native value to 15%. Its screenshot is a browser check only: no physical mouse, Windows hit-testing, persistence across native relaunch or receiver-side screen sharing is claimed.
+
 ## Current source update — desktop 0.3.0
 
 Implemented an answer-first live layout with optional collapsed transcript, real SSE answer delivery, independent answer state/partial interruption display, Retry/Cancel, live length controls, contextual Shorten/Explain more/Answer again, and local keyboard shortcuts. Audio readiness uses locally processed activity meters with explicit consent, Stop/close cleanup and a 45-second limit; a separate real Gemini test does not save test history. Offline detection stops capture rather than silently restarting it on reconnect. Native title-bar maintenance exposes a manual allowlisted diagnostic export and user-approved installer discovery; no update is advertised without a compatible manifest and an available binary-served file.

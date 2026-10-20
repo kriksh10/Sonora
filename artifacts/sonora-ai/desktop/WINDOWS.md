@@ -17,7 +17,7 @@ These are developer tools for the computer creating the installer. People instal
 
 ## Get the source without GitHub
 
-Use the **latest Sonora desktop build kit (0.3.0)** provided with the update. Extract it and read `START-HERE.md`. It is a small source archive, not an installer, and excludes user uploads, credentials, and dependency caches. Republish the updated hosted service first: the builder checks browser sign-in, separate-channel audio and streaming-answer protocol support before downloading dependencies.
+Use the **latest Sonora desktop build kit (0.3.1)** provided with the update. Extract it and read `START-HERE.md`. It is a small source archive, not an installer, and excludes user uploads, credentials, and dependency caches. Republish the updated hosted service first: the builder checks browser sign-in, separate-channel audio and streaming-answer protocol support before downloading dependencies.
 
 In Replit, open the three-dot menu at the top of the file tree and choose **Download as zip**. Extract it into a writable local folder, for example `Documents\Sonora`. Do not run the launcher inside the ZIP.
 
@@ -32,7 +32,7 @@ Do not transfer `.env` files, credentials, databases, audio recordings, or depen
 5. Enter the published Sonora address when asked. The launcher checks that it is a healthy Sonora service.
 6. Approve downloading build dependencies. The launcher installs the locked dependencies, runs desktop and Rust checks, compiles the native audio helper, builds the NSIS installer, and creates checksums. Any failed command stops the process.
 
-The installer appears under **generated-artifacts\installers\Sonora-0.3.0-win-x64.exe**, alongside **SHA256SUMS.txt**. Later app versions change the filename.
+The installer appears under **generated-artifacts\installers\Sonora-0.3.1-win-x64.exe**, alongside **SHA256SUMS.txt**. Later app versions change the filename.
 
 The launcher does not publish files, run the installer, open the app, capture audio, or disable Windows security. Without configured signing credentials, the installer is unsigned and Windows may show security warnings. Verify its source and checksum; do not turn off SmartScreen or antivirus protections.
 
@@ -55,7 +55,8 @@ Republishing updates the hosted controls, but adding the matching native tray ch
 - Check Both with one source idle for more than a minute: a quiet call channel must not stop the microphone. A short remote question followed by silence must still reach transcription. Confirm source mapping and enable Auto Answer explicitly; microphone/Unknown speech must not trigger answers.
 - Use Readiness before the call; its Start/Stop and closing release devices, activity is source-specific, and the Gemini test produces a real answer without saving test history. Reopen the live view and start session audio separately.
 - Confirm streamed answers remain readable, transcript starts collapsed, follow/pause/Jump works, and Shorten/Explain more/Answer again use the same question. Test cancel, offline, retry and End during generation without stale output.
-- Open Window settings → About, diagnostics & updates. Check version 0.3.0, inspect/export the allowlisted report, and confirm unavailable installers do not produce a download button.
+- Open Window settings → About, diagnostics & updates. Check version 0.3.1, inspect/export the allowlisted report, and confirm unavailable installers do not produce a download button.
+- Test background opacity over both a light and dark desktop: drag the slider quickly, use arrow keys, test 15%, 50%, 100% and Use opaque background. The thumb and background must respond without moving the window or fading answer text; settings intentionally stay opaque. Restart to check the saved value. Move the app using the Sonora handle, not the slider. An older shell shows either its 45% limit or explicit rebuild guidance, not an unexplained disabled control.
 - Stop capture, end/switch sessions, sign out, hide/show, use tray Stop, and Quit; verify capture actually releases.
 - Check the receiver's view during both window and whole-screen sharing in the meeting software you intend to use. Capture exclusion is best-effort, not universal invisibility.
 
