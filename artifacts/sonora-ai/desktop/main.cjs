@@ -3,6 +3,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { validateServiceUrl, isAllowedNavigation, isTrustedFrame } = require('./security.cjs');
 const { createNativeAudioManager } = require('./native-audio-host.cjs');
+const { listAudioDevices } = require('./audio-devices.cjs');
 const { createBrowserAuth } = require('./browser-auth.cjs');
 const { opacity, safeBounds } = require('./window-preferences.cjs');
 const { createMaintenance, diagnosticReport } = require('./maintenance.cjs');
@@ -16,6 +17,7 @@ let captureActive = false;
 let shortcutRegistered = false;
 let target;
 let nativeAudio;
+let nativeAudioBinary;
 let browserAuth;
 let backgroundOpacity = 0.85;
 let preferencesPath;
@@ -117,7 +119,12 @@ function registerIpc() {
     if (typeof id !== 'string') throw new Error('Expected an authorization request id.');
     return browserAuth.cancel(id);
   });
-  handle('audio:start', (id, source) => nativeAudio.start(id, source));
+  handle('audio:start', (id, source, deviceName) => nativeAudio.start(id, source, deviceName));
+  handle('audio:devices', source => {
+    if (process.platform !== 'win32') throw new Error('Device selection is supported on Windows only.');
+    if (nativeAudio.isActive()) throw new Error('Stop audio before refreshing devices.');
+    return listAudioDevices(nativeAudioBinary, source);
+  });
   handle('audio:stop-all', stopCapture);
   handle('audio:stop', id => {
     if (typeof id !== 'string') throw new Error('Expected a capture identifier.');
@@ -201,10 +208,11 @@ function createWindow() {
       webSecurity: true, backgroundThrottling: false,
     },
   });
-  nativeAudio = createNativeAudioManager({
-    binary: app.isPackaged
+  nativeAudioBinary = app.isPackaged
       ? path.join(process.resourcesPath, 'native', process.platform === 'win32' ? 'sonora-audio.exe' : 'sonora-audio')
-      : path.resolve(__dirname, '../../../generated-artifacts/native', `${process.platform}-${process.arch}`, process.platform === 'win32' ? 'sonora-audio.exe' : 'sonora-audio'),
+      : path.resolve(__dirname, '../../../generated-artifacts/native', `${process.platform}-${process.arch}`, process.platform === 'win32' ? 'sonora-audio.exe' : 'sonora-audio');
+  nativeAudio = createNativeAudioManager({
+    binary: nativeAudioBinary,
     confirm: async source => {
       const result = await dialog.showMessageBox(win, {
         type: 'question', title: 'Allow native audio capture?',

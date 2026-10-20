@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, ChevronDown, ChevronUp, Mic, Send, Settings2, Square } from "lucide-react";
 import type { CallSession, TranscriptEntry } from "@workspace/api-client-react";
 import FollowLatestPane from "@/components/follow-latest-pane";
+import CallOutputPicker from "@/components/call-output-picker";
 import "./live-session-view.css";
 
 type AudioSource = "microphone" | "system" | "both";
@@ -23,6 +24,8 @@ export type LiveSessionViewProps = {
   audioSource: AudioSource;
   remoteConfirmed: boolean;
   supportsDualAudio: boolean;
+  systemDevice?: string;
+  onSystemDeviceChange?: (value: string) => void;
   onAudioSourceChange: (value: AudioSource) => void;
   onRemoteConfirmedChange: (value: boolean) => void;
   onToggleAudio: () => void;
@@ -229,6 +232,10 @@ export default function LiveSessionView(p: LiveSessionViewProps) {
           {lockAudio && <span> Stop audio before changing its source or speaker mapping.</span>}
           {!window.sonoraDesktop && <span> Call audio requires the desktop app. You can still type a question or select “Use as question” below.</span>}
         </div>
+      )}
+
+      {!ended && source !== "microphone" && p.onSystemDeviceChange && (
+        <CallOutputPicker value={p.systemDevice ?? ""} onChange={p.onSystemDeviceChange} disabled={lockAudio} />
       )}
 
       {(p.error || p.notice) && (

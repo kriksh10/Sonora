@@ -1,5 +1,19 @@
 # Sonora desktop verification
 
+## Call-output routing and answer policy — source 0.3.3
+
+Windows builds now offer local output-device discovery and explicit Meeting output selection. Match this to Meet's Settings → Audio → Speakers; capturing the Windows default alone does not establish capture of a separately routed headset. Names never enter session history or diagnostic exports. Missing/ambiguous selected devices fail visibly instead of silently switching output. Stop capture before changing output, then restart explicitly.
+
+The hosted update paces queued transcription per source to respect the server's four-second guard, recognizes additional interviewer request phrasings, and gives experienced practical answers for topics outside resume coverage while preserving selected length and truthful personal context. The readiness meter uses the selected output and its Gemini check now includes the current round.
+
+Required real Windows checks (not performed in this Linux workspace):
+- Route Meet to a non-default headset, select it in Meeting output, start capture with interviewer mapping and Auto Answer explicitly enabled, and verify the Call meter, transcript and streamed answer.
+- Ask repeated questions and follow-ups for several minutes; include "I'd like you to explain…", unpunctuated transcription and a topic absent from the resume.
+- Disconnect/reconnect the selected output; verify a recoverable error or lack-of-activity guidance, not a falsely healthy answer-ready indicator. Refresh devices and explicitly restart.
+- Check both channels, Stop/End, denied permission, source changes and a subsequent interview round.
+
+Existing installed shells need a rebuild/reinstall for output selection. Republishing only updates hosted code and answer policy. A source kit is not an installer and these changes do not establish native Windows/Mac verification.
+
 ## Access, resume and round update — source 0.3.2
 
 See [ACCESS-AND-RESUMES.md](ACCESS-AND-RESUMES.md) for the hosted changes, private API integration checks and remaining target-environment checks. Source kits are not native installer artifacts; the desktop release remains unverified until the Windows/Mac checks below are performed.

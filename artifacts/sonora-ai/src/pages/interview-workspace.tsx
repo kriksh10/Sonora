@@ -110,6 +110,7 @@ export default function InterviewWorkspace() {
   const desktopCaptureRef = useRef<AudioCapture[]>([]);
   const [audioSource, setAudioSource] = useState<"microphone" | "system" | "both">(window.sonoraDesktop ? "system" : "microphone");
   const [remoteConfirmed, setRemoteConfirmed] = useState(false);
+  const [systemDevice, setSystemDevice] = useState("");
   const [supportsDualAudio, setSupportsDualAudio] = useState(false);
   const [liveMode, setLiveMode] = useState(false);
   const [readinessOpen, setReadinessOpen] = useState(false);
@@ -473,6 +474,7 @@ export default function InterviewWorkspace() {
       }
       const captures = sources.map(source => createDesktopAudio({
         source,
+        ...(source === "system" && systemDevice ? { deviceName: systemDevice } : {}),
         sessionId: selected.id,
         roundNumber: selected.roundNumber,
         onLevel: (level, status) => {
@@ -480,7 +482,7 @@ export default function InterviewWorkspace() {
           setLevels(current => ({ ...current, [source]: level }));
           setChannelStatus(current => ({ ...current, [source]: status }));
         },
-        onPhase: status => { if (captureToken === captureTokenRef.current) setPipelineStatus(status); },
+        onPhase: status => { if (captureToken === captureTokenRef.current) setPipelineStatus(`${source === "system" ? "Call" : "Mic"} · ${status}`); },
         onText: (text, metadata) => {
           if (captureToken !== captureTokenRef.current) return;
           const activeSession = selectedSessionRef.current;
@@ -685,6 +687,7 @@ export default function InterviewWorkspace() {
           requestingAudio={requestingMic} interimTranscript={interimTranscript}
           duration={formatDuration(selected.startedAt, now)} notice={notice} error={error}
           audioSource={audioSource} remoteConfirmed={remoteConfirmed} supportsDualAudio={supportsDualAudio}
+          systemDevice={systemDevice} onSystemDeviceChange={setSystemDevice}
           onAudioSourceChange={setAudioSource} onRemoteConfirmedChange={setRemoteConfirmed}
           onToggleAudio={() => void toggleMicrophone()} onEnd={() => void endSession()}
           onBack={() => { stopCapture(); answerAbortRef.current?.abort(); setLiveMode(false); }}
@@ -949,7 +952,7 @@ export default function InterviewWorkspace() {
         </Modal>
       )}
       {readinessOpen && selected && (
-        <AudioReadiness key={selected.id} sessionId={selected.id}
+        <AudioReadiness key={selected.id} sessionId={selected.id} roundNumber={selected.roundNumber} systemDevice={systemDevice}
           onClose={() => setReadinessOpen(false)} answerBusy={busy} supportsDualAudio={supportsDualAudio} />
       )}
       {editOpen && selected && (

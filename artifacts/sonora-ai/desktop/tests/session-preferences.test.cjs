@@ -116,6 +116,7 @@ function fixture(options = {}) {
     if (name === '@workspace/db') return { db, callSessionsTable: sessionTable, answerDefaultsTable: defaultsTable };
     if (name === '@workspace/api-zod') return validators;
     if (name === '../lib/answer-preferences') return preferences;
+    if (name === '../lib/interview-answer-policy') return loadTs(path.join(serverRoot, 'lib/interview-answer-policy.ts'), require);
     if (name === '../lib/session-lifecycle') return {
       roundMatches: (current, requested) => (current ?? 1) === (requested ?? 1),
       approvedWriteCondition: () => ({ sql: 'approved account' }),

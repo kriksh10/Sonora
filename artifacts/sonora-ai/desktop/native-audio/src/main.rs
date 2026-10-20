@@ -26,11 +26,21 @@ fn write_event(value: serde_json::Value) -> Result<()> {
 }
 fn run() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.len() != 2
+    if args.len() == 2 && args[0] == "--list-devices"
+        && matches!(args[1].as_str(), "microphone" | "system") {
+        write_event(json!({ "devices": platform::devices(&args[1])? }))?;
+        return Ok(());
+    }
+    if !matches!(args.len(), 2 | 4)
         || args[0] != "--source"
         || !matches!(args[1].as_str(), "microphone" | "system")
+        || (args.len() == 4 && (args[2] != "--device-name" || args[3].is_empty()
+            || args[3].len() > 1024 || args[3].chars().any(char::is_control)))
     {
         bail!("Usage: sonora-audio --source microphone|system");
+    }
+    if args.len() == 4 && !cfg!(target_os = "windows") {
+        bail!("Audio device selection is supported on Windows only.");
     }
     // Parent pipe EOF stops capture even if the Electron process crashes.
     let stop = Arc::new(AtomicBool::new(false));
@@ -43,7 +53,7 @@ fn run() -> Result<()> {
     if stop.load(Ordering::Acquire) {
         return Ok(());
     }
-    let mut capture = platform::open(&args[1])?;
+    let mut capture = platform::open(&args[1], args.get(3).map(String::as_str))?;
     if stop.load(Ordering::Acquire) {
         return Ok(());
     }

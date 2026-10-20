@@ -8,16 +8,23 @@ pub trait Capture {
     fn read(&mut self) -> Result<Option<Samples>>;
 }
 
-pub fn open(source: &str) -> Result<Box<dyn Capture>> {
+pub fn devices(source: &str) -> Result<Vec<String>> {
+    #[cfg(target_os = "windows")]
+    { return cpal_backend::devices(source); }
+    #[cfg(not(target_os = "windows"))]
+    { let _ = source; bail!("Audio device selection is supported on Windows only."); }
+}
+
+pub fn open(source: &str, device_name: Option<&str>) -> Result<Box<dyn Capture>> {
     #[cfg(target_os = "macos")]
     if source == "system" {
         return Ok(Box::new(crate::macos::MacCapture::open()?));
     }
     #[cfg(any(target_os = "windows", target_os = "macos"))]
-    return cpal_backend::open(source);
+    return cpal_backend::open(source, device_name);
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
-        let _ = source;
+        let _ = (source, device_name);
         bail!("Native audio capture requires Windows or macOS.");
     }
 }
@@ -54,14 +61,29 @@ mod cpal_backend {
         }
     }
 
-    pub fn open(source: &str) -> Result<Box<dyn Capture>> {
+    pub fn devices(source: &str) -> Result<Vec<String>> {
         let host = cpal::default_host();
-        let device = if source == "system" {
+        let devices = if source == "system" { host.output_devices()? } else { host.input_devices()? };
+        devices.take(100).map(|device| Ok(device.name()?)).collect()
+    }
+
+    pub fn open(source: &str, device_name: Option<&str>) -> Result<Box<dyn Capture>> {
+        let host = cpal::default_host();
+        let default_device = if source == "system" {
             host.default_output_device()
         } else {
             host.default_input_device()
-        }
-        .ok_or_else(|| anyhow::anyhow!("No default audio device is available."))?;
+        };
+        let device = if let Some(name) = device_name {
+            let devices = if source == "system" { host.output_devices()? } else { host.input_devices()? };
+            let mut matches: Vec<_> = devices.filter(|device| device.name().ok().as_deref() == Some(name)).collect();
+            if matches.len() != 1 {
+                bail!("Selected audio device is unavailable or ambiguous. Refresh devices and choose the meeting output again.");
+            }
+            matches.remove(0)
+        } else {
+            default_device.ok_or_else(|| anyhow::anyhow!("No default audio device is available."))?
+        };
         // CPAL's Windows WASAPI backend uses LOOPBACK for input on an output device.
         let supported = if source == "system" {
             device.default_output_config()?

@@ -3,9 +3,12 @@ export function isInterviewQuestion(text: string) {
   if (/^(hello|hi|hey)[?.!\s]*$/i.test(clean)) return false;
   clean = clean.replace(/^(hello|hi|hey)\b[,!:.\s]*/i, "");
   clean = clean.replace(/^(?:(?:okay|ok|so|then|and|now|well)[,!:.\s]+)+/i, "");
+  clean = clean.replace(/^(?:(?:please|(?:i|we)(?:'d| would) like you to|(?:i|we) want you to)[,!:.\s]+)+/i, "");
   if (/^(can you hear|could you hear|are you there|is (my|the) (audio|microphone)|thank(s| you))/i.test(clean)) return false;
   if (/^(how are you|are you ready|shall we (start|begin))[?.!\s]*$/i.test(clean)) return false;
-  return clean.includes("?") || /^(what|how|why|when|where|which|who|can you|could you|would you|tell me|describe|explain|walk me|(?:you )?give me|write|implement|design)\b/i.test(clean);
+  return clean.includes("?") ||
+    /^(what|how|why|when|where|which|who|(?:can|could|would|have|did|do|are|will) you|tell (?:me|us)|describe|explain|walk (?:me|us)|(?:you )?give (?:me|us)|write|implement|design|compare|discuss|demonstrate|solve|outline|let(?:'s| us) (?:discuss|talk about))\b/i.test(clean) ||
+    /\b(?:my|our|the next) question is\b|\b(?:can|could|would) you (?:explain|describe|tell|walk|give|compare|design|implement)\b/i.test(clean);
 }
 
 /** Source-based routing, not speaker recognition. State lives only for this capture. */

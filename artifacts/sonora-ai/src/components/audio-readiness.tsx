@@ -3,8 +3,8 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { createAudioGroup, createDesktopAudio, type AudioCapture } from "@/lib/desktop-audio";
 import { requestAnswer } from "@/lib/answer-stream";
 
-export default function AudioReadiness({ sessionId, onClose, answerBusy, supportsDualAudio }: {
-  sessionId: string; onClose: () => void; answerBusy: boolean; supportsDualAudio: boolean;
+export default function AudioReadiness({ sessionId, roundNumber, systemDevice, onClose, answerBusy, supportsDualAudio }: {
+  sessionId: string; roundNumber?: number; systemDevice?: string; onClose: () => void; answerBusy: boolean; supportsDualAudio: boolean;
 }) {
   const [source, setSource] = useState<"microphone" | "system" | "both">(window.sonoraDesktop && supportsDualAudio ? "both" : "microphone");
   const [phase, setPhase] = useState<"off" | "starting" | "on">("off");
@@ -38,7 +38,9 @@ export default function AudioReadiness({ sessionId, onClose, answerBusy, support
     setPhase("starting"); setError(""); setSeen({ microphone: false, system: false });
     const sources: ("microphone" | "system")[] = source === "both" ? ["microphone", "system"] : [source];
     const group = createAudioGroup(sources.map(channel => createDesktopAudio({
-      source: channel, sessionId, transcribe: false, onText() {}, onNotice() {},
+      source: channel, sessionId, roundNumber,
+      ...(channel === "system" && systemDevice ? { deviceName: systemDevice } : {}),
+      transcribe: false, onText() {}, onNotice() {},
       onLevel: (level, state) => {
         if (!mounted.current || mine !== token.current) return;
         setLevels(value => ({ ...value, [channel]: level }));
@@ -65,7 +67,7 @@ export default function AudioReadiness({ sessionId, onClose, answerBusy, support
     const controller = new AbortController();
     abort.current = controller; setTesting(true); setTestPassed(false); setTestAnswer(""); setError("");
     try {
-      const result = await requestAnswer(sessionId, { question: "For this connectivity test, briefly explain what an API is in one sentence.", test: true },
+      const result = await requestAnswer(sessionId, { question: "For this connectivity test, briefly explain what an API is in one sentence.", test: true, roundNumber },
         AbortSignal.any([controller.signal, AbortSignal.timeout(95000)]),
         text => { if (mounted.current && !controller.signal.aborted) setTestAnswer(text); });
       if (mounted.current && !controller.signal.aborted) { setTestAnswer(result.answer); setTestPassed(true); }

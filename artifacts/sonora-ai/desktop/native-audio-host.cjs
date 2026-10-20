@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const { spawn } = require('node:child_process');
 const { StringDecoder } = require('node:string_decoder');
+const { validDeviceName } = require('./audio-devices.cjs');
 
 function validWav(value) {
   if (typeof value !== 'string' || value.length > 260000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) return false;
@@ -39,9 +40,10 @@ function createNativeAudioHost({ binary, confirm, emit, onActive, spawnProcess =
     stop();
     current?.child?.kill('SIGKILL');
   }
-  async function start(id, source) {
+  async function start(id, source, deviceName) {
     if (typeof id !== 'string' || !/^[a-f0-9-]{36}$/i.test(id) ||
         !['microphone', 'system'].includes(source)) throw new Error('Invalid native audio request.');
+    if (deviceName !== undefined && !validDeviceName(deviceName)) throw new Error('Invalid audio device.');
     if (current || consentBusy) throw new Error('Audio is already starting, active, or stopping.');
     const record = { id, cancelled: false, ready: false };
     current = record;
@@ -71,7 +73,7 @@ function createNativeAudioHost({ binary, confirm, emit, onActive, spawnProcess =
       try {
         const env = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
           ['PATH', 'HOME', 'TMPDIR', 'TMP', 'TEMP', 'SystemRoot', 'SYSTEMROOT', 'WINDIR', 'APPDATA', 'LOCALAPPDATA'].includes(key)));
-        record.child = spawnProcess(binary, ['--source', source], {
+        record.child = spawnProcess(binary, ['--source', source, ...(deviceName ? ['--device-name', deviceName] : [])], {
           stdio: ['pipe', 'pipe', 'ignore'], shell: false, windowsHide: true, env,
         });
         record.child.stdin.on('error', () => fail('Native audio control pipe closed.'));
@@ -150,7 +152,7 @@ function createNativeAudioManager(options) {
   const channels = new Map();
   const changed = () => options.onActive([...channels.values()].some(record => record.host.isActive()));
   return {
-    async start(id, source) {
+    async start(id, source, deviceName) {
       if (!['microphone', 'system'].includes(source)) throw new Error('Invalid native audio source.');
       for (const [key, record] of channels) {
         if (!record.host.isBusy()) channels.delete(key);
@@ -162,7 +164,7 @@ function createNativeAudioManager(options) {
         onActive: changed,
       });
       channels.set(source, { id, host });
-      try { return await host.start(id, source); }
+      try { return await host.start(id, source, deviceName); }
       catch (error) {
         if (!host.isBusy()) channels.delete(source);
         changed();

@@ -1,5 +1,19 @@
 # Build Sonora on Windows
 
+### Output routing in 0.3.3
+
+After rebuilding and installing, choose Call audio (or Both) in the live session.
+Use **Meeting output** to select the exact speaker/headset configured in Google Meet's
+Settings → Audio → Speakers. Click Refresh devices after connecting a headset.
+The selection changes capture only; it does not change Windows or Meet playback settings.
+Stop audio before changing it, confirm interviewer mapping, enable Auto Answer, then Start audio.
+Use Readiness to check activity on the same selected endpoint. Its fixed Gemini test checks
+provider connectivity separately, not the complete meeting-audio-to-answer path.
+
+If Meeting output selection is unavailable, the installed shell is older: it captures
+Windows default output only. Rebuild/reinstall to obtain device selection; republishing
+the website alone cannot add this native capability.
+
 **No GitHub login, repository, Actions, or upload is required.** This is a local build guide, not a downloadable installer or a verified release.
 
 ## What you need

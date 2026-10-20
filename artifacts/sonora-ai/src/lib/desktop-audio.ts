@@ -1,10 +1,13 @@
 import { wavBase64 } from "./pcm-wav";
+import { createTranscriptionPacing, waitForTranscription } from "./transcription-pacing";
 
 // Both channels share one provider lane; server concurrency limits remain enforced.
 let transcriptionLane: Promise<void> = Promise.resolve();
+const pacing = createTranscriptionPacing();
 
 type Options = {
   source: "microphone" | "system";
+  deviceName?: string;
   sessionId: string;
   roundNumber?: number;
   onText: (text: string, metadata: { source: "microphone" | "system"; capturedAt: string }) => void;
@@ -72,7 +75,14 @@ export function createDesktopAudio(options: Options): AudioCapture {
         await previous;
         try {
         if (stopped) return;
+        const delay = pacing.remaining(options.source);
+        if (delay) {
+          options.onPhase?.("Queued for transcription");
+          await waitForTranscription(delay, abort.signal);
+        }
+        if (stopped) return;
         options.onPhase?.("Transcribing");
+        pacing.mark(options.source);
         const response = await fetch(`/api/sessions/${options.sessionId}/transcribe`, {
           method: "POST", credentials: "include", signal: AbortSignal.any([abort.signal, AbortSignal.timeout(30_000)]),
           headers: { "Content-Type": "application/json" },
@@ -81,7 +91,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
         const result = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(result.error || `Transcription failed (${response.status}).`);
         if (!stopped) {
-          options.onPhase?.(result.text ? "Question received" : "Listening");
+          options.onPhase?.(result.text ? "Speech transcribed" : "Audio received · no clear speech");
           if (result.text) options.onText(result.text, { source: options.source, capturedAt });
         }
         } finally { release(); }
@@ -92,7 +102,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
   const enqueue = (audio: string, capturedAt = new Date().toISOString()) => {
     if (stopped) return;
     if (options.transcribe === false) return;
-    if (pending.length >= 2) { fail(new Error("Transcription is falling behind. Capture stopped to avoid dropping speech. Retry or type your question.")); return; }
+    if (pending.length >= 2) { fail(new Error("Transcription is falling behind. Capture stopped to avoid dropping speech. If using Both, switch to Call audio only to prioritize interviewer answers, then restart. You can also type a question.")); return; }
     pending.push({ audio, capturedAt });
     void pump();
   };
@@ -110,12 +120,14 @@ export function createDesktopAudio(options: Options): AudioCapture {
               if (event.source && event.source !== options.source) { fail(new Error("Native audio source mismatch.")); return; }
               enqueue(event.audio, event.capturedAt);
             }
-            else if (event.type === "silence" && event.prolonged) options.onNotice("No audible speech for 18 seconds. Check your source, volume, and OS audio permission.");
+            else if (event.type === "silence" && event.prolonged) options.onNotice(options.source === "system"
+              ? "No call speech for 18 seconds. Confirm Meet’s speaker/headset matches Meeting output. Check the Call meter while remote speech plays."
+              : "No microphone speech for 18 seconds. Check the microphone source, volume, and OS permission.");
             else if (event.type === "status") {
               options.onLevel?.(event.peak ?? 0, (event.sampleAgeMs ?? 0) > 2000 ? "No audio samples yet · check source" : (event.peak ?? 0) > 0.003 ? "Audio activity" : "Silent samples");
             }
           });
-          await desktop.startNativeCapture(nativeId, options.source);
+          await desktop.startNativeCapture(nativeId, options.source, options.deviceName);
           if (stopped) { void desktop.stopNativeCapture(nativeId); return; }
           options.onNotice("Native audio capture is active. Short audio chunks are sent to Gemini for transcription.");
           return;
