@@ -43,6 +43,28 @@ function fixture() {
   return { props, render, find, calls, handlers };
 }
 
+test('paused automatic answers expose setup actions without starting capture or assuming speaker consent', () => {
+  const f = fixture();
+  f.props.listening = false; f.props.audioSource = 'microphone'; f.props.remoteConfirmed = false;
+  let source, consent;
+  f.props.onAudioSourceChange = value => { source = value; };
+  f.props.onRemoteConfirmedChange = value => { consent = value; };
+  let tree = f.render();
+  assert.ok(f.find(tree, 'auto-answer-setup'));
+  f.find(tree, 'button-use-call-audio').props.onClick();
+  assert.equal(source, 'system'); assert.equal(consent, undefined);
+  f.props.audioSource = source; tree = f.render();
+  f.find(tree, 'checkbox-confirm-interviewer').props.onChange({ target: { checked: true } });
+  assert.equal(consent, true);
+  f.props.remoteConfirmed = true;
+  f.props.onAutoAnswerChange = enabled => { f.props.session.autoAnswer = enabled; };
+  tree = f.render(); f.find(tree, 'button-enable-auto-answer').props.onClick();
+  assert.equal(f.props.session.autoAnswer, true);
+  tree = f.render();
+  assert.equal(f.find(tree, 'auto-answer-setup'), undefined);
+  assert.equal(f.props.listening, false);
+});
+
 test('answer view collapses transcript by default and per session, actions are wired and save policy is unchanged', () => {
   const f = fixture();
   let tree = f.render();

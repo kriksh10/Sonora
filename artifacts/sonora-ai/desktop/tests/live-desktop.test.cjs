@@ -190,6 +190,36 @@ test('remote fragments assemble across chunks, duplicate turns are suppressed, r
   assert.equal(q.sent.length, 1);
 });
 
+test('continuous six-second remote chunks cannot postpone automatic answers forever', () => {
+  const { createInterviewerQuestions, isInterviewQuestion } = load('../../src/lib/interviewer-questions.ts');
+  let now = 0, next = 0;
+  const timers = new Map(), sent = [];
+  const router = createInterviewerQuestions({
+    answer: async text => { sent.push(text); }, notice() {}, clock: () => now,
+    setTimer: (fn, delay) => { const id = ++next; timers.set(id, { at: now + delay, fn }); return id; },
+    clearTimer: id => timers.delete(id),
+  });
+  function advance(to) {
+    while (true) {
+      const entry = [...timers].sort((a, b) => a[1].at - b[1].at)[0];
+      if (!entry || entry[1].at > to) break;
+      now = entry[1].at; timers.delete(entry[0]); entry[1].fn();
+    }
+    now = to;
+  }
+  router.push('Then you give me a brief about your', 'interviewer');
+  advance(6000); router.push('recent project and the tradeoffs', 'interviewer');
+  advance(12000); router.push('you considered', 'interviewer');
+  assert.equal(sent.length, 0);
+  advance(15000); assert.equal(sent.length, 1);
+  assert.match(sent[0], /tradeoffs you considered/);
+  advance(40000); assert.equal(sent.length, 1);
+  router.push('Explain your next project', 'interviewer'); router.reset();
+  advance(60000); assert.equal(sent.length, 1);
+  assert.equal(isInterviewQuestion('Then you give me brief about your experience.'), true);
+  assert.equal(isInterviewQuestion('Okay, can you hear me?'), false);
+});
+
 test('busy answers retain bounded follow-up questions and surface overflow explicitly', async () => {
   let release;
   const q = questions(() => new Promise(resolve => { release = resolve; }));

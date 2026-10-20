@@ -2,9 +2,10 @@ export function isInterviewQuestion(text: string) {
   let clean = text.trim();
   if (/^(hello|hi|hey)[?.!\s]*$/i.test(clean)) return false;
   clean = clean.replace(/^(hello|hi|hey)\b[,!:.\s]*/i, "");
+  clean = clean.replace(/^(?:(?:okay|ok|so|then|and|now|well)[,!:.\s]+)+/i, "");
   if (/^(can you hear|could you hear|are you there|is (my|the) (audio|microphone)|thank(s| you))/i.test(clean)) return false;
   if (/^(how are you|are you ready|shall we (start|begin))[?.!\s]*$/i.test(clean)) return false;
-  return clean.includes("?") || /^(what|how|why|when|where|which|who|can you|could you|would you|tell me|describe|explain|walk me|give me|write|implement|design)\b/i.test(clean);
+  return clean.includes("?") || /^(what|how|why|when|where|which|who|can you|could you|would you|tell me|describe|explain|walk me|(?:you )?give me|write|implement|design)\b/i.test(clean);
 }
 
 /** Source-based routing, not speaker recognition. State lives only for this capture. */
@@ -19,6 +20,7 @@ export function createInterviewerQuestions({
 }) {
   let fragments = "";
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let deadline: ReturnType<typeof setTimeout> | undefined;
   let pending: string[] = [];
   let running = false;
   let generation = 0;
@@ -36,9 +38,14 @@ export function createInterviewerQuestions({
   };
   const flush = () => {
     clearTimer(timer);
+    clearTimer(deadline);
+    deadline = undefined;
     const text = fragments.trim();
     fragments = "";
-    if (!isInterviewQuestion(text)) return;
+    if (!isInterviewQuestion(text)) {
+      if (text) notice("Call speech received, but no question detected yet. Select a transcript line to ask manually.");
+      return;
+    }
     seen = seen.filter(item => clock() - item.time < 30_000);
     const key = text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
     if (seen.some(item => item.key === key)) {
@@ -61,9 +68,14 @@ export function createInterviewerQuestions({
       if (speaker !== "interviewer" || !text.trim()) return;
       const token = generation;
       fragments = `${fragments} ${text}`.trim();
+      // Chunk delivery is not silence: a bounded turn deadline must survive
+      // subsequent chunks, otherwise 6-second arrivals reset an 8.5-second timer forever.
+      if (deadline === undefined) deadline = setTimer(() => { if (generation === token) flush(); }, 15_000);
       if (fragments.length > 8000) {
         fragments = "";
         clearTimer(timer);
+        clearTimer(deadline);
+        deadline = undefined;
         notice("Remote turn exceeded the automatic question limit. Select the relevant transcript text manually.");
         return;
       }
@@ -75,6 +87,8 @@ export function createInterviewerQuestions({
     reset() {
       generation += 1;
       clearTimer(timer);
+      clearTimer(deadline);
+      deadline = undefined;
       fragments = "";
       pending = [];
       seen = [];

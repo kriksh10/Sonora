@@ -165,7 +165,7 @@ export default function LiveSessionView(p: LiveSessionViewProps) {
 
   let hint = "";
   if (ended) hint = "Session ended. Actions are disabled.";
-  else if (!live) hint = "Listening-only is off: audio is stopped. Start audio to capture.";
+  else if (!live) hint = "Audio is stopped. Sonora cannot hear or answer automatically until you start audio.";
   else if (!p.remoteConfirmed) hint = "Mapping off: confirm mic = you, call = interviewer. Stop audio to change it.";
   else if (source === "microphone") hint = "Microphone captures you, not the interviewer. Use Call audio for automatic answers, or ask manually.";
   else if (!autoOn) hint = "Auto Answer is off. Ask manually or turn it on.";
@@ -193,7 +193,7 @@ export default function LiveSessionView(p: LiveSessionViewProps) {
           </label>
           <button type="button" data-testid="button-toggle-audio" className={`lsv-btn ${live ? "lsv-stop" : "lsv-primary"}`} disabled={ended} onClick={p.onToggleAudio}>
             {live ? <Square size={13} aria-hidden="true" /> : <Mic size={13} aria-hidden="true" />}
-            {p.requestingAudio ? "Cancel request" : live ? "Stop audio" : "Start audio"}
+            {p.requestingAudio ? "Cancel request" : live ? "Stop audio" : autoOn && p.remoteConfirmed && source !== "microphone" ? "Start audio + answers" : "Start listening only"}
           </button>
           <button type="button" className="lsv-btn" data-testid="button-preferences" onClick={p.onPreferences}>
             <Settings2 size={13} aria-hidden="true" /> Answer settings
@@ -207,6 +207,29 @@ export default function LiveSessionView(p: LiveSessionViewProps) {
           {p.maintenanceControls}
         </div>
       </div>
+
+      {!ended && (!p.remoteConfirmed || source === "microphone" || !autoOn) && (
+        <div className="lsv-banner" role="status" data-testid="auto-answer-setup">
+          <strong>Automatic answers are paused.</strong>{" "}
+          {source === "microphone"
+            ? "Microphone is candidate audio—not the interviewer. "
+            : !p.remoteConfirmed ? "Confirm that call audio contains the interviewer, not your monitored microphone. " : "Auto Answer is switched off. "}
+          {!lockAudio && source === "microphone" && window.sonoraDesktop && (
+            <button type="button" data-testid="button-use-call-audio" className="lsv-btn" onClick={() => p.onAudioSourceChange("system")}>Use call audio</button>
+          )}
+          {!lockAudio && source !== "microphone" && !p.remoteConfirmed && (
+            <label className="lsv-check">
+              <input type="checkbox" data-testid="checkbox-confirm-interviewer" checked={false} onChange={e => p.onRemoteConfirmedChange(e.target.checked)} />
+              I confirm call audio is the interviewer
+            </label>
+          )}
+          {!autoOn && p.onAutoAnswerChange && (
+            <button type="button" data-testid="button-enable-auto-answer" className="lsv-btn" onClick={() => p.onAutoAnswerChange?.(true)}>Enable Auto Answer</button>
+          )}
+          {lockAudio && <span> Stop audio before changing its source or speaker mapping.</span>}
+          {!window.sonoraDesktop && <span> Call audio requires the desktop app. You can still type a question or select “Use as question” below.</span>}
+        </div>
+      )}
 
       {(p.error || p.notice) && (
         <div className={`lsv-banner ${p.error ? "err" : ""}`} role={p.error ? "alert" : "status"} data-testid="live-message">
