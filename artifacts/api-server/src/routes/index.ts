@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
+import desktopReleasesRouter from "./desktop-releases";
 import sessionsRouter from "./sessions";
 import transcriptionRouter from "./transcription";
 import liveAudioRouter from "./live-audio";
@@ -12,6 +13,7 @@ import { requireApprovedAccess } from "../lib/app-access";
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(desktopReleasesRouter);
 router.use(accessRouter);
 router.use(["/sessions", "/answer-preferences", "/files"], requireApprovedAccess);
 router.use(filesRouter);
