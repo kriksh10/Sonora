@@ -20,11 +20,16 @@ Existing approval gates, private storage, protected downloads, and checksum
 assembly were deliberately retained rather than replaced by the snapshot's
 public download links or local credential-file loader.
 
-Speechmatics is optional and is not configured in this environment. Gemini phrase
-transcription remains the fallback. Hosted integration adds bounded startup
+Speechmatics is optional and is configured through the project secret. A live
+provider connection returned `RecognitionStarted` and accepted one second of
+silent 16 kHz mono PCM frames with the app's vocabulary settings. This confirms
+authentication and streaming configuration, not recognition of real speech or
+Windows audio capture. Gemini phrase transcription remains the fallback.
+Hosted integration adds bounded startup
 buffering, live-socket fallback, access/round-aware stream cleanup, and queued WAV
 phrase coalescing to respect the transcription request interval. Unit checks use
-controlled provider fixtures; no real Speechmatics streaming test was performed.
+controlled provider fixtures; real spoken-audio transcription and end-to-end
+answer generation through Speechmatics remain unverified.
 
 The release reuses version 0.3.5, so version-only update checking cannot identify
 this replacement. Approved users must explicitly download and reinstall this
