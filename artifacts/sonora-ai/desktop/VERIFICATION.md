@@ -1,3 +1,12 @@
+# Public installer access — 2026-10-22
+
+At the user's request, `/download`, release metadata, and installer byte/HEAD/range
+requests no longer require sign-in or approval. App usage still requires both.
+Private storage, pinned SHA-256, byte-range integrity checks, progress, retry,
+and cancellation remain in place. Updated installer transport tests passed
+5/5, including an anonymous complete 111124259-byte download and SHA-256 match.
+Earlier sections describe the approval-gated policy that existed at their test time.
+
 ## Uploaded release integrated — 2026-10-22
 
 The latest uploaded Windows installer is now the pinned private preview download:

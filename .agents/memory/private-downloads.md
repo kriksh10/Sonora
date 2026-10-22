@@ -12,8 +12,9 @@ readback was intact, so storage integrity alone did not prove delivery worked.
 The precise production interruption cause was not conclusively identified; do not
 assert an undocumented hosting response limit.
 
-**How to apply:** Preserve approval checks for every range and checksum verification
-before saving. Distinguish local full-file transport verification from a signed-in
+**How to apply:** Preserve range delivery and checksum verification before saving.
+Downloads are now public by the user's explicit request; retain approval for app usage.
+Distinguish local full-file transport verification from an actual
 browser download on the published deployment, and both from native installation.
 
 Treat installer identity as version plus checksum, not the displayed version alone.

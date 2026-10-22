@@ -1,12 +1,11 @@
-import { Router, type RequestHandler } from "express";
+import { Router } from "express";
 import type { File } from "@google-cloud/storage";
 import { pipeline } from "node:stream/promises";
 import type { DesktopRelease } from "@workspace/api-zod";
 import release from "../lib/windows-release.json";
 
-/** Factory keeps authorization mandatory and makes byte delivery independently testable. */
+/** Public installer delivery; using the application still requires approved access. */
 export function createDesktopReleasesRouter(
-  authorize: RequestHandler,
   getFile: () => Pick<File, "getMetadata" | "createReadStream">,
 ) {
   const router = Router();
@@ -18,7 +17,6 @@ export function createDesktopReleasesRouter(
     });
     next();
   });
-  router.use(authorize);
   const checkedFile = async () => {
     const file = getFile();
     const [metadata] = await file.getMetadata();
@@ -49,7 +47,7 @@ export function createDesktopReleasesRouter(
       res.status(503).json({ error: "The installer is temporarily unavailable. Please retry later." });
     }
   });
-  // Express also routes HEAD through this handler, with the same approval check.
+  // Express also routes HEAD through this public handler.
   router.get("/installers/windows-x64", async (req, res): Promise<void> => {
     let file: ReturnType<typeof getFile>;
     try { file = await checkedFile(); }
@@ -58,7 +56,7 @@ export function createDesktopReleasesRouter(
       res.status(503).json({ error: "The installer is temporarily unavailable. Please retry later." });
       return;
     }
-    // Small authenticated range requests avoid fragile single large proxy transfers.
+    // Small range requests avoid fragile single large proxy transfers.
     const range = req.get("Range");
     let start = 0, end = release.sizeBytes - 1;
     if (range) {

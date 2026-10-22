@@ -15,7 +15,7 @@ const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(accessRouter);
-router.use("/desktop", createDesktopReleasesRouter(requireApprovedAccess, windowsInstallerFile));
+router.use("/desktop", createDesktopReleasesRouter(windowsInstallerFile));
 router.use(["/sessions", "/answer-preferences", "/files"], requireApprovedAccess);
 router.use(filesRouter);
 router.use(lifecycleRouter);

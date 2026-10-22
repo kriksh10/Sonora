@@ -1,5 +1,9 @@
 # Uploaded project integration audit
 
+Subsequent user-requested change: desktop downloads are now public. Approval is
+still required to use the application. Protected-download references below
+describe the original integration audit, not the current download access policy.
+
 Reviewed upload: `AI-Transcription-Product_1792644997330.zip`.
 
 ## Source coverage

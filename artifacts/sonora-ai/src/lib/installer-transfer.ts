@@ -4,7 +4,7 @@ class DownloadError extends Error {
   constructor(message: string, readonly retryable = false) { super(message); }
 }
 
-/** Never save a truncated/error response as an EXE. Every range is approval-gated. */
+/** Public byte-range download; never save a truncated or corrupt EXE. */
 export async function fetchInstaller(
   url: string,
   release: { sizeBytes: number; sha256: string },
@@ -35,7 +35,7 @@ export async function fetchInstaller(
           headers: { Range: `bytes=${start}-${end}` },
         });
         if (response.status === 401 || response.status === 403) {
-          throw new DownloadError("Sign in with a currently approved Sonora account, then retry.");
+          throw new DownloadError("The download server denied access. Please retry later.");
         }
         if (response.status >= 500 || response.status === 429) {
           throw new DownloadError("Installer storage is temporarily unavailable.", true);

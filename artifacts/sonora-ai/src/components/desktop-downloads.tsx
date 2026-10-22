@@ -26,7 +26,7 @@ export default function DesktopDownloads() {
       setRelease(data);
     } catch {
       setRelease(null);
-      setError("Could not load installers. Sign-in and current Sonora approval are required; storage may also be temporarily unavailable.");
+      setError("Could not load installers. Storage may be temporarily unavailable; please retry.");
     } finally {
       setLoading(false);
     }
@@ -114,7 +114,7 @@ export default function DesktopDownloads() {
                     </span>
                   </div>
                   <p className="mt-3 text-xs text-white/50">Signing: {b.signing}</p>
-                  {b.sizeBytes !== null && <p className="mt-1 text-xs text-white/50">Size: {(b.sizeBytes / 1024 / 1024).toFixed(1)} MiB · Approved accounts only</p>}
+                  {b.sizeBytes !== null && <p className="mt-1 text-xs text-white/50">Size: {(b.sizeBytes / 1024 / 1024).toFixed(1)} MiB · No sign-in needed to download</p>}
                   {b.sha256 && <p className="mt-1 break-all font-mono text-[10px] text-white/35">SHA-256 {b.sha256}</p>}
                   <div className="mt-3">
                     {live ? (

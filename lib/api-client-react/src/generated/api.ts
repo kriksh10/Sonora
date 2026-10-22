@@ -229,7 +229,7 @@ export const getGetDesktopReleaseUrl = () => {
 }
 
 /**
- * @summary Installer availability for approved accounts
+ * @summary Public desktop installer availability
  */
 export const getDesktopRelease = async ( options?: Parameters<typeof customFetch>[1]): Promise<DesktopRelease> => {
 
@@ -276,7 +276,7 @@ export type GetDesktopReleaseQueryError = ErrorType<void>
 
 
 /**
- * @summary Installer availability for approved accounts
+ * @summary Public desktop installer availability
  */
 
 export function useGetDesktopRelease<TData = Awaited<ReturnType<typeof getDesktopRelease>>, TError = ErrorType<void>>(
@@ -306,7 +306,7 @@ export const getDownloadWindowsInstallerUrl = () => {
 }
 
 /**
- * @summary Download the Windows installer with current approval checked
+ * @summary Public Windows installer download
  */
 export const downloadWindowsInstaller = async ( options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
 
@@ -353,7 +353,7 @@ export type DownloadWindowsInstallerQueryError = ErrorType<void>
 
 
 /**
- * @summary Download the Windows installer with current approval checked
+ * @summary Public Windows installer download
  */
 
 export function useDownloadWindowsInstaller<TData = Awaited<ReturnType<typeof downloadWindowsInstaller>>, TError = ErrorType<void>>(

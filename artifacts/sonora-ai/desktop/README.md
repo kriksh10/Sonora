@@ -6,6 +6,11 @@ The current source is version 0.3.2. Native transparency, saved window placement
 
 Approval-gated access, editable resume imports and interview rounds are hosted features shared by the browser and packaged app. See [access, resumes and rounds](ACCESS-AND-RESUMES.md) for setup and checks.
 
+Desktop downloads are public: `/download`, release metadata, and installer bytes
+do not require sign-in or approval. Downloading does not grant permission to use
+Sonora; the hosted application still requires sign-in and approval. Downloads
+retain checksum verification, progress, retry, and cancellation.
+
 - Drag the Sonora handle on the left of the persistent top bar to move the window, including while the content is scrolling. Controls and the entire settings popup are outside the drag region. Resize from window edges. Window settings provide background opacity from 15% to 100% and an opaque fallback. Slider preview is immediate; native writes are serialized and intermediate values coalesced so older responses cannot snap it back. This changes the backdrop, not the text opacity or screen-sharing protection. Settings deliberately remain opaque for readability. Older supported shells retain their 45% minimum and show rebuild guidance; shells without the native method show an explicit unavailable message.
 - Opening a session switches to the answer-first live view. The transcript is collapsed by default and opens on demand without enabling saving. Panes follow the latest content until you scroll up; Jump to latest resumes following. Gemini answer text streams as received. Supported native builds can stream live PCM to configured Speechmatics transcription; if unavailable, finished phrases use Gemini transcription, with each captured phrase capped at 4.5 seconds. Queued phrases may be combined within the server's eight-second limit to respect request pacing.
 - Readiness opens a pre-interview check with explicit Start/Stop, separate local source meters and a 45-second automatic stop. This level check sends no audio to Gemini. A separate fixed question tests real Gemini answer connectivity without adding question/answer history; it does not prove audio-to-answer or start recording automatically.

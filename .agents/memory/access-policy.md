@@ -15,8 +15,8 @@ The owner may designate an additional person to approve access requests.
 
 **How to apply:** Scope this to approval permission without assuming full owner/admin privileges. Keep account identifiers in authorized setup/task configuration, not project memory.
 
-Approved users should also be able to download the desktop installer.
+Desktop installer downloads are public and do not require sign-in or approval.
 
-**Why:** The user requested the installer in the download option for anyone who has approval.
+**Why:** The user subsequently explicitly requested removal of approval-only downloads.
 
-**How to apply:** Apply current approval checks to the download bytes, not only the page. Do not expose a permanent public file URL that bypasses approval; already downloaded files cannot be recalled.
+**How to apply:** Keep the download page, release metadata, and installer bytes accessible anonymously. Preserve sign-in and approval for using Sonora, sessions, files, and AI features; downloading is not permission to use the app.

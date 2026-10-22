@@ -55,7 +55,7 @@ export const SendSessionLiveAudioResponse = zod.object({
 
 
 /**
- * @summary Installer availability for approved accounts
+ * @summary Public desktop installer availability
  */
 export const GetDesktopReleaseResponse = zod.object({
   "version": zod.string(),
@@ -75,7 +75,7 @@ export const GetDesktopReleaseResponse = zod.object({
 
 
 /**
- * @summary Download the Windows installer with current approval checked
+ * @summary Public Windows installer download
  */
 export const DownloadWindowsInstallerHeader = zod.object({
   "Range": zod.string().optional().describe('A single byte range, for example bytes=0-4194303')

@@ -18,27 +18,7 @@ function load(relative, requireModule, env = { SONORA_OWNER_EMAIL: 'owner@exampl
   return scope.module.exports;
 }
 
-test('installer endpoints enforce the real approval guard, private headers and exact bytes', async t => {
-  const rows = new Map([
-    ['approved', { userId: 'approved', status: 'approved', role: 'user' }],
-    ['owner', { userId: 'owner', status: 'approved', role: 'owner' }],
-    ['approver', { userId: 'approver', status: 'approved', role: 'approver' }],
-    ['pending', { userId: 'pending', status: 'pending', role: 'user' }],
-    ['denied', { userId: 'denied', status: 'denied', role: 'user' }],
-    ['revoked', { userId: 'revoked', status: 'revoked', role: 'user' }],
-  ]);
-  // Run the actual approval middleware against seeded access states, not a fake allow-all.
-  const access = load('src/lib/app-access.ts', name => {
-    if (name === '@clerk/express') return { getAuth: req => ({ userId: req.get('x-test-user') || null }) };
-    if (name === 'drizzle-orm') return { eq: (field, value) => ({ field, value }), and: (...args) => args };
-    if (name === '@workspace/db') return {
-      appAccessTable: { userId: 'userId' },
-      db: { select: () => ({ from: () => ({ where: query => ({
-        limit: async () => rows.has(query.value) ? [rows.get(query.value)] : [],
-      }) }) }) },
-    };
-    throw new Error(`Unexpected access dependency: ${name}`);
-  });
+test('installer endpoints allow anonymous downloads and preserve exact bytes and range verification', async t => {
   const bytes = Buffer.from('MZ: controlled installer transport fixture; not a Windows execution test');
   const sha256 = createHash('sha256').update(bytes).digest('hex');
   const release = { version: '0.3.5', filename: 'Sonora-0.3.5-win-x64.exe', sha256,
@@ -48,7 +28,7 @@ test('installer endpoints enforce the real approval guard, private headers and e
   let calls = 0, broken = false;
   const express = apiRequire('express');
   const app = express();
-  app.use('/api/desktop', subject.createDesktopReleasesRouter(access.requireApprovedAccess, () => {
+  app.use('/api/desktop', subject.createDesktopReleasesRouter(() => {
     calls++;
     if (broken) throw new Error('storage failure');
     return {
@@ -68,10 +48,8 @@ test('installer endpoints enforce the real approval guard, private headers and e
   for (const endpoint of ['/releases', '/installers/windows-x64']) {
     for (const method of ['GET', 'HEAD']) {
       for (const user of [null, 'pending', 'denied', 'revoked']) {
-        const before = calls;
         const res = await request(endpoint, user, method);
-        assert.equal(res.status, user ? 403 : 401, `${user} ${method} ${endpoint}`);
-        assert.equal(calls, before, 'denied requests must never touch installer storage');
+        assert.equal(res.status, 200, `${user} ${method} ${endpoint}`);
         assert.match(res.headers.get('cache-control'), /private, no-store/);
         await res.arrayBuffer();
       }
@@ -119,12 +97,11 @@ test('installer endpoints enforce the real approval guard, private headers and e
     assert.equal(res.headers.get('content-range'), `bytes */${bytes.length}`);
     await res.arrayBuffer();
   }
-  rows.get('approved').status = 'revoked';
-  assert.equal((await request('/installers/windows-x64', 'approved')).status, 403);
+  assert.equal((await request('/installers/windows-x64', 'revoked')).status, 200);
   assert.equal((await fetch(base + '/installers/windows-x64', {
     headers: { 'x-test-user': 'approved', Range: 'bytes=0-9' },
-  })).status, 403, 'ranges must not bypass revoked approval');
-  assert.equal((await request('/installers/windows-x64', null)).status, 401, 'signed-out download');
+  })).status, 206, 'public ranges do not require approval');
+  assert.equal((await request('/installers/windows-x64', null)).status, 200, 'signed-out download');
   broken = true;
   const failed = await request('/releases', 'owner');
   assert.equal(failed.status, 503);
@@ -174,7 +151,7 @@ test('download client rejects auth errors, stale servers, corrupt bytes and canc
   });
   for (const status of [401, 403]) {
     let calls = 0;
-    await assert.rejects(run(async () => { calls++; return new Response('', { status }); }), /approved/);
+    await assert.rejects(run(async () => { calls++; return new Response('', { status }); }), /denied access/);
     assert.equal(calls, 1, 'never retry access denial');
   }
   await assert.rejects(run(async () => new Response(bytes)), /Publish the latest update/);
@@ -200,11 +177,7 @@ test('actual private installer traverses HTTP byte ranges and the browser checks
   const subject = load('src/routes/desktop-releases.ts', name =>
     name === '../lib/windows-release.json' ? release : apiRequire(name));
   const app = apiRequire('express')();
-  // Local-only controlled auth; never change the running application's real guard.
-  app.use('/api/desktop', subject.createDesktopReleasesRouter((req, res, next) => {
-    if (req.get('x-test-download') === 'approved') next();
-    else res.status(401).end();
-  }, storage.windowsInstallerFile));
+  app.use('/api/desktop', subject.createDesktopReleasesRouter(storage.windowsInstallerFile));
   const server = app.listen(0, '127.0.0.1');
   await new Promise(resolve => server.once('listening', resolve));
   t.after(() => { server.closeAllConnections(); server.close(); });
@@ -215,7 +188,7 @@ test('actual private installer traverses HTTP byte ranges and the browser checks
     onProgress: n => { received = n; },
     fetcher: (url, init) => {
       count++;
-      return fetch(url, { ...init, headers: { ...init.headers, 'x-test-download': 'approved' } });
+      return fetch(url, init);
     },
   });
   assert.equal(received, release.sizeBytes);
