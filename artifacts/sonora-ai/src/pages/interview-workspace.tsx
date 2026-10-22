@@ -306,7 +306,7 @@ export default function InterviewWorkspace() {
       if (!selected) return;
       if (selected.status === "ended") { setError("This session has ended. Create a new session to ask questions."); return; }
       const cleanQuestion = question.trim();
-      if (!cleanQuestion) return;
+      if (!cleanQuestion || !/[\p{L}\p{N}]/u.test(cleanQuestion)) return;
       if (answerInFlightRef.current) return;
       if (settingsBusyRef.current) { setNotice("Wait for answer settings to finish saving, then ask again."); return; }
       setLiveMode(true);

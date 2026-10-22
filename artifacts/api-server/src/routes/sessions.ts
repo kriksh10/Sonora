@@ -269,7 +269,7 @@ router.post("/sessions/:id/answer", async (req, res, next) => {
     return res.status(400).json({ error: "Enter a question between 1 and 8,000 characters." });
   }
   const question = asText(req.body?.question, 8_000);
-  if (!question) return res.status(400).json({ error: "Enter a question first." });
+  if (!question || !/[\p{L}\p{N}]/u.test(question)) return res.status(400).json({ error: "Enter a question first." });
   if (runningAnswers.has(userId)) {
     return res.status(429).json({ error: "An answer is already being generated. Wait a moment and try again." });
   }
