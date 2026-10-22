@@ -6,3 +6,6 @@
 /generated-artifacts/
 /attached_assets/*.zip
 **/target/
+secrets/
+.env
+.env.*

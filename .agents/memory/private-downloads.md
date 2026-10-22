@@ -21,7 +21,12 @@ Treat installer identity as version plus checksum, not the displayed version alo
 **Why:** User-supplied replacement installers have reused the same version while
 containing different desktop code. Version-only update checks cannot detect such
 a replacement, and a matching version label does not establish which binary was tested.
+A single uploaded project archive can also contain conflicting standalone and
+nested installer copies with the same filename and version.
 
 **How to apply:** Pin and verify the exact checksum when importing a supplied build.
 Tell users when manual reinstallation is required; use a new version for future
 newly built releases rather than silently treating a replacement as an automatic update.
+When an archive contains multiple copies, compare their embedded runtimes with the
+intended updated source before selecting the downloadable build; do not choose by
+filename alone.
