@@ -8,6 +8,7 @@ function preparedTurn(text: string) {
 
 /** Greetings, thanks, and audio checks are never interview questions. */
 function isDismissedTurn(text: string) {
+  if (!/[\p{L}\p{N}]/u.test(text)) return true;
   if (/^(hello|hi|hey)[?.!\s]*$/i.test(text.trim())) return true;
   const clean = preparedTurn(text);
   return !clean

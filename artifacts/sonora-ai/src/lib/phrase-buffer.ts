@@ -34,6 +34,15 @@ export function createPhraseBuffer(options: {
       const clean = text.replace(/\s+/g, " ").trim();
       if (!clean) return;
       const key = phrase.source;
+      if (!/[\p{L}\p{N}]/u.test(clean)) {
+        const open = pending.get(key);
+        if (!open) return;
+        clearTimer(open.timer);
+        const next = `${open.text} ${clean}`.trim();
+        pending.set(key, { ...open, text: next, timer: setTimer(() => flush(key), wait) });
+        options.preview?.(next);
+        return;
+      }
       const current = pending.get(key);
       if (current && current.speaker !== phrase.speaker) flush(key);
       const item = pending.get(key);
