@@ -28,3 +28,6 @@ packages = ["glib", "gtk3", "nss", "atk", "cups", "libdrm", "mesa", "pango", "al
 [userenv.shared]
 SONORA_APPROVER_EMAIL = "aishwarya@wavey18.com"
 SONORA_OWNER_EMAIL = "accounts@tekgalaxysolutions.com"
+
+[objectStorage]
+defaultBucketID = "replit-objstore-3cf6bfec-dce3-4af4-b351-2883dca4c48b"
