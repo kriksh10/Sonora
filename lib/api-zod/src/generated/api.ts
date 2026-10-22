@@ -9,6 +9,52 @@ import * as zod from 'zod';
 
 
 /**
+ * @summary Read a public HTTPS job description for an approved user
+ */
+export const importSessionJobLinkBodyUrlMax = 2048;
+
+
+
+export const ImportSessionJobLinkBody = zod.object({
+  "url": zod.string().url().max(importSessionJobLinkBodyUrlMax)
+})
+
+export const ImportSessionJobLinkResponse = zod.object({
+  "text": zod.string()
+})
+
+
+/**
+ * @summary Open, feed or stop optional live transcription for the current interview round
+ */
+export const SendSessionLiveAudioParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+
+export const sendSessionLiveAudioBodyAudioMax = 8000;
+
+
+
+export const SendSessionLiveAudioBody = zod.object({
+  "source": zod.enum(['microphone', 'system']),
+  "roundNumber": zod.number().int().min(1).optional(),
+  "audio": zod.string().max(sendSessionLiveAudioBodyAudioMax).optional(),
+  "open": zod.boolean().optional(),
+  "stop": zod.boolean().optional()
+})
+
+export const SendSessionLiveAudioResponse = zod.object({
+  "ticket": zod.string().optional(),
+  "accepted": zod.boolean().optional(),
+  "text": zod.string().optional(),
+  "final": zod.boolean().optional(),
+  "partial": zod.string().optional(),
+  "speaker": zod.string().optional()
+})
+
+
+/**
  * @summary Installer availability for approved accounts
  */
 export const GetDesktopReleaseResponse = zod.object({
@@ -280,7 +326,7 @@ export const UpdateSessionPreferencesBody = zod.object({
 }).optional(),
   "instructions": zod.string().max(updateSessionPreferencesBodyInstructionsMax).optional(),
   "model": zod.enum(['gemini-2.5-flash', 'gemini-3-flash-preview']).optional(),
-  "language": zod.enum(['English', 'Spanish', 'French', 'German']).optional(),
+  "language": zod.enum(['English', 'Spanish', 'French', 'German', 'Italian', 'Portuguese', 'Dutch', 'Polish', 'Russian', 'Ukrainian', 'Japanese', 'Korean', 'Mandarin', 'Arabic', 'Hindi', 'Turkish', 'Swedish', 'Danish', 'Norwegian', 'Finnish', 'Czech', 'Greek', 'Hebrew', 'Hungarian', 'Romanian', 'Indonesian', 'Malay', 'Vietnamese', 'Thai', 'Bulgarian', 'Catalan', 'Croatian', 'Slovak', 'Tamil', 'Urdu']).optional(),
   "autoAnswer": zod.boolean().optional(),
   "saveTranscript": zod.boolean().optional()
 })
@@ -431,7 +477,7 @@ export const CreateSessionBody = zod.object({
   "fillerWords": zod.boolean()
 }).optional(),
   "model": zod.enum(['gemini-2.5-flash', 'gemini-3-flash-preview']).optional(),
-  "language": zod.enum(['English', 'Spanish', 'French', 'German']).optional(),
+  "language": zod.enum(['English', 'Spanish', 'French', 'German', 'Italian', 'Portuguese', 'Dutch', 'Polish', 'Russian', 'Ukrainian', 'Japanese', 'Korean', 'Mandarin', 'Arabic', 'Hindi', 'Turkish', 'Swedish', 'Danish', 'Norwegian', 'Finnish', 'Czech', 'Greek', 'Hebrew', 'Hungarian', 'Romanian', 'Indonesian', 'Malay', 'Vietnamese', 'Thai', 'Bulgarian', 'Catalan', 'Croatian', 'Slovak', 'Tamil', 'Urdu']).optional(),
   "autoAnswer": zod.boolean().optional(),
   "saveTranscript": zod.boolean().optional()
 })
@@ -690,6 +736,8 @@ export const generateSessionAnswerBodyQuestionMax = 8000;
 
 export const generateSessionAnswerBodyPreviousAnswerMax = 24000;
 
+export const generateSessionAnswerBodyScreenshotMax = 700000;
+
 
 
 export const GenerateSessionAnswerBody = zod.object({
@@ -698,7 +746,8 @@ export const GenerateSessionAnswerBody = zod.object({
   "stream": zod.boolean().optional(),
   "action": zod.enum(['answer', 'shorten', 'explain', 'again']).optional(),
   "previousAnswer": zod.string().max(generateSessionAnswerBodyPreviousAnswerMax).optional(),
-  "test": zod.boolean().optional()
+  "test": zod.boolean().optional(),
+  "screenshot": zod.string().max(generateSessionAnswerBodyScreenshotMax).optional().describe('Optional explicitly consented JPEG screenshot encoded as base64')
 })
 
 export const GenerateSessionAnswerResponse = zod.object({

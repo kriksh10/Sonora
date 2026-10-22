@@ -5,7 +5,7 @@ const { validateServiceUrl, isAllowedNavigation, isTrustedFrame } = require('./s
 const { createNativeAudioManager } = require('./native-audio-host.cjs');
 const { listAudioDevices } = require('./audio-devices.cjs');
 const { createBrowserAuth } = require('./browser-auth.cjs');
-const { opacity, safeBounds } = require('./window-preferences.cjs');
+const { opacity, initialOpacity, safeBounds } = require('./window-preferences.cjs');
 const { createMaintenance, diagnosticReport } = require('./maintenance.cjs');
 
 let win;
@@ -19,7 +19,7 @@ let target;
 let nativeAudio;
 let nativeAudioBinary;
 let browserAuth;
-let backgroundOpacity = 0.85;
+let backgroundOpacity = 0.4;
 let preferencesPath;
 let preferencesError = '';
 let saveTimer;
@@ -34,7 +34,7 @@ function state() {
 function persistWindow() {
   if (!preferencesPath || !win || win.isDestroyed()) return;
   try {
-    fs.writeFileSync(`${preferencesPath}.tmp`, JSON.stringify({ bounds: win.getBounds(), backgroundOpacity }), { mode: 0o600 });
+    fs.writeFileSync(`${preferencesPath}.tmp`, JSON.stringify({ bounds: win.getBounds(), backgroundOpacity, opacityVersion: 2 }), { mode: 0o600 });
     fs.renameSync(`${preferencesPath}.tmp`, preferencesPath);
     preferencesError = '';
   } catch { preferencesError = 'Window preferences could not be saved. Changes apply for this launch only.'; }
@@ -119,7 +119,21 @@ function registerIpc() {
     if (typeof id !== 'string') throw new Error('Expected an authorization request id.');
     return browserAuth.cancel(id);
   });
-  handle('audio:start', (id, source, deviceName) => nativeAudio.start(id, source, deviceName));
+  handle('audio:start', (id, source, deviceName, referenceDevice) => nativeAudio.start(id, source, deviceName, referenceDevice));
+  handle('desktop:capture-screen', async () => {
+    const choice = await dialog.showMessageBox(win, {
+      type: 'question', title: 'Send one screenshot?', buttons: ['Cancel', 'Send screenshot'],
+      defaultId: 0, cancelId: 0,
+      message: 'Send the current screen with your question?',
+      detail: 'Sonora sends that image to Gemini for this answer and does not store the picture.',
+    });
+    if (choice.response !== 1 || win.isDestroyed()) return null;
+    const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1280, height: 720 } });
+    const image = sources[0]?.thumbnail;
+    if (!image || image.isEmpty()) return null;
+    const jpeg = image.toJPEG(70);
+    return jpeg.length > 500_000 ? null : jpeg.toString('base64');
+  });
   handle('audio:devices', source => {
     if (process.platform !== 'win32') throw new Error('Device selection is supported on Windows only.');
     if (nativeAudio.isActive()) throw new Error('Stop audio before refreshing devices.');
@@ -166,7 +180,7 @@ function configurePermissions() {
       type: 'question', title: 'Allow microphone?', buttons: ['Cancel', 'Allow microphone'],
       defaultId: 0, cancelId: 0,
       message: 'Allow Sonora to transcribe your microphone?',
-      detail: 'Audio chunks will be sent to the hosted Gemini transcription service while capture is active. You can stop from the assistant or tray.',
+      detail: 'Live audio is sent to Speechmatics while capture is active. Finished answers still use Gemini. You can stop from the assistant or tray.',
     }).then(result => callback(result.response === 1), () => callback(false));
   });
   ses.setDisplayMediaRequestHandler(async (request, callback) => {
@@ -191,9 +205,11 @@ function configurePermissions() {
 function createWindow() {
   preferencesPath = path.join(app.getPath('userData'), 'window-preferences.json');
   let saved;
+  let migrateOpacity = false;
   try {
     saved = JSON.parse(fs.readFileSync(preferencesPath, 'utf8'));
-    backgroundOpacity = opacity(saved.backgroundOpacity);
+    backgroundOpacity = initialOpacity(saved);
+    migrateOpacity = saved.opacityVersion !== 2;
   } catch (error) {
     if (error.code !== 'ENOENT') preferencesError = 'Saved window preferences were invalid; safe defaults were restored.';
   }
@@ -208,6 +224,7 @@ function createWindow() {
       webSecurity: true, backgroundThrottling: false,
     },
   });
+  if (migrateOpacity) persistWindow();
   nativeAudioBinary = app.isPackaged
       ? path.join(process.resourcesPath, 'native', process.platform === 'win32' ? 'sonora-audio.exe' : 'sonora-audio')
       : path.resolve(__dirname, '../../../generated-artifacts/native', `${process.platform}-${process.arch}`, process.platform === 'win32' ? 'sonora-audio.exe' : 'sonora-audio');
@@ -217,7 +234,7 @@ function createWindow() {
       const result = await dialog.showMessageBox(win, {
         type: 'question', title: 'Allow native audio capture?',
         message: source === 'system' ? 'Transcribe audio playing on this computer?' : 'Transcribe your microphone?',
-        detail: 'Sonora sends 4.5-second audio chunks to its hosted Gemini transcription service. System audio can include other apps. No screen video is captured by this helper. Capture continues while hidden; stop it from Sonora or the tray.',
+        detail: 'Sonora sends each finished phrase, up to 4.5 seconds, to its hosted Gemini transcription service. System audio can include other apps. No screen video is captured by this helper. Capture continues while hidden; stop it from Sonora or the tray.',
         buttons: ['Cancel', 'Allow audio capture'], defaultId: 0, cancelId: 0,
       });
       return result.response === 1 && !win.isDestroyed();

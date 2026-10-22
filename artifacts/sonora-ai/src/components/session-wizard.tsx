@@ -5,11 +5,12 @@ import Modal from "@/components/modal";
 import AnswerPreferencesEditor from "@/components/answer-preferences-editor";
 import { apiRequest, fetchDefaultPreferences, summarizePreferences } from "@/lib/answer-preferences";
 import { extractFileText } from "@/lib/extract-file-text";
+import { CALL_LANGUAGES, type CallLanguage } from "@/lib/call-languages";
 
 type Draft = {
   sessionType: "interview" | "call"; company: string; description: string; title: string;
   resumeText: string; documentsText: string; instructions: string;
-  model: "gemini-2.5-flash" | "gemini-3-flash-preview"; language: "English" | "Spanish" | "French" | "German";
+  model: "gemini-2.5-flash" | "gemini-3-flash-preview"; language: CallLanguage;
   autoAnswer: boolean; saveTranscript: boolean;
 };
 const emptyDraft: Draft = {
@@ -39,6 +40,8 @@ export default function SessionWizard({ onClose, onCreated }: { onClose: () => v
   const [creating, setCreating] = useState(false);
   const [readingResume, setReadingResume] = useState(false);
   const [readingDocs, setReadingDocs] = useState(false);
+  const [jobUrl, setJobUrl] = useState("");
+  const [readingJob, setReadingJob] = useState(false);
   const [resumeFile, setResumeFile] = useState("");
   const [pendingName, setPendingName] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -218,9 +221,25 @@ export default function SessionWizard({ onClose, onCreated }: { onClose: () => v
                 {errors.title && <p role="alert" className="mt-1 text-xs text-red-300">{errors.title}</p>}
               </div>
             )}
+            {interview && <div className="mb-4">
+              <label className="text-sm font-semibold" htmlFor="wiz-job-link">Job link <span className="font-normal text-white/40">(Optional)</span></label>
+              <div className="mt-1.5 flex gap-2">
+                <input id="wiz-job-link" value={jobUrl} onChange={(event) => setJobUrl(event.target.value)} className={`${field} mt-0`} placeholder="https://company.com/jobs/role" />
+                <button type="button" disabled={readingJob || !jobUrl.trim()} onClick={() => void (async () => {
+                  setReadingJob(true); setFormError("");
+                  try {
+                    const result = await apiRequest<{ text: string }>("/sessions/job-link", { method: "POST", body: JSON.stringify({ url: jobUrl.trim() }) });
+                    set("description", result.text);
+                  } catch (cause) {
+                    setFormError(cause instanceof Error ? cause.message : "The job page could not be read. Paste the description instead.");
+                  } finally { setReadingJob(false); }
+                })()} className="shrink-0 rounded-lg border border-white/10 px-3 text-sm font-medium hover:bg-white/5 disabled:opacity-50">{readingJob ? "Reading…" : "Read link"}</button>
+              </div>
+              <p className="mt-1 text-xs text-white/40">Reads a public job page into the description. A page that requires sign-in needs a paste.</p>
+            </div>}
             <div className="mb-4">
               <label className="text-sm font-semibold" htmlFor="wiz-desc">{interview ? "Job description" : "Description"} <span className="font-normal text-white/40">(Optional)</span></label>
-              <textarea id="wiz-desc" value={draft.description} maxLength={8000} onChange={(e) => set("description", e.target.value)} className={`${field} min-h-28`} placeholder={interview ? "Paste the job description." : "What is this call about?"} />
+              <textarea id="wiz-desc" value={draft.description} maxLength={8000} onChange={(e) => set("description", e.target.value)} className={`${field} min-h-28`} placeholder={interview ? "Paste the job description, or read it from the job link." : "What is this call about?"} />
             </div>
             {interview && textArea("wiz-resume", "CV / Resume", "resumeText", "resume")}
             {textArea("wiz-docs", "Documents", "documentsText", "documents")}
@@ -233,7 +252,7 @@ export default function SessionWizard({ onClose, onCreated }: { onClose: () => v
             <div className="mb-4 grid gap-3 sm:grid-cols-2">
               <label className="text-xs text-white/45">Call language
                 <select value={draft.language} onChange={(e) => set("language", e.target.value as Draft["language"])} className={field}>
-                  {["English", "Spanish", "French", "German"].map((l) => <option key={l}>{l}</option>)}
+                  {CALL_LANGUAGES.map((language) => <option key={language.name}>{language.name}</option>)}
                 </select></label>
               <label className="text-xs text-white/45">Gemini model
                 <select value={draft.model} onChange={(e) => set("model", e.target.value as Draft["model"])} className={field}>

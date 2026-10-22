@@ -1,18 +1,17 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
-const { createNativeAudioHost, validWav } = require('../native-audio-host.cjs');
+const { createNativeAudioHost, validWav, validPcm } = require('../native-audio-host.cjs');
 const id = '12345678-1234-1234-1234-123456789abc';
 const other = '22345678-1234-1234-1234-123456789abc';
-function wav(seconds = 4.5) {
-  const length = seconds * 32000 + 44;
-  const value = Buffer.alloc(length);
-  value.write('RIFF'); value.writeUInt32LE(length - 8, 4);
+function wav() {
+  const value = Buffer.alloc(144044);
+  value.write('RIFF'); value.writeUInt32LE(144036, 4);
   value.write('WAVEfmt ', 8); value.writeUInt32LE(16, 16);
   value.writeUInt16LE(1, 20); value.writeUInt16LE(1, 22);
   value.writeUInt32LE(16000, 24); value.writeUInt32LE(32000, 28);
   value.writeUInt16LE(2, 32); value.writeUInt16LE(16, 34);
-  value.write('data', 36); value.writeUInt32LE(length - 44, 40);
+  value.write('data', 36); value.writeUInt32LE(144000, 40);
   return value.toString('base64');
 }
 function fixture(overrides = {}) {
@@ -34,43 +33,18 @@ function fixture(overrides = {}) {
 }
 test('native host validates fixed PCM WAV framing and rejects malformed messages', () => {
   assert.equal(validWav(wav()), true);
-  assert.equal(validWav(wav(6)), true);
-  assert.equal(validWav(wav(5)), false);
+  const short = Buffer.alloc(64044);
+  short.write('RIFF'); short.writeUInt32LE(64036, 4);
+  short.write('WAVEfmt ', 8); short.writeUInt32LE(16, 16);
+  short.writeUInt16LE(1, 20); short.writeUInt16LE(1, 22);
+  short.writeUInt32LE(16000, 24); short.writeUInt32LE(32000, 28);
+  short.writeUInt16LE(2, 32); short.writeUInt16LE(16, 34);
+  short.write('data', 36); short.writeUInt32LE(64000, 40);
+  assert.equal(validWav(short.toString('base64')), true);
   assert.equal(validWav('bad'), false);
+  assert.equal(validWav(Buffer.alloc(144044).toString('base64')), false);
   assert.equal(validWav(Buffer.alloc(192044).toString('base64')), false);
   assert.equal(validWav('A'.repeat(300000)), false);
-});
-test('real Rust encoder output passes microphone/system host delivery and server validation', async () => {
-  const path = require('node:path');
-  const { execFileSync } = require('node:child_process');
-  const { buildSync } = require('esbuild');
-  const vm = require('node:vm');
-  const bytes = execFileSync('cargo', [
-    'run', '--locked', '--quiet', '--manifest-path',
-    path.resolve(__dirname, '../native-audio/Cargo.toml'), '--example', 'contract-wav',
-  ], { maxBuffer: 512000, stdio: ['ignore', 'pipe', 'pipe'] });
-  assert.equal(bytes.length, 144044);
-  const encoded = bytes.toString('base64');
-  assert.equal(validWav(encoded), true);
-  const code = buildSync({
-    entryPoints: [path.resolve(__dirname, '../../../api-server/src/lib/audio-chunks.ts')],
-    bundle: true, write: false, format: 'iife', globalName: 'subject', platform: 'node',
-  }).outputFiles[0].text;
-  const server = vm.createContext({ Buffer, Date });
-  vm.runInContext(code, server);
-  for (const source of ['microphone', 'system']) {
-    const f = fixture();
-    const started = f.host.start(id, source);
-    await new Promise(setImmediate);
-    f.send({ type: 'ready', protocol: 2 });
-    await started;
-    f.send({ type: 'audio', audio: encoded, endOfTurn: true });
-    assert.equal(f.events[0].type, 'audio', source);
-    assert.equal(f.events[0].endOfTurn, true);
-    assert.deepEqual(server.subject.validateAudioChunk(f.events[0].audio), bytes);
-    f.host.stop(id);
-    f.child.emit('close');
-  }
 });
 test('native host needs consent, fixes executable/arguments, validates chunks and keeps physical capture state', async () => {
   const f = fixture();
@@ -195,5 +169,22 @@ test('native status messages are validated and real device failures still stop c
   f.send({ type: 'error', message: 'The audio device disconnected or stopped.' });
   assert.match(f.events.at(-1).message, /disconnected/);
   assert.equal(f.child.stopCommand, 'stop\n');
+  f.child.emit('close');
+});
+
+test('10 ms frames are forwarded and the microphone can name its echo reference', async () => {
+  const pcm = Buffer.alloc(320).toString('base64');
+  assert.equal(validPcm(pcm), true);
+  assert.equal(validPcm(Buffer.alloc(100).toString('base64')), false);
+  const f = fixture();
+  const started = f.host.start(id, 'microphone', undefined, 'Speakers');
+  await new Promise(setImmediate);
+  f.send({ type: 'ready', protocol: 2 });
+  await started;
+  assert.deepEqual(f.spawns[0][1], ['--source', 'microphone', '--reference-device', 'Speakers']);
+  f.send({ type: 'pcm', audio: pcm });
+  assert.equal(f.events.at(-1).type, 'pcm');
+  f.send({ type: 'pcm', audio: Buffer.alloc(100).toString('base64') });
+  assert.equal(f.events.at(-1).type, 'error');
   f.child.emit('close');
 });

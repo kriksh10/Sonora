@@ -26,8 +26,9 @@ contextBridge.exposeInMainWorld('sonoraDesktop', {
   setAlwaysOnTop: (value) => ipcRenderer.invoke('overlay:set-always-on-top', Boolean(value)),
   setContentProtection: (value) => ipcRenderer.invoke('overlay:set-content-protection', Boolean(value)),
   setCaptureActive: (value) => ipcRenderer.invoke('overlay:set-capture-active', Boolean(value)),
-  startNativeCapture: (captureId, source, deviceName) => ipcRenderer.invoke('audio:start', captureId, source, deviceName),
+  startNativeCapture: (captureId, source, deviceName, referenceDevice) => ipcRenderer.invoke('audio:start', captureId, source, deviceName, referenceDevice),
   listAudioDevices: source => ipcRenderer.invoke('audio:devices', source),
+  captureScreen: () => ipcRenderer.invoke('desktop:capture-screen'),
   stopNativeCapture: captureId => ipcRenderer.invoke('audio:stop', captureId),
   stopAllCapture: () => ipcRenderer.invoke('audio:stop-all'),
   onNativeAudio: listener => {

@@ -11,10 +11,13 @@ import {
   UpdateSessionBody,
   UpdateSessionPreferencesBody,
   SaveAnswerDefaultsBody,
+  ImportSessionJobLinkBody,
 } from "@workspace/api-zod";
 import { approvedWriteCondition, roundMatches, sessionStillUsable, stopSessionOperations, watchSession } from "../lib/session-lifecycle";
 import { logger } from "../lib/logger";
 import { interviewAnswerPolicy } from "../lib/interview-answer-policy";
+import { relevantDocuments, transcriptForAnswer } from "../lib/answer-context";
+import { readPublicJobPage } from "../lib/job-page";
 import { answerPreferenceInstructions, standardAnswerPreferences, withAnswerPreferences } from "../lib/answer-preferences";
 
 const router: IRouter = Router();
@@ -98,6 +101,18 @@ router.get("/sessions", async (req, res, next) => {
     return res.json(sessions.map(withAnswerPreferences));
   } catch (error) {
     return next(error);
+  }
+});
+
+router.post("/sessions/job-link", async (req, res) => {
+  if (!currentUserId(req, res)) return;
+  const input = ImportSessionJobLinkBody.safeParse(req.body);
+  if (!input.success) return res.status(400).json({ error: "Provide a valid public https job link." });
+  try {
+    const text = await readPublicJobPage(input.data.url);
+    return res.json({ text });
+  } catch (cause) {
+    return res.status(400).json({ error: cause instanceof Error ? cause.message : "The job page could not be read. Paste the description instead." });
   }
 });
 
@@ -298,16 +313,21 @@ router.post("/sessions/:id/answer", async (req, res, next) => {
     if (["shorten", "explain"].includes(action) && !parsedAnswer.data.previousAnswer?.trim()) {
       return res.status(400).json({ error: "Generate an answer before modifying it." });
     }
+    const screenshot = typeof req.body?.screenshot === "string"
+      && req.body.screenshot.length < 700_000
+      && /^[A-Za-z0-9+/]+={0,2}$/.test(req.body.screenshot)
+      ? req.body.screenshot : "";
+    const roundEntries = (session.transcript ?? []).filter(entry => (entry.roundNumber ?? 1) === (session.roundNumber ?? 1));
     const prompt = [
       `Respond in ${session.language || "English"}. ${answerStyle}`,
       session.sessionType === "interview"
         ? `Company: ${session.company || "not specified"}`
         : `Call title: ${session.title}`,
-      `Conversation context: ${session.description || "not provided"}`,
+      `Job description: ${session.description || "not provided"}`,
       `Candidate resume: ${session.sessionType === "interview" ? session.resumeText || "not provided" : "not applicable to Regular Call"}`,
-      `Reference documents: ${session.documentsText || "not provided"}`,
+      `Reference documents, limited to passages related to this question: ${relevantDocuments(session.documentsText, question)}`,
       `Candidate instructions: ${session.instructions || "none"}`,
-      `Current round transcript (speaker labels are user-confirmed source mappings, not verified identity): ${(session.transcript ?? []).filter(entry => (entry.roundNumber ?? 1) === (session.roundNumber ?? 1)).slice(-12).map((entry) => `${entry.role === "assistant" ? "Assistant" : entry.speaker || "Unknown speaker"} [${entry.source}]: ${entry.text}`).join("\n") || "none"}`,
+      `Heard so far. Answer the interviewer. Lines marked "Candidate already said" are facts already spoken, not a new question: ${transcriptForAnswer(roundEntries)}`,
       `Question or latest interviewer statement: ${question}`,
       action === "shorten" ? "Rewrite the previous answer more briefly. Preserve its meaning and essential facts." :
         action === "explain" ? "Explain the previous answer in more depth, with useful reasoning. Do not invent personal facts." :
@@ -326,7 +346,10 @@ router.post("/sessions/:id/answer", async (req, res, next) => {
         controller.signal.throwIfAborted();
         const request = {
           model: session.model,
-          contents: prompt,
+          contents: screenshot ? [{ role: "user", parts: [
+            { text: `${prompt}\n\nUse the attached screenshot only as reference for this question.` },
+            { inlineData: { mimeType: "image/jpeg", data: screenshot } },
+          ] }] : prompt,
           config: { systemInstruction, abortSignal: controller.signal },
         };
         if (wantsStream) {

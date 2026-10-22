@@ -11,7 +11,7 @@ export default function DesktopVisibilityControls() {
   const [state, setState] = useState<DesktopState | null>(null);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
-  const [backgroundOpacity, setBackgroundOpacity] = useState(0.85);
+  const [backgroundOpacity, setBackgroundOpacity] = useState(0.4);
   const [opacityError, setOpacityError] = useState("");
   const opacityControl = useRef<ReturnType<typeof createBackgroundOpacity> | null>(null);
 
@@ -24,7 +24,7 @@ export default function DesktopVisibilityControls() {
         if (!bridge.setBackgroundOpacity) throw new Error("Native opacity unavailable.");
         const next = await bridge.setBackgroundOpacity(value);
         if (mounted) setState(next);
-        return next.backgroundOpacity ?? 0.85;
+        return next.backgroundOpacity ?? 0.4;
       },
       display: value => {
         setBackgroundOpacity(value);
@@ -33,14 +33,14 @@ export default function DesktopVisibilityControls() {
       error: setOpacityError,
     });
     opacityControl.current = control;
-    control.sync(0.85);
+    control.sync(0.4);
     let received = false;
     const off = bridge.onStateChange(next => {
       received = true;
-      if (mounted) { setState(next); control.sync(next.backgroundOpacity ?? 0.85); }
+      if (mounted) { setState(next); control.sync(next.backgroundOpacity ?? 0.4); }
     });
     void bridge.getState().then(next => {
-      if (mounted && !received) { setState(next); control.sync(next.backgroundOpacity ?? 0.85); }
+      if (mounted && !received) { setState(next); control.sync(next.backgroundOpacity ?? 0.4); }
     }).catch(() => { if (mounted) setError("Desktop controls unavailable. Use the Sonora tray menu."); });
     return () => {
       mounted = false; off(); control.dispose(); opacityControl.current = null;
@@ -99,7 +99,7 @@ export default function DesktopVisibilityControls() {
                 onChange={event => opacityControl.current?.set(Number(event.target.value) / 100)}
                 className="mt-3 w-full accent-emerald-400" />
             </label>
-            <p id="sonora-opacity-help" className="mt-2">{minimumOpacity}% is most transparent; 100% is opaque. Only the background changes, not the answer text. Settings stay opaque for readability.</p>
+            <p id="sonora-opacity-help" className="mt-2">{minimumOpacity}% is most transparent; 100% is opaque. The transcript and answer panels fade with this slider. The words stay solid. Settings stay darker so the controls stay readable.</p>
             {typeof bridge.setBackgroundOpacity === "function" && state && minimumOpacity === 45 &&
               <p className="mt-2 text-amber-200">This older shell supports 45–100%. Rebuild and install version 0.3.1 or newer for the 15% setting.</p>}
             {typeof bridge.setBackgroundOpacity === "function"

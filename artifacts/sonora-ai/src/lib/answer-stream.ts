@@ -6,11 +6,12 @@ export async function requestAnswer(
   request: SessionAnswerRequest,
   signal: AbortSignal,
   onContent: (text: string) => void,
+  screenshot?: string,
 ): Promise<{ answer: string; model: string }> {
   const response = await fetch(`${import.meta.env.BASE_URL}api/sessions/${sessionId}/answer`, {
     method: "POST", credentials: "include", signal,
     headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-    body: JSON.stringify({ ...request, stream: true }),
+    body: JSON.stringify({ ...request, stream: true, ...(screenshot ? { screenshot } : {}) }),
   });
   if (!response.ok) {
     const result = await response.json().catch(() => ({}));

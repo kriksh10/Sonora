@@ -36,6 +36,10 @@ import type {
   DesktopRelease,
   ExtractedText,
   HealthStatus,
+  JobLinkInput,
+  JobLinkResult,
+  LiveAudioInput,
+  LiveAudioResult,
   NewCallSession,
   RoundStartInput,
   SessionAnswer,
@@ -72,6 +76,149 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   }
   return result;
 };
+
+export const getImportSessionJobLinkUrl = () => {
+
+
+
+
+  return `/api/sessions/job-link`
+}
+
+/**
+ * @summary Read a public HTTPS job description for an approved user
+ */
+export const importSessionJobLink = async (jobLinkInput: JobLinkInput, options?: Parameters<typeof customFetch>[1]): Promise<JobLinkResult> => {
+
+  return customFetch<JobLinkResult>(getImportSessionJobLinkUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(jobLinkInput)
+  }
+);}
+
+
+
+
+
+export const getImportSessionJobLinkMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof importSessionJobLink>>, TError,{data: BodyType<JobLinkInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof importSessionJobLink>>, TError,{data: BodyType<JobLinkInput>}, TContext> => {
+
+const mutationKey = ['importSessionJobLink'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof importSessionJobLink>>, {data: BodyType<JobLinkInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  importSessionJobLink(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ImportSessionJobLinkMutationResult = NonNullable<Awaited<ReturnType<typeof importSessionJobLink>>>
+    export type ImportSessionJobLinkMutationBody = BodyType<JobLinkInput>
+    export type ImportSessionJobLinkMutationError = ErrorType<void>
+
+    /**
+ * @summary Read a public HTTPS job description for an approved user
+ */
+export const useImportSessionJobLink = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof importSessionJobLink>>, TError,{data: BodyType<JobLinkInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof importSessionJobLink>>,
+        TError,
+        {data: BodyType<JobLinkInput>},
+        TContext
+      > => {
+      return useMutation(getImportSessionJobLinkMutationOptions(options));
+    }
+
+export const getSendSessionLiveAudioUrl = (id: string,) => {
+
+
+
+
+  return `/api/sessions/${id}/live-audio`
+}
+
+/**
+ * @summary Open, feed or stop optional live transcription for the current interview round
+ */
+export const sendSessionLiveAudio = async (id: string,
+    liveAudioInput: LiveAudioInput, options?: Parameters<typeof customFetch>[1]): Promise<LiveAudioResult> => {
+
+  return customFetch<LiveAudioResult>(getSendSessionLiveAudioUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(liveAudioInput)
+  }
+);}
+
+
+
+
+
+export const getSendSessionLiveAudioMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendSessionLiveAudio>>, TError,{id: string;data: BodyType<LiveAudioInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof sendSessionLiveAudio>>, TError,{id: string;data: BodyType<LiveAudioInput>}, TContext> => {
+
+const mutationKey = ['sendSessionLiveAudio'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof sendSessionLiveAudio>>, {id: string;data: BodyType<LiveAudioInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  sendSessionLiveAudio(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SendSessionLiveAudioMutationResult = NonNullable<Awaited<ReturnType<typeof sendSessionLiveAudio>>>
+    export type SendSessionLiveAudioMutationBody = BodyType<LiveAudioInput>
+    export type SendSessionLiveAudioMutationError = ErrorType<void>
+
+    /**
+ * @summary Open, feed or stop optional live transcription for the current interview round
+ */
+export const useSendSessionLiveAudio = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendSessionLiveAudio>>, TError,{id: string;data: BodyType<LiveAudioInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof sendSessionLiveAudio>>,
+        TError,
+        {id: string;data: BodyType<LiveAudioInput>},
+        TContext
+      > => {
+      return useMutation(getSendSessionLiveAudioMutationOptions(options));
+    }
 
 export const getGetDesktopReleaseUrl = () => {
 

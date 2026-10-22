@@ -15,3 +15,13 @@ assert an undocumented hosting response limit.
 **How to apply:** Preserve approval checks for every range and checksum verification
 before saving. Distinguish local full-file transport verification from a signed-in
 browser download on the published deployment, and both from native installation.
+
+Treat installer identity as version plus checksum, not the displayed version alone.
+
+**Why:** User-supplied replacement installers have reused the same version while
+containing different desktop code. Version-only update checks cannot detect such
+a replacement, and a matching version label does not establish which binary was tested.
+
+**How to apply:** Pin and verify the exact checksum when importing a supplied build.
+Tell users when manual reinstallation is required; use a new version for future
+newly built releases rather than silently treating a replacement as an automatic update.

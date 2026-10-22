@@ -6,6 +6,7 @@ function preparedTurn(text: string) {
     .trim();
 }
 
+/** Greetings, thanks, and audio checks are never interview questions. */
 function isDismissedTurn(text: string) {
   if (/^(hello|hi|hey)[?.!\s]*$/i.test(text.trim())) return true;
   const clean = preparedTurn(text);
@@ -23,11 +24,13 @@ export function isInterviewQuestion(text: string) {
     /\b(?:my|our|the next) question is\b|\b(?:can|could|would) you (?:explain|describe|tell|walk|give|compare|design|implement)\b/i.test(clean);
 }
 
-/** Only used after a pause on an explicitly allowed source; not voice identification. */
+/** Confirmed interviewer speech after a pause is the question, even without question wording. */
 export function isPausedInterviewerTurn(text: string) {
   if (isDismissedTurn(text)) return false;
-  return isInterviewQuestion(text) || preparedTurn(text).split(/\s+/).filter(Boolean).length >= 4;
+  if (isInterviewQuestion(text)) return true;
+  return preparedTurn(text).split(/\s+/).filter(Boolean).length >= 4;
 }
+
 /** Source-based routing, not speaker recognition. State lives only for this capture. */
 export function createInterviewerQuestions({
   answer, notice, setTimer = setTimeout, clearTimer = clearTimeout, clock = Date.now,
@@ -106,10 +109,17 @@ export function createInterviewerQuestions({
         return;
       }
       clearTimer(timer);
-      // A complete punctuated question can be used quickly; unpunctuated speech
-      // gets a full chunk interval to collect its continuation.
+      // A pause or a punctuated question can be used quickly. Speech that is
+      // still arriving gets one more chunk interval to collect its continuation.
       timer = setTimer(() => { if (generation === token) flush(); },
         endOfTurn ? 350 : /[?]\s*$/.test(fragments) ? 1500 : 8500);
+  };
+  const pause = () => {
+    if (!fragments.trim()) return;
+    turnEnded = true;
+    const token = generation;
+    clearTimer(timer);
+    timer = setTimer(() => { if (generation === token) flush(); }, 350);
   };
   return {
     push(text: string, speaker: "candidate" | "interviewer" | "unknown", endOfTurn = false) {
@@ -119,22 +129,16 @@ export function createInterviewerQuestions({
     pushMixed(text: string, optedIn: boolean, endOfTurn = false) {
       if (optedIn) collect(text, endOfTurn);
     },
-    pause() {
-      if (!fragments.trim()) return;
-      turnEnded = true;
-      clearTimer(timer);
-      const token = generation;
-      timer = setTimer(() => { if (generation === token) flush(); }, 350);
-    },
+    pause,
     reset() {
       generation += 1;
       clearTimer(timer);
       clearTimer(deadline);
       deadline = undefined;
+      turnEnded = false;
       fragments = "";
       pending = [];
       seen = [];
-      turnEnded = false;
     },
   };
 }

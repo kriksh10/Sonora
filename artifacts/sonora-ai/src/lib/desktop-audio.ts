@@ -1,4 +1,4 @@
-import { wavBase64 } from "./pcm-wav";
+import { wavBase64, joinWavPhrases } from "./pcm-wav";
 import { createTranscriptionPacing, waitForTranscription } from "./transcription-pacing";
 
 // Both channels share one provider lane; server concurrency limits remain enforced.
@@ -8,9 +8,10 @@ const pacing = createTranscriptionPacing();
 type Options = {
   source: "microphone" | "system";
   deviceName?: string;
+  referenceDevice?: string;
   sessionId: string;
   roundNumber?: number;
-  onText: (text: string, metadata: { source: "microphone" | "system"; capturedAt: string; endOfTurn?: boolean }) => void;
+  onText: (text: string, metadata: { source: "microphone" | "system"; capturedAt: string; endOfTurn?: boolean; speakerLabel?: string }) => void;
   onNotice: (text: string) => void;
   onTurnEnded?: () => void;
   onError: (error: Error) => void;
@@ -46,10 +47,25 @@ export function createDesktopAudio(options: Options): AudioCapture {
   let active = false;
   let pending: { audio: string; capturedAt: string; endOfTurn?: boolean }[] = [];
   let speakerPaused = false;
+  let liveMode: "try" | "on" | "off" = "try";
+  let liveStarted = false;
+  let liveSocket: WebSocket | null = null;
+  let liveSocketFailed = false;
+  const liveFrames: string[] = [];
+  let liveSending = false;
+  const canStream = () => !stopped && liveMode !== "off";
+  const liveUrl = `${import.meta.env.BASE_URL}api/sessions/${options.sessionId}/live-audio`;
+  const phraseFallback = () => {
+    if (stopped || liveMode === "off") return;
+    liveMode = "off";
+    liveFrames.length = 0;
+    const socket = liveSocket;
+    liveSocket = null;
+    socket?.close();
+    options.onNotice("Live transcription is unavailable. Continuing with Gemini phrase transcription.");
+  };
   const notePause = () => {
-    // A pause belongs after the last queued chunk, not the oldest in-flight one.
-    if (pending.length) pending[pending.length - 1].endOfTurn = true;
-    else if (active) speakerPaused = true;
+    if (active || pending.length) speakerPaused = true;
     else options.onTurnEnded?.();
   };
   let nativeId: string | null = null;
@@ -60,8 +76,16 @@ export function createDesktopAudio(options: Options): AudioCapture {
     stopped = true;
     abort.abort();
     pending = [];
+    liveFrames.length = 0;
     unsubscribeNative?.();
     if (nativeId) void window.sonoraDesktop?.stopNativeCapture?.(nativeId).catch(() => {});
+    liveSocket?.close();
+    if (liveStarted) {
+      void fetch(liveUrl, {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stop: true, source: options.source, ...(options.roundNumber ? { roundNumber: options.roundNumber } : {}) }),
+      }).catch(() => {});
+    }
     if (node) { node.port.onmessage = null; node.disconnect(); }
     stream?.getTracks().forEach(track => track.stop());
     if (context && context.state !== "closed") void context.close().catch(() => {});
@@ -93,7 +117,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
         options.onPhase?.("Transcribing");
         pacing.mark(options.source);
         const startedAt = Date.now();
-        const response = await fetch(`/api/sessions/${options.sessionId}/transcribe`, {
+        const response = await fetch(`${import.meta.env.BASE_URL}api/sessions/${options.sessionId}/transcribe`, {
           method: "POST", credentials: "include", signal: AbortSignal.any([abort.signal, AbortSignal.timeout(30_000)]),
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ audio, mimeType: "audio/wav", source: options.source, ...(options.roundNumber ? { roundNumber: options.roundNumber } : {}) }),
@@ -108,15 +132,99 @@ export function createDesktopAudio(options: Options): AudioCapture {
           if (result.text) options.onText(result.text, {
             source: options.source, capturedAt, ...((endOfTurn || paused) ? { endOfTurn: true } : {}),
           });
-          else if (paused || endOfTurn) options.onTurnEnded?.();
+          else if (paused) options.onTurnEnded?.();
         }
         } finally { release(); }
       }
     } catch (error) { fail(error); }
     finally { active = false; }
   };
+  const applyLive = (result: { accepted?: boolean; partial?: string; text?: string; final?: boolean; speaker?: string }) => {
+    if (stopped || !result.accepted) return;
+    liveMode = "on";
+    if (result.partial) options.onPhase?.(result.partial);
+    if (result.final && result.text) options.onText(result.text, {
+      source: options.source, capturedAt: new Date().toISOString(), endOfTurn: true,
+      ...(result.speaker ? { speakerLabel: result.speaker } : {}),
+    });
+  };
+  const postFrame = async (audio: string) => {
+    const response = await fetch(liveUrl, {
+      method: "POST", credentials: "include", signal: AbortSignal.any([abort.signal, AbortSignal.timeout(20_000)]),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ audio, source: options.source, ...(options.roundNumber ? { roundNumber: options.roundNumber } : {}) }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if ([401, 403, 409].includes(response.status)) { fail(new Error(result.error || "Access or interview round changed. Refresh the session.")); return; }
+    if (!response.ok) { phraseFallback(); return; }
+    applyLive(result);
+  };
+  const postLive = async (audio: string) => {
+    if (liveMode === "off" || stopped) return;
+    liveStarted = true;
+    try {
+      if (!liveSocketFailed && !liveSocket) {
+        const response = await fetch(liveUrl, {
+          method: "POST", credentials: "include", signal: AbortSignal.any([abort.signal, AbortSignal.timeout(20_000)]),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ open: true, source: options.source, ...(options.roundNumber ? { roundNumber: options.roundNumber } : {}) }),
+        });
+        const opened = await response.json().catch(() => ({}));
+        if ([401, 403, 409].includes(response.status)) { fail(new Error(opened.error || "Access or interview round changed. Refresh the session.")); return; }
+        if (!response.ok) { phraseFallback(); return; }
+        if (response.ok && opened.ticket && typeof WebSocket === "function" && typeof location !== "undefined") {
+          const url = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}${import.meta.env.BASE_URL}api/live-audio?ticket=${encodeURIComponent(opened.ticket)}`;
+          const ws = new WebSocket(url);
+          ws.binaryType = "arraybuffer";
+          await new Promise<void>((resolve, reject) => {
+            const timer = setTimeout(() => { ws.close(); reject(new Error("Live transcription timed out.")); }, 8_000);
+            ws.addEventListener("open", () => { clearTimeout(timer); resolve(); }, { once: true });
+            ws.addEventListener("error", () => { clearTimeout(timer); reject(new Error("Live transcription socket failed.")); }, { once: true });
+          });
+          ws.addEventListener("message", event => {
+            if (typeof event.data !== "string") return;
+            try { applyLive(JSON.parse(event.data)); } catch { /* ignore a malformed live message */ }
+          });
+          if (!canStream()) { ws.close(); return; }
+          ws.addEventListener("close", () => { if (liveSocket === ws) phraseFallback(); });
+          ws.addEventListener("error", phraseFallback);
+          liveSocket = ws;
+          liveMode = "on";
+        } else liveSocketFailed = true;
+      }
+      if (liveSocket?.readyState === WebSocket.OPEN) {
+        liveSocket.send(Uint8Array.from(atob(audio), char => char.charCodeAt(0)));
+        return;
+      }
+      await postFrame(audio);
+    } catch {
+      liveSocketFailed = true;
+      liveSocket?.close();
+      liveSocket = null;
+      if (canStream()) await postFrame(audio).catch(phraseFallback);
+    }
+  };
+  const pushLive = (audio: string) => {
+    if (liveMode === "off" || stopped || options.transcribe === false) return;
+    liveFrames.push(audio);
+    // Native frames are 10 ms; retain enough bounded startup audio for provider negotiation.
+    if (liveFrames.length > 2000) { phraseFallback(); return; }
+    if (liveSending) return;
+    liveSending = true;
+    void (async () => {
+      while (liveFrames.length && canStream()) await postLive(liveFrames.shift()!);
+      liveSending = false;
+    })();
+  };
   const enqueue = (audio: string, capturedAt = new Date().toISOString(), endOfTurn?: boolean) => {
     if (stopped) return;
+    const tail = pending[pending.length - 1];
+    const joined = tail && joinWavPhrases(tail.audio, audio);
+    if (tail && joined) {
+      tail.audio = joined;
+      tail.endOfTurn = endOfTurn;
+      return;
+    }
     if (options.transcribe === false) return;
     if (pending.length >= 2) { fail(new Error("Transcription is falling behind. Capture stopped to avoid dropping speech. If using Both, switch to Call audio only to prioritize interviewer answers, then restart. You can also type a question.")); return; }
     pending.push({ audio, capturedAt, endOfTurn });
@@ -132,9 +240,12 @@ export function createDesktopAudio(options: Options): AudioCapture {
           unsubscribeNative = desktop.onNativeAudio(event => {
             if (stopped || event.captureId !== nativeId) return;
             if (event.type === "error") fail(new Error(event.message || "Native audio stopped."));
+            else if (event.type === "pcm" && event.audio) {
+              if (liveMode !== "off") void pushLive(event.audio);
+            }
             else if (event.type === "audio" && event.audio) {
               if (event.source && event.source !== options.source) { fail(new Error("Native audio source mismatch.")); return; }
-              enqueue(event.audio, event.capturedAt, event.endOfTurn);
+              if (liveMode !== "on") enqueue(event.audio, event.capturedAt, event.endOfTurn);
             }
             else if (event.type === "silence") {
               notePause();
@@ -146,7 +257,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
               options.onLevel?.(event.peak ?? 0, (event.sampleAgeMs ?? 0) > 2000 ? "No audio samples yet · check source" : (event.peak ?? 0) > 0.003 ? "Audio activity" : "Silent samples");
             }
           });
-          await desktop.startNativeCapture(nativeId, options.source, options.deviceName);
+          await desktop.startNativeCapture(nativeId, options.source, options.deviceName, options.referenceDevice);
           if (stopped) { void desktop.stopNativeCapture(nativeId); return; }
           options.onNotice("Native audio capture is active. Short audio chunks are sent to Gemini for transcription.");
           return;

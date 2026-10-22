@@ -1,8 +1,16 @@
+const DEFAULT_OPACITY = 0.4;
+const OPACITY_VERSION = 2;
+
 function opacity(value) {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0.15 || value > 1) {
     throw new Error('Background opacity must be between 15% and 100%.');
   }
   return value;
+}
+
+function initialOpacity(saved) {
+  if (saved?.opacityVersion === OPACITY_VERSION) return opacity(saved.backgroundOpacity);
+  return DEFAULT_OPACITY;
 }
 
 function safeBounds(saved, displays) {
@@ -21,4 +29,4 @@ function safeBounds(saved, displays) {
     y: Math.round(Math.max(area.y, Math.min(valid ? saved.y : area.y + (area.height - height) / 2, area.y + area.height - height))),
   };
 }
-module.exports = { opacity, safeBounds };
+module.exports = { opacity, initialOpacity, DEFAULT_OPACITY, OPACITY_VERSION, safeBounds };

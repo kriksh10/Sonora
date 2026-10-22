@@ -110,8 +110,9 @@ type SonoraDesktopBridge = {
   setAlwaysOnTop: (value: boolean) => Promise<DesktopState>;
   setContentProtection: (value: boolean) => Promise<DesktopState>;
   setCaptureActive: (value: boolean) => Promise<DesktopState>;
-  startNativeCapture?: (captureId: string, source: "microphone" | "system", deviceName?: string) => Promise<{ captureId: string }>;
+  startNativeCapture?: (captureId: string, source: "microphone" | "system", deviceName?: string, referenceDevice?: string) => Promise<{ captureId: string }>;
   listAudioDevices?: (source: "microphone" | "system") => Promise<string[]>;
+  captureScreen?: () => Promise<string | null>;
   stopNativeCapture?: (captureId: string) => Promise<boolean>;
   stopAllCapture?: () => Promise<void>;
   checkForUpdates?: () => Promise<{ available: boolean; version: string; url?: string; signing?: string; sha256?: string }>;
@@ -119,7 +120,7 @@ type SonoraDesktopBridge = {
   getDiagnostics?: () => Promise<Record<string, string | number | boolean>>;
   exportDiagnostics?: () => Promise<boolean>;
   onNativeAudio?: (listener: (event: {
-    captureId: string; type: "audio" | "silence" | "error" | "status";
+    captureId: string; type: "audio" | "pcm" | "silence" | "error" | "status";
     audio?: string; prolonged?: boolean; message?: string; source?: "microphone" | "system"; capturedAt?: string; endOfTurn?: boolean;
     peak?: number; sampleAgeMs?: number;
   }) => void) => () => void;

@@ -23,6 +23,7 @@ import SessionPreferencesDialog from "@/components/session-preferences-dialog";
 import { sessionPreferences, summarizePreferences } from "@/lib/answer-preferences";
 import LiveSessionView from "@/components/live-session-view";
 import { createDesktopAudio, createAudioGroup, type AudioCapture } from "@/lib/desktop-audio";
+import { browserLanguage } from "@/lib/call-languages";
 import { createInterviewerQuestions } from "@/lib/interviewer-questions";
 import { requestAnswer } from "@/lib/answer-stream";
 import AudioReadiness from "@/components/audio-readiness";
@@ -82,6 +83,32 @@ function formatDuration(startedAt: string | null, now: number) {
   return `${String(Math.floor(elapsed / 60)).padStart(2, "0")}:${String(elapsed % 60).padStart(2, "0")}`;
 }
 
+function callLength(session: CallSession, now: number) {
+  if (!session.startedAt) return "Not started";
+  const end = session.status === "ended" && session.endedAt ? new Date(session.endedAt).getTime() : now;
+  const elapsed = Math.max(0, Math.floor((end - new Date(session.startedAt).getTime()) / 1000));
+  const hours = Math.floor(elapsed / 3600);
+  const minutes = Math.floor((elapsed % 3600) / 60);
+  const seconds = elapsed % 60;
+  if (hours) return `${hours}h ${minutes}m`;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function statusLabel(status: CallSession["status"]) {
+  if (status === "active") return "Active";
+  if (status === "ended") return "Ended";
+  return "Ready";
+}
+
+function sessionKind(session: CallSession) {
+  return session.sessionType === "interview" ? "Interview" : "Regular";
+}
+
+function sessionChoice(session: CallSession) {
+  const company = session.company?.trim();
+  return company ? `${company} · ${session.title}` : session.title;
+}
+
 export default function InterviewWorkspace() {
   const { user } = useUser();
   const { signOut } = useClerk();
@@ -89,7 +116,7 @@ export default function InterviewWorkspace() {
   const storageKey = `sonora:selected-session:${user?.id ?? "me"}`;
   const [sessions, setSessions] = useState<CallSession[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(() => { try { return localStorage.getItem(storageKey); } catch { return null; } });
-  const [filter, setFilter] = useState<"all" | "active" | "ended">("all");
+  const [filter, setFilter] = useState<"all" | "interview" | "call">("all");
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -139,8 +166,13 @@ export default function InterviewWorkspace() {
   const answerAbortRef = useRef<AbortController | null>(null);
   const transcriptWritesRef = useRef<Promise<unknown>>(Promise.resolve());
   const [compact, setCompact] = useState(Boolean(window.sonoraDesktop));
+  const transcriptPane = useRef<HTMLDivElement>(null);
+  const scrollTranscript = useRef(false);
+  const [transcriptRequest, setTranscriptRequest] = useState(0);
   const streamRef = useRef<MediaStream | null>(null);
   const answerInFlightRef = useRef(false);
+  const mySpeakerRef = useRef("");
+  const screenshotRef = useRef<string | undefined>(undefined);
   const captureTokenRef = useRef(0);
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
@@ -287,6 +319,8 @@ export default function InterviewWorkspace() {
           request.persistQuestion = false;
         }
         if (controller.signal.aborted) throw new Error("Answer cancelled.");
+        const screenshot = screenshotRef.current;
+        screenshotRef.current = undefined;
         const response = await requestAnswer(
           selected.id, { question: cleanQuestion, action, previousAnswer, roundNumber: selected.roundNumber },
           AbortSignal.any([controller.signal, AbortSignal.timeout(95_000)]),
@@ -298,6 +332,7 @@ export default function InterviewWorkspace() {
             }
             setAnswer(text); setAnswerState("streaming");
           },
+          screenshot,
         );
         if (stale()) return;
         setAnswer(response.answer);
@@ -358,6 +393,7 @@ export default function InterviewWorkspace() {
   });
 
   const stopCapture = useCallback(() => {
+    mySpeakerRef.current = "";
     captureTokenRef.current += 1;
     for (const capture of desktopCaptureRef.current) capture.stop();
     desktopCaptureRef.current = [];
@@ -524,11 +560,7 @@ export default function InterviewWorkspace() {
       return;
     }
     setLiveMode(true);
-    if (!window.sonoraDesktop && audioSource !== "microphone") {
-      setError("Call audio requires the packaged desktop app. Browser transcription supports your microphone only.");
-      return;
-    }
-    if (window.sonoraDesktop || inputMode === "phone") {
+    if (window.sonoraDesktop || inputMode === "phone" || audioSource === "system") {
       const captureToken = ++captureTokenRef.current;
       setRequestingMic(true);
       setError("");
@@ -541,6 +573,7 @@ export default function InterviewWorkspace() {
       const captures = sources.map(source => createDesktopAudio({
         source,
         ...(source === "system" && systemDevice ? { deviceName: systemDevice } : {}),
+        ...(source === "microphone" && audioSource === "both" && systemDevice ? { referenceDevice: systemDevice } : {}),
         sessionId: selected.id,
         roundNumber: selected.roundNumber,
         onLevel: (level, status) => {
@@ -558,14 +591,19 @@ export default function InterviewWorkspace() {
           if (!activeSession || activeSession.id !== selected.id || (activeSession.roundNumber ?? 1) !== (selected.roundNumber ?? 1)) return;
           const currentMode = inputRef.current.mode;
           const routingRevision = inputRevisionRef.current;
-          const speaker = captureSpeaker(currentMode, source, remoteConfirmed);
+          const speaker = currentMode === "phone" && mySpeakerRef.current && metadata.speakerLabel
+            ? (metadata.speakerLabel === mySpeakerRef.current ? "candidate" : "interviewer")
+            : captureSpeaker(currentMode, source, remoteConfirmed);
           if (currentMode === "phone") setRecentPhoneText(recentPhoneRef.current.append(text));
-          setPipelineStatus(currentMode === "phone" ? "Mixed phone speech transcribed" : speaker === "interviewer" ? "Collecting interviewer question" : "Listening-only for this source");
+          setPipelineStatus(metadata.speakerLabel
+            ? `Speaker ${metadata.speakerLabel}`
+            : currentMode === "phone" ? "Mixed phone speech transcribed" : speaker === "interviewer" ? "Collecting interviewer question" : "Listening-only for this source");
           void saveTranscript(activeSession, "user", text, metadata.source, speaker, metadata.capturedAt).then(() => {
             if (captureToken !== captureTokenRef.current || routingRevision !== inputRevisionRef.current) return;
             const optedIn = inputRef.current.phoneAuto;
             if (!mayAutoAnswer(currentMode, source, remoteConfirmed, optedIn, !!selectedSessionRef.current?.autoAnswer)) return;
-            if (currentMode === "phone") questionsRef.current?.pushMixed(text, optedIn, metadata.endOfTurn);
+            if (currentMode === "phone" && mySpeakerRef.current && metadata.speakerLabel) questionsRef.current?.push(text, speaker, metadata.endOfTurn);
+            else if (currentMode === "phone") questionsRef.current?.pushMixed(text, optedIn, metadata.endOfTurn);
             else questionsRef.current?.push(text, speaker, metadata.endOfTurn);
           }).catch(cause => {
             if (captureToken !== captureTokenRef.current) return;
@@ -576,7 +614,8 @@ export default function InterviewWorkspace() {
         onNotice: text => { if (captureToken === captureTokenRef.current) setNotice(text); },
         onTurnEnded: () => {
           if (captureToken !== captureTokenRef.current) return;
-          if (!mayAutoAnswer(inputRef.current.mode, source, remoteConfirmed, inputRef.current.phoneAuto, !!selectedSessionRef.current?.autoAnswer)) return;
+          const currentMode = inputRef.current.mode;
+          if (!mayAutoAnswer(currentMode, source, remoteConfirmed, inputRef.current.phoneAuto, !!selectedSessionRef.current?.autoAnswer)) return;
           questionsRef.current?.pause();
         },
         onError: cause => {
@@ -635,14 +674,7 @@ export default function InterviewWorkspace() {
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
-      recognition.lang =
-        selected?.language === "Spanish"
-          ? "es-ES"
-          : selected?.language === "French"
-            ? "fr-FR"
-            : selected?.language === "German"
-              ? "de-DE"
-              : "en-US";
+      recognition.lang = browserLanguage(selected?.language);
       recognition.onresult = (event) => {
         if (captureToken !== captureTokenRef.current) return;
         let interim = "";
@@ -748,10 +780,7 @@ export default function InterviewWorkspace() {
   };
 
   const visibleSessions = sessions.filter((session) => {
-    const matchesFilter =
-      filter === "all" ||
-      (filter === "active" && session.status === "active") ||
-      (filter === "ended" && session.status === "ended");
+    const matchesFilter = filter === "all" || session.sessionType === filter;
     return (
       matchesFilter &&
       `${session.title} ${session.company ?? ""} ${session.description ?? ""}`
@@ -759,10 +788,23 @@ export default function InterviewWorkspace() {
         .includes(search.toLowerCase())
     );
   });
+  const openTranscript = (id: string) => {
+    setSelectedId(id);
+    setAnswer("");
+    setError("");
+    setCompact(false);
+    scrollTranscript.current = true;
+    setTranscriptRequest(value => value + 1);
+  };
+  useEffect(() => {
+    if (!scrollTranscript.current || liveMode) return;
+    scrollTranscript.current = false;
+    transcriptPane.current?.scrollIntoView({ block: "start" });
+  }, [transcriptRequest, liveMode]);
 
   return (
     <main className={`${liveMode && selected ? "" : "min-h-screen"} text-[#e7e8eb]`}
-      style={{ background: window.sonoraDesktop ? "rgba(16,17,19,var(--sonora-background-opacity,0.85))" : "#101113" }}>
+      style={{ background: window.sonoraDesktop ? "rgba(16,17,19,var(--sonora-background-opacity,0.4))" : "#101113" }}>
       {liveMode && selected && liveSession ? (
         <LiveSessionView
           session={liveSession} answer={answer} busy={busy} listening={listening}
@@ -788,6 +830,19 @@ export default function InterviewWorkspace() {
           latestQuestion={latestQuestion} answerState={answerState}
           pipelineStatus={!online ? "Offline · recording will not restart automatically. Reconnect, then retry." :
             settingsBusy ? "Saving settings…" : pipelineStatus}
+          onClaimSpeaker={inputMode === "phone" ? () => {
+            const label = /^Speaker (\S+)/.exec(pipelineStatus)?.[1];
+            if (!label) return;
+            mySpeakerRef.current = label;
+            setNotice(`${label} is you for this call. The other speaker is treated as the interviewer.`);
+          } : undefined}
+          onScreenshot={window.sonoraDesktop?.captureScreen ? () => void (async () => {
+            const image = await window.sonoraDesktop?.captureScreen?.();
+            if (!image) return;
+            screenshotRef.current = image;
+            const question = answerInput.trim() || latestQuestion || "Explain what is visible in this screenshot.";
+            await askGemini(question);
+          })() : undefined}
           levels={levels} channelStatus={channelStatus}
           onAutoAnswerChange={value => void updateLiveSettings("autoAnswer", value)}
           onLengthChange={value => void updateLiveSettings("length", value)}
@@ -796,7 +851,7 @@ export default function InterviewWorkspace() {
           onReadiness={() => { stopCapture(); answerAbortRef.current?.abort(); setReadinessOpen(true); }}
         />
       ) : (<>
-      <header className={`${window.sonoraDesktop ? "desktop-drag" : ""} flex h-[60px] items-center justify-between border-b border-white/10 bg-[#17181b] px-4 sm:px-6`}>
+      <header className={`${window.sonoraDesktop ? "desktop-drag sonora-glass" : ""} flex h-[60px] items-center justify-between border-b border-white/10 bg-[#17181b] px-4 sm:px-6`}>
         <a href={import.meta.env.BASE_URL} className="flex items-center gap-2 text-lg font-bold tracking-tight text-white">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#75c853] text-[#19321d]"><Sparkles size={18} /></span>
           Sonora <span className="text-xs font-medium text-white/50">AI</span>
@@ -816,8 +871,11 @@ export default function InterviewWorkspace() {
       </header>
 
       <div className={`mx-auto max-w-[1440px] px-4 ${compact ? "py-3" : "py-6 sm:px-6 lg:px-8"}`}>
-        {window.sonoraDesktop && <div className="mb-4 flex flex-wrap gap-2">
-          <select aria-label="Current desktop session" value={selectedId ?? ""} onChange={event => { setSelectedId(event.target.value || null); setAnswer(""); setError(""); }} className="min-w-0 flex-1 rounded-lg border border-white/10 bg-[#17181b] px-3 py-2 text-sm"><option value="">Choose a session</option>{sessions.map(item => <option key={item.id} value={item.id}>{item.title} · {item.status}</option>)}</select>
+        {window.sonoraDesktop && <div className="mb-4 flex flex-wrap items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <select aria-label="Current desktop session" value={selectedId ?? ""} onChange={event => { setSelectedId(event.target.value || null); setAnswer(""); setError(""); }} className="w-full rounded-lg border border-white/10 bg-[#17181b] px-3 py-2 text-sm"><option value="">Choose a session</option>{sessions.map(item => <option key={item.id} value={item.id}>{sessionChoice(item)} · {sessionKind(item)} · {statusLabel(item.status)}</option>)}</select>
+            {selected && <p className="mt-1 truncate text-xs text-white/70">{sessionChoice(selected)} · {sessionKind(selected)} · {statusLabel(selected.status)} · {callLength(selected, now)}</p>}
+          </div>
           <button onClick={() => setCompact(value => !value)} className="rounded-lg border border-white/10 px-3 py-2 text-xs">{compact ? "Show session browser" : "Compact assistant"}</button>
         </div>}
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
@@ -846,7 +904,7 @@ export default function InterviewWorkspace() {
         )}
 
         <div className={`grid min-h-[600px] gap-5 ${compact ? "" : "lg:grid-cols-[300px_minmax(0,1fr)]"}`}>
-          <aside className={`${compact ? "hidden" : "flex"} flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#17181b]`}>
+          <aside className={`${compact ? "hidden" : "flex"} sonora-glass flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#17181b]`}>
             <div className="border-b border-white/10 p-4">
               <div className="relative">
                 <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/35" />
@@ -859,8 +917,8 @@ export default function InterviewWorkspace() {
                 />
               </div>
               <div className="mt-3 grid grid-cols-3 gap-1 rounded-lg bg-[#101113] p-1 text-xs">
-                {(["all", "active", "ended"] as const).map((item) => (
-                  <button key={item} className={`rounded-md px-2 py-1.5 capitalize ${filter === item ? "bg-[#2b2d31] text-white" : "text-white/45 hover:text-white/75"}`} onClick={() => setFilter(item)}>{item}</button>
+                {([["all", "All"], ["interview", "Interview"], ["call", "Regular"]] as const).map(([item, label]) => (
+                  <button key={item} className={`rounded-md px-2 py-1.5 ${filter === item ? "bg-[#2b2d31] text-white" : "text-white/45 hover:text-white/75"}`} onClick={() => setFilter(item)}>{label}</button>
                 ))}
               </div>
             </div>
@@ -869,18 +927,27 @@ export default function InterviewWorkspace() {
                 <p className="p-4 text-sm text-white/45">Loading your sessions…</p>
               ) : visibleSessions.length ? (
                 visibleSessions.map((session) => (
-                  <button
+                  <div
                     key={session.id}
-                    onClick={() => { setSelectedId(session.id); setAnswer(""); setError(""); }}
-                    className={`mb-1 flex w-full items-center gap-3 rounded-xl p-3 text-left transition ${selectedId === session.id ? "bg-[#2a2b2f] text-white" : "text-white/70 hover:bg-white/5"}`}
+                    className={`mb-1 flex items-start gap-2 rounded-xl p-3 transition ${selectedId === session.id ? "bg-[#2a2b2f] text-white" : "text-white/70 hover:bg-white/5"}`}
                   >
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-[#202125] text-xs font-semibold">{(session.company || session.title).slice(0, 2).toUpperCase()}</span>
-                    <span className="min-w-0 flex-1">
-                      <strong className="block truncate text-sm font-medium">{session.title}</strong>
-                      <small className="mt-1 block truncate text-xs text-white/40">{session.sessionType === "interview" ? "Interview" : "Regular call"} · {new Date(session.createdAt).toLocaleDateString()}</small>
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedId(session.id); setAnswer(""); setError(""); }}
+                      className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                    >
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-[#202125] text-xs font-semibold">{(session.company || session.title).slice(0, 2).toUpperCase()}</span>
+                      <span className="min-w-0 flex-1">
+                        <strong className="block truncate text-sm font-medium">{session.company?.trim() || session.title}</strong>
+                        {session.company?.trim() && <small className="mt-0.5 block truncate text-xs text-white/55">{session.title}</small>}
+                        <small className="mt-1 block truncate text-xs text-white/40">{sessionKind(session)} · {callLength(session, now)} · {statusLabel(session.status)}</small>
+                      </span>
+                    </button>
+                    <span className="flex shrink-0 flex-col items-end gap-2">
+                      <span className={`h-2 w-2 rounded-full ${session.status === "active" ? "bg-red-400" : session.status === "ended" ? "bg-white/25" : "bg-amber-300"}`} />
+                      <button type="button" className="text-[11px] font-medium text-emerald-300 hover:text-emerald-200" onClick={() => openTranscript(session.id)}>View transcript</button>
                     </span>
-                    <span className={`h-2 w-2 shrink-0 rounded-full ${session.status === "active" ? "bg-red-400" : session.status === "ended" ? "bg-white/25" : "bg-amber-300"}`} />
-                  </button>
+                  </div>
                 ))
               ) : (
                 <div className="px-4 py-10 text-center">
@@ -895,7 +962,7 @@ export default function InterviewWorkspace() {
           </aside>
 
           {selected ? (
-            <section className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-[#17181b]">
+            <section className="sonora-glass min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-[#17181b]">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-5 py-4">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
@@ -921,14 +988,14 @@ export default function InterviewWorkspace() {
 
               <div className="grid gap-5 p-4 sm:p-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(300px,.85fr)]">
                 <div className="min-w-0">
-                  <div className="mb-4 rounded-xl border border-white/10 bg-[#101113] p-4">
+                  <div className="sonora-glass mb-4 rounded-xl border border-white/10 bg-[#101113] p-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <h3 className="text-sm font-semibold text-white">Live interview assistant</h3>
                         <p className="mt-1 max-w-[460px] text-xs leading-5 text-white/45">Ask a question to test Gemini, or turn on microphone transcription. Sonora only listens after you start it.</p>
                       </div>
                       <div className="flex flex-wrap gap-2">
-                      {window.sonoraDesktop && <select aria-label="Audio source" value={audioSource} disabled={listening || requestingMic} onChange={event => setAudioSource(event.target.value as "microphone" | "system")} className="max-w-full rounded-lg border border-white/10 bg-[#17181b] px-2 py-2 text-xs text-white disabled:opacity-50"><option value="microphone">Microphone</option><option value="system">System / call audio</option></select>}
+                      <select aria-label="Audio source" value={audioSource} disabled={listening || requestingMic} onChange={event => setAudioSource(event.target.value as "microphone" | "system")} className="max-w-full rounded-lg border border-white/10 bg-[#17181b] px-2 py-2 text-xs text-white disabled:opacity-50"><option value="microphone">Microphone</option><option value="system">{window.sonoraDesktop ? "System / call audio" : "Meeting tab"}</option></select>
                       <button
                         onClick={() => void toggleMicrophone()}
                         disabled={selected.status === "ended" || requestingMic}
@@ -939,9 +1006,9 @@ export default function InterviewWorkspace() {
                       {requestingMic && <button onClick={stopCapture} className="rounded-lg border border-white/10 px-3 py-2 text-xs">Cancel request</button>}
                       </div>
                     </div>
-                    {listening && <div className="mt-3 rounded-lg bg-white/5 px-3 py-2 text-xs text-emerald-100"><span className="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-emerald-400" />{window.sonoraDesktop ? `${audioSource === "system" ? "System audio" : "Microphone"} capture active · Gemini chunk transcription` : "Microphone transcription is active in this browser."}</div>}
+                    {listening && <div className="mt-3 rounded-lg bg-white/5 px-3 py-2 text-xs text-emerald-100"><span className="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-emerald-400" />{audioSource === "system" ? (window.sonoraDesktop ? "System audio" : "Meeting tab") : "Microphone"} capture active · words appear as people talk</div>}
                     {!listening && selected.status === "active" && <p className="mt-3 text-[11px] text-white/35">Audio capture is off. Typed questions work without it.</p>}
-                    <p className="mt-3 text-xs leading-5 text-white/40">{window.sonoraDesktop ? "Choose microphone or computer audio and approve capture. Computer audio can include other apps. Packaged native capture records audio only, not screen video. Use assistance only where permitted." : "This browser version captures your microphone, not Zoom, Meet, or Teams system audio. When using headphones, type the interviewer’s question below."}</p>
+                    <p className="mt-3 text-xs leading-5 text-white/40">{window.sonoraDesktop ? "Choose microphone or computer audio and approve capture. Computer audio can include other apps. Packaged native capture records audio only, not screen video. Use assistance only where permitted." : "Choose Microphone to hear yourself, or Meeting tab to hear the call. In Chrome, share the Meet, Zoom, or Teams tab and turn on Share tab audio. Sonora uses the audio from that share and does not save the picture."}</p>
                     {interimTranscript && <p className="mt-3 rounded-lg border border-white/5 bg-white/[.03] p-3 text-sm italic text-white/55">{interimTranscript}</p>}
                     <form
                       className="mt-4"
@@ -967,7 +1034,7 @@ export default function InterviewWorkspace() {
                       {currentEntries.some((entry) => entry.source === "microphone") && <button type="button" onClick={() => setAnswerInput([...currentEntries].reverse().find((entry) => entry.source === "microphone")?.text ?? "")} className="mt-3 text-xs font-medium text-emerald-300 hover:text-emerald-200">Use latest microphone transcript as the question</button>}
                     </form>
                   </div>
-                  <div className="rounded-xl border border-white/10 bg-[#101113] p-4">
+                  <div className="sonora-glass rounded-xl border border-white/10 bg-[#101113] p-4">
                     <div className="mb-3 flex items-center justify-between gap-3">
                       <h3 className="text-sm font-semibold text-white">Suggested answer</h3>
                       {busy && <span className="text-xs text-white/45">Gemini is thinking…</span>}
@@ -980,12 +1047,12 @@ export default function InterviewWorkspace() {
                   </div>
                 </div>
 
-                <div className="min-w-0">
+                <div className="min-w-0" ref={transcriptPane} id="session-transcript">
                   <div className="flex items-center justify-between gap-3">
                     <h3 className="text-sm font-semibold text-white">Transcript</h3>
                     <span className="text-[11px] text-white/40">{selected.saveTranscript ? "Saved to this session" : "Not saved"}</span>
                   </div>
-                  {roundList.length > 1 && <div className="mt-3 rounded-xl border border-white/10 bg-[#101113] p-3 text-xs" data-testid="panel-rounds">
+                  {roundList.length > 1 && <div className="sonora-glass mt-3 rounded-xl border border-white/10 bg-[#101113] p-3 text-xs" data-testid="panel-rounds">
                     <div className="mb-2 flex flex-wrap gap-1">
                       {([["current", "Current"], ["all", "All rounds"], ...roundList.filter((round) => round.number !== currentRound).map((round) => [round.number, `Round ${round.number}`] as const)] as const).map(([value, label]) => (
                         <button key={String(value)} onClick={() => setRoundView(value as "current" | "all" | number)} className={`rounded-md px-2 py-1 ${roundView === value ? "bg-[#2b2d31] text-white" : "text-white/50 hover:text-white/80"}`}>{label}</button>
@@ -995,7 +1062,7 @@ export default function InterviewWorkspace() {
                       {roundList.map((round) => <li key={round.number}><span className="text-white/70">Round {round.number}{round.number === currentRound ? " (current)" : ""}</span> · {round.startedAt || round.endedAt ? `${fmtDate(round.startedAt)} to ${round.number === currentRound && selected.status !== "ended" ? "in progress" : fmtDate(round.endedAt)}` : "dates unknown"}</li>)}
                     </ul>
                   </div>}
-                  <div className="mt-3 max-h-[440px] min-h-[300px] space-y-3 overflow-y-auto rounded-xl border border-white/10 bg-[#101113] p-4">
+                  <div className="sonora-glass mt-3 max-h-[440px] min-h-[300px] space-y-3 overflow-y-auto rounded-xl border border-white/10 bg-[#101113] p-4">
                     {shownEntries.length ? shownEntries.map((entry, index) => (
                       <div key={`${entry.createdAt}-${index}`} className={`rounded-lg p-3 ${entry.role === "assistant" ? "border border-emerald-300/10 bg-emerald-300/[.05]" : "bg-white/[.035]"}`}>
                         <div className="mb-1 flex items-center gap-2 text-[10px] uppercase tracking-wide text-white/40">{entry.role === "assistant" ? <Sparkles size={11} /> : <FileText size={11} />}{entry.role === "assistant" ? "Gemini suggestion" : entry.source === "microphone" ? (window.sonoraDesktop ? "Audio transcript" : "You · mic transcript") : "Question"}</div>
@@ -1004,12 +1071,12 @@ export default function InterviewWorkspace() {
                     )) : <div className="flex min-h-[250px] flex-col items-center justify-center px-4 text-center text-sm text-white/40"><FileText size={22} className="mb-3 text-white/25" />{roundView === "current" && roundList.length > 1 ? "Nothing in this round yet." : "No transcript yet. Ask Gemini or enable the microphone."}</div>}
                     {interimTranscript && <p className="rounded-lg bg-white/5 p-3 text-sm italic text-white/45">{interimTranscript}</p>}
                   </div>
-                  <p className="mt-3 text-xs leading-5 text-white/35">{window.sonoraDesktop ? "Desktop audio is sent to Gemini in 4.5-second chunks. Audio is not retained by Sonora; recognized text is saved only when Save Transcript is on. System audio may include other apps. Stopping discards the incomplete final chunk." : "Speech recognition is provided by your browser. Sonora sends recognized text to Gemini only when it generates an answer."}</p>
+                  <p className="mt-3 text-xs leading-5 text-white/35">{window.sonoraDesktop ? "Live words are sent while capture is on. If that stream is unavailable, finished phrases still go to Gemini, up to 4.5 seconds. Recognized text is saved only when Save Transcript is on. System audio may include other apps." : "Speech recognition is provided by your browser. Sonora sends recognized text to Gemini only when it generates an answer."}</p>
                 </div>
               </div>
             </section>
           ) : (
-            <section className="flex min-h-[520px] flex-col items-center justify-center rounded-2xl border border-white/10 bg-[#17181b] px-6 text-center">
+            <section className="sonora-glass flex min-h-[520px] flex-col items-center justify-center rounded-2xl border border-white/10 bg-[#17181b] px-6 text-center">
               <span className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/5 text-white/55"><FileText size={22} /></span>
               <h2 className="text-lg font-semibold text-white">Create an interview session</h2>
               <p className="mt-2 max-w-sm text-sm leading-6 text-white/50">Add the role and your background, then test Gemini with a question before your interview starts.</p>

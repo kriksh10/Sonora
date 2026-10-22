@@ -5,7 +5,7 @@ export function createBackgroundOpacity(options: {
   error: (message: string) => void;
   timeoutMs?: number;
 }) {
-  let confirmed = 0.85;
+  let confirmed = 0.4;
   let wanted = confirmed;
   let revision = 0;
   let saving = false;

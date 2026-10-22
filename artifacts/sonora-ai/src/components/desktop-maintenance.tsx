@@ -54,7 +54,6 @@ export default function DesktopMaintenance() {
             setMessage(next.available ? `Sonora ${next.version} is available.` : "No newer compatible published version.");
           })}>Check for updates</button>
         </div>
-        <a className="lsv-btn inline-flex" href={`${import.meta.env.BASE_URL}download`}>Browse approved-account downloads</a>
         {update?.available && <div className="space-y-2 rounded-lg border border-white/10 p-3 text-sm">
           <p>{update.signing}</p><p className="break-all text-xs text-white/55">SHA-256: {update.sha256}</p>
           <p>Download opens in your browser after confirmation. Installation is manual; Sonora does not restart automatically.</p>

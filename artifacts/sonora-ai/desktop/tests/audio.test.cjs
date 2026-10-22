@@ -15,7 +15,7 @@ const wavCode = bundle('../../src/lib/pcm-wav.ts');
 const validatorCode = bundle('../../../api-server/src/lib/audio-chunks.ts');
 const captureCode = bundle('../../src/lib/desktop-audio.ts');
 test('client WAV encoder roundtrips through server validation, rejects malformed/oversize data', () => {
-  const client = vm.createContext({ Uint8Array, Float32Array, ArrayBuffer, DataView, btoa });
+  const client = vm.createContext({ Uint8Array, Float32Array, ArrayBuffer, DataView, btoa, atob });
   vm.runInContext(wavCode, client);
   const server = vm.createContext({ Buffer, Date });
   vm.runInContext(validatorCode, server);
@@ -25,6 +25,10 @@ test('client WAV encoder roundtrips through server validation, rejects malformed
     assert.throws(() => server.subject.validateAudioChunk(invalid));
   }
   assert.throws(() => server.subject.validateAudioChunk(client.subject.wavBase64(new Float32Array(128001))));
+  const phrase = client.subject.wavBase64(new Float32Array(16000).fill(.2));
+  const joined = client.subject.joinWavPhrases(phrase, phrase);
+  assert.equal(server.subject.validateAudioChunk(joined).length, 64044);
+  assert.equal(client.subject.joinWavPhrases(audio, audio), null);
 });
 test('transcription gate serializes per user, limits request rate and allows recovery', () => {
   const server = vm.createContext({ Buffer, Date });
@@ -63,7 +67,7 @@ function captureHarness(overrides = {}) {
     disconnect() {}
   }
   const context = vm.createContext({
-    Uint8Array, Float32Array, ArrayBuffer, DataView, btoa, AbortController, AbortSignal,
+    Uint8Array, Float32Array, ArrayBuffer, DataView, btoa, atob, AbortController, AbortSignal,
     window: { sonoraDesktop: { setCaptureActive: async value => { bridgeStates.push(value); } } },
     navigator: { mediaDevices: { getUserMedia: async () => stream, getDisplayMedia: async () => stream } },
     AudioContext: Context, AudioWorkletNode: Worklet, MediaStream: class { constructor() {} },
@@ -154,9 +158,10 @@ test('native chunks go to the existing Gemini endpoint; stale events are ignored
   capture.stop();
   assert.equal(f.stops.length, 1);
 });
-test('a pause received during transcription closes the transcribed turn', async () => {
+test('silence while a chunk is transcribing marks that transcript as the end of the turn', async () => {
   let resolveRequest;
-  const texts = [], turns = [];
+  const texts = [];
+  const turns = [];
   const f = nativeHarness({ fetch: () => new Promise(resolve => { resolveRequest = resolve; }) });
   const capture = f.harness.context.subject.createDesktopAudio({
     source: 'system', sessionId: 'session', onNotice() {}, onError() {},
@@ -186,6 +191,39 @@ test('native start cancellation stops a late-starting helper and unsubscribes', 
   assert.equal(f.stops.length, 2);
   assert.equal(f.stops[0], f.stops[1]);
 });
+test('Speechmatics frames commit finished phrases and phrase recordings continue when live is unavailable', async () => {
+  const requests = [], texts = [], phases = [];
+  const f = nativeHarness({ fetch: async (url, options) => {
+    const body = JSON.parse(options.body);
+    requests.push({ url, body });
+    if (url.endsWith('/live-audio')) {
+      if (body.open) return { ok: true, status: 200, json: async () => ({}) };
+      const frames = requests.filter(request => request.body?.audio).length;
+      if (frames === 1) return { ok: true, status: 200, json: async () => ({ accepted: true, partial: 'Where did', text: '', final: false }) };
+      return { ok: true, status: 200, json: async () => ({ accepted: true, partial: '', text: 'Where did you work?', final: true }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ text: 'Phrase fallback' }) };
+  } });
+  const capture = f.harness.context.subject.createDesktopAudio({
+    source: 'system', sessionId: 'session', onNotice() {}, onError() {},
+    onPhase: text => phases.push(text),
+    onText: text => texts.push(text),
+  });
+  await capture.start();
+  const flush = async () => { for (let i = 0; i < 8; i += 1) await new Promise(resolve => setImmediate(resolve)); };
+  f.emit({ type: 'pcm', audio: 'live-frame' });
+  await flush();
+  assert.deepEqual(phases, ['Where did']);
+  assert.deepEqual(texts, []);
+  f.emit({ type: 'pcm', audio: 'live-frame-2' });
+  await flush();
+  assert.deepEqual(texts, ['Where did you work?']);
+  f.emit({ type: 'audio', audio: 'should-not-send' });
+  await new Promise(setImmediate);
+  assert.equal(requests.some(request => request.url.endsWith('/transcribe')), false);
+  capture.stop();
+});
+
 test('Gemini transcription failure stops native capture with a visible error', async () => {
   const errors = [];
   const f = nativeHarness({ fetch: async () => ({ ok: false, json: async () => ({ error: 'Gemini unavailable' }) }) });

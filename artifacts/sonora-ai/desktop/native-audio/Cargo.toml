@@ -9,6 +9,7 @@ publish = false
 anyhow = "1"
 base64 = "0.22"
 serde_json = "1"
+sonora = { git = "https://github.com/dignifiedquire/sonora", rev = "dec6a074725e82ef371a024fc45236d60f0acf52" }
 
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
 cpal = "0.15.3"

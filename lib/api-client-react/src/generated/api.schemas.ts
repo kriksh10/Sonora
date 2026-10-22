@@ -5,6 +5,42 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export interface JobLinkInput {
+  /** @maxLength 2048 */
+  url: string;
+}
+
+export interface JobLinkResult {
+  text: string;
+}
+
+export type LiveAudioInputSource = typeof LiveAudioInputSource[keyof typeof LiveAudioInputSource];
+
+
+export const LiveAudioInputSource = {
+  microphone: 'microphone',
+  system: 'system',
+} as const;
+
+export interface LiveAudioInput {
+  source: LiveAudioInputSource;
+  /** @minimum 1 */
+  roundNumber?: number;
+  /** @maxLength 8000 */
+  audio?: string;
+  open?: boolean;
+  stop?: boolean;
+}
+
+export interface LiveAudioResult {
+  ticket?: string;
+  accepted?: boolean;
+  text?: string;
+  final?: boolean;
+  partial?: string;
+  speaker?: string;
+}
+
 export type DesktopBuildPlatform = typeof DesktopBuildPlatform[keyof typeof DesktopBuildPlatform];
 
 
@@ -208,6 +244,37 @@ export const SessionPreferencesInputLanguage = {
   Spanish: 'Spanish',
   French: 'French',
   German: 'German',
+  Italian: 'Italian',
+  Portuguese: 'Portuguese',
+  Dutch: 'Dutch',
+  Polish: 'Polish',
+  Russian: 'Russian',
+  Ukrainian: 'Ukrainian',
+  Japanese: 'Japanese',
+  Korean: 'Korean',
+  Mandarin: 'Mandarin',
+  Arabic: 'Arabic',
+  Hindi: 'Hindi',
+  Turkish: 'Turkish',
+  Swedish: 'Swedish',
+  Danish: 'Danish',
+  Norwegian: 'Norwegian',
+  Finnish: 'Finnish',
+  Czech: 'Czech',
+  Greek: 'Greek',
+  Hebrew: 'Hebrew',
+  Hungarian: 'Hungarian',
+  Romanian: 'Romanian',
+  Indonesian: 'Indonesian',
+  Malay: 'Malay',
+  Vietnamese: 'Vietnamese',
+  Thai: 'Thai',
+  Bulgarian: 'Bulgarian',
+  Catalan: 'Catalan',
+  Croatian: 'Croatian',
+  Slovak: 'Slovak',
+  Tamil: 'Tamil',
+  Urdu: 'Urdu',
 } as const;
 
 export interface SessionPreferencesInput {
@@ -332,6 +399,11 @@ export interface SessionAnswerRequest {
   /** @maxLength 24000 */
   previousAnswer?: string;
   test?: boolean;
+  /**
+     * Optional explicitly consented JPEG screenshot encoded as base64
+     * @maxLength 700000
+     */
+  screenshot?: string;
 }
 
 export type NewCallSessionSessionType = typeof NewCallSessionSessionType[keyof typeof NewCallSessionSessionType];
@@ -367,6 +439,37 @@ export const NewCallSessionLanguage = {
   Spanish: 'Spanish',
   French: 'French',
   German: 'German',
+  Italian: 'Italian',
+  Portuguese: 'Portuguese',
+  Dutch: 'Dutch',
+  Polish: 'Polish',
+  Russian: 'Russian',
+  Ukrainian: 'Ukrainian',
+  Japanese: 'Japanese',
+  Korean: 'Korean',
+  Mandarin: 'Mandarin',
+  Arabic: 'Arabic',
+  Hindi: 'Hindi',
+  Turkish: 'Turkish',
+  Swedish: 'Swedish',
+  Danish: 'Danish',
+  Norwegian: 'Norwegian',
+  Finnish: 'Finnish',
+  Czech: 'Czech',
+  Greek: 'Greek',
+  Hebrew: 'Hebrew',
+  Hungarian: 'Hungarian',
+  Romanian: 'Romanian',
+  Indonesian: 'Indonesian',
+  Malay: 'Malay',
+  Vietnamese: 'Vietnamese',
+  Thai: 'Thai',
+  Bulgarian: 'Bulgarian',
+  Catalan: 'Catalan',
+  Croatian: 'Croatian',
+  Slovak: 'Slovak',
+  Tamil: 'Tamil',
+  Urdu: 'Urdu',
 } as const;
 
 export interface NewCallSession {

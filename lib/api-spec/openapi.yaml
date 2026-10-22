@@ -13,6 +13,64 @@ tags:
   - name: sessions
     description: Private interview and regular-call sessions
 paths:
+  /sessions/job-link:
+    post:
+      operationId: importSessionJobLink
+      summary: Read a public HTTPS job description for an approved user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JobLinkInput"
+      responses:
+        "200":
+          description: Extracted job description
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobLinkResult"
+        "400":
+          description: Invalid or unreadable public job link
+        "401":
+          description: Sign-in required
+        "403":
+          description: Approval required
+  /sessions/{id}/live-audio:
+    post:
+      operationId: sendSessionLiveAudio
+      summary: Open, feed or stop optional live transcription for the current interview round
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LiveAudioInput"
+      responses:
+        "200":
+          description: Live transcription state or one-time WebSocket ticket
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveAudioResult"
+        "400":
+          description: Invalid audio frame
+        "401":
+          description: Sign-in required
+        "403":
+          description: Approval required
+        "404":
+          description: Session not found
+        "409":
+          description: Interview round ended or changed
+        "503":
+          description: Live service unavailable; use Gemini phrase transcription
   /desktop/releases:
     get:
       operationId: getDesktopRelease
@@ -499,6 +557,34 @@ components:
               error:
                 type: string
   schemas:
+    JobLinkInput:
+      type: object
+      required: [url]
+      properties:
+        url: { type: string, format: uri, maxLength: 2048 }
+    JobLinkResult:
+      type: object
+      required: [text]
+      properties:
+        text: { type: string }
+    LiveAudioInput:
+      type: object
+      required: [source]
+      properties:
+        source: { type: string, enum: [microphone, system] }
+        roundNumber: { type: integer, minimum: 1 }
+        audio: { type: string, maxLength: 8000 }
+        open: { type: boolean }
+        stop: { type: boolean }
+    LiveAudioResult:
+      type: object
+      properties:
+        ticket: { type: string }
+        accepted: { type: boolean }
+        text: { type: string }
+        final: { type: boolean }
+        partial: { type: string }
+        speaker: { type: string }
     DesktopBuild:
       type: object
       required: [platform, architecture, label, status, url, sha256, sizeBytes, signing, minimumOs]
@@ -662,7 +748,7 @@ components:
           enum: [gemini-2.5-flash, gemini-3-flash-preview]
         language:
           type: string
-          enum: [English, Spanish, French, German]
+          enum: [English, Spanish, French, German, Italian, Portuguese, Dutch, Polish, Russian, Ukrainian, Japanese, Korean, Mandarin, Arabic, Hindi, Turkish, Swedish, Danish, Norwegian, Finnish, Czech, Greek, Hebrew, Hungarian, Romanian, Indonesian, Malay, Vietnamese, Thai, Bulgarian, Catalan, Croatian, Slovak, Tamil, Urdu]
         autoAnswer:
           type: boolean
         saveTranscript:
@@ -738,6 +824,10 @@ components:
           maxLength: 24000
         test:
           type: boolean
+        screenshot:
+          type: string
+          maxLength: 700000
+          description: Optional explicitly consented JPEG screenshot encoded as base64
     NewCallSession:
       type: object
       required: [sessionType]
@@ -773,7 +863,7 @@ components:
           enum: [gemini-2.5-flash, gemini-3-flash-preview]
         language:
           type: string
-          enum: [English, Spanish, French, German]
+          enum: [English, Spanish, French, German, Italian, Portuguese, Dutch, Polish, Russian, Ukrainian, Japanese, Korean, Mandarin, Arabic, Hindi, Turkish, Swedish, Danish, Norwegian, Finnish, Czech, Greek, Hebrew, Hungarian, Romanian, Indonesian, Malay, Vietnamese, Thai, Bulgarian, Catalan, Croatian, Slovak, Tamil, Urdu]
         autoAnswer:
           type: boolean
         saveTranscript:

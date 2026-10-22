@@ -38,7 +38,7 @@ test('audio source and speaker metadata persist, remain owner-scoped, and reach 
     assert.equal((await f.call('post', '/sessions/:id/transcript', invalid)).code, 400);
   }
   await f.call('post', '/sessions/:id/answer', { question: entry.text });
-  assert.ok(f.requests[0].contents.includes('interviewer [system]: Why this design'));
+  assert.ok(f.requests[0].contents.includes('Interviewer [system]: Why this design'));
   assert.ok(f.requests[0].contents.includes('Unknown speaker [microphone]: Legacy'));
   const count = f.rows[0].transcript.length;
   f.rows[0].saveTranscript = false;
@@ -117,6 +117,8 @@ function fixture(options = {}) {
     if (name === '@workspace/api-zod') return validators;
     if (name === '../lib/answer-preferences') return preferences;
     if (name === '../lib/interview-answer-policy') return loadTs(path.join(serverRoot, 'lib/interview-answer-policy.ts'), require);
+    if (name === '../lib/answer-context') return loadTs(path.join(serverRoot, 'lib/answer-context.ts'), require);
+    if (name === '../lib/job-page') return loadTs(path.join(serverRoot, 'lib/job-page.ts'), require);
     if (name === '../lib/session-lifecycle') return {
       roundMatches: (current, requested) => (current ?? 1) === (requested ?? 1),
       approvedWriteCondition: () => ({ sql: 'approved account' }),

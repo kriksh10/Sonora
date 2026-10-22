@@ -4,7 +4,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { EventEmitter } = require('node:events');
 const { buildSync } = require('esbuild');
-const { opacity, safeBounds } = require('../window-preferences.cjs');
+const { opacity, initialOpacity, safeBounds } = require('../window-preferences.cjs');
 const { createNativeAudioManager } = require('../native-audio-host.cjs');
 
 function load(file, globals = {}, external = []) {
@@ -21,6 +21,9 @@ function load(file, globals = {}, external = []) {
 test('opacity validates rather than silently accepting unsafe values', () => {
   assert.equal(opacity(.15), .15); assert.equal(opacity(.45), .45); assert.equal(opacity(1), 1);
   for (const value of [NaN, Infinity, -1, 0, .14, 1.1, '0.8', undefined]) assert.throws(() => opacity(value));
+  assert.equal(initialOpacity(undefined), 0.4);
+  assert.equal(initialOpacity({ backgroundOpacity: 0.85 }), 0.4);
+  assert.equal(initialOpacity({ backgroundOpacity: 0.7, opacityVersion: 2 }), 0.7);
 });
 
 test('saved window bounds recover across removed monitors, scaling, and invalid input', () => {
@@ -190,7 +193,7 @@ test('remote fragments assemble across chunks, duplicate turns are suppressed, r
   assert.equal(q.sent.length, 1);
 });
 
-test('a pause submits interviewer requests without question-shaped wording, not audio checks', async () => {
+test('a pause asks the finished interviewer turn without question-shaped wording', async () => {
   const q = questions();
   q.router.push('I want to hear how you handled the outage last quarter', 'interviewer', true);
   q.flush();
@@ -203,12 +206,12 @@ test('a pause submits interviewer requests without question-shaped wording, not 
   q.router.pause();
   q.flush();
   await Promise.resolve(); await Promise.resolve();
-  assert.equal(q.sent.length, 2);
-  q.router.push('I want to check if this is working', 'candidate', true);
-  q.router.push('I want to check if this is working', 'unknown', true);
-  q.router.pause(); q.flush();
-  assert.equal(q.sent.length, 2);
+  assert.deepEqual(q.sent, [
+    'I want to hear how you handled the outage last quarter',
+    'I want to hear how you handled the migration last year',
+  ]);
 });
+
 test('continuous six-second remote chunks cannot postpone automatic answers forever', () => {
   const { createInterviewerQuestions, isInterviewQuestion } = load('../../src/lib/interviewer-questions.ts');
   let now = 0, next = 0;

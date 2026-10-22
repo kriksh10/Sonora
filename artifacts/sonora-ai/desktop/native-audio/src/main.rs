@@ -1,5 +1,6 @@
 #[cfg(target_os = "macos")]
 mod macos;
+mod echo;
 mod pcm;
 mod platform;
 
@@ -24,6 +25,47 @@ fn write_event(value: serde_json::Value) -> Result<()> {
     output.flush()?;
     Ok(())
 }
+struct CaptureArgs {
+    source: String,
+    device: Option<String>,
+    reference: Option<String>,
+}
+
+fn device_name(value: &str) -> Result<()> {
+    if value.is_empty() || value.len() > 1024 || value.chars().any(char::is_control) {
+        bail!("Usage: sonora-audio --source microphone|system");
+    }
+    Ok(())
+}
+
+fn parse_args(args: &[String]) -> Result<CaptureArgs> {
+    if args.first().map(String::as_str) != Some("--source")
+        || !matches!(args.get(1).map(String::as_str), Some("microphone" | "system"))
+    {
+        bail!("Usage: sonora-audio --source microphone|system");
+    }
+    let mut device = None;
+    let mut reference = None;
+    let mut index = 2;
+    while index < args.len() {
+        let value = args.get(index + 1).map(String::as_str).unwrap_or("");
+        device_name(value)?;
+        match args[index].as_str() {
+            "--device-name" => device = Some(value.to_string()),
+            "--reference-device" => reference = Some(value.to_string()),
+            _ => bail!("Usage: sonora-audio --source microphone|system"),
+        }
+        index += 2;
+    }
+    if reference.is_some() && args[1] != "microphone" {
+        bail!("Echo reference is only used with the microphone.");
+    }
+    if (device.is_some() || reference.is_some()) && !cfg!(target_os = "windows") {
+        bail!("Audio device selection is supported on Windows only.");
+    }
+    Ok(CaptureArgs { source: args[1].clone(), device, reference })
+}
+
 fn run() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.len() == 2 && args[0] == "--list-devices"
@@ -31,17 +73,7 @@ fn run() -> Result<()> {
         write_event(json!({ "devices": platform::devices(&args[1])? }))?;
         return Ok(());
     }
-    if !matches!(args.len(), 2 | 4)
-        || args[0] != "--source"
-        || !matches!(args[1].as_str(), "microphone" | "system")
-        || (args.len() == 4 && (args[2] != "--device-name" || args[3].is_empty()
-            || args[3].len() > 1024 || args[3].chars().any(char::is_control)))
-    {
-        bail!("Usage: sonora-audio --source microphone|system");
-    }
-    if args.len() == 4 && !cfg!(target_os = "windows") {
-        bail!("Audio device selection is supported on Windows only.");
-    }
+    let args = parse_args(&args)?;
     // Parent pipe EOF stops capture even if the Electron process crashes.
     let stop = Arc::new(AtomicBool::new(false));
     let stdin_stop = stop.clone();
@@ -53,7 +85,12 @@ fn run() -> Result<()> {
     if stop.load(Ordering::Acquire) {
         return Ok(());
     }
-    let mut capture = platform::open(&args[1], args.get(3).map(String::as_str))?;
+    let mut capture = platform::open(&args.source, args.device.as_deref())?;
+    let mut reference = match args.reference.as_deref() {
+        Some(device) => Some(platform::open("system", Some(device))?),
+        None if args.source == "microphone" => platform::open("system", None).ok(),
+        None => None,
+    };
     if stop.load(Ordering::Acquire) {
         return Ok(());
     }
@@ -64,6 +101,11 @@ fn run() -> Result<()> {
     let mut last_padding = Instant::now();
     let mut peak = 0.0_f32;
     while !stop.load(Ordering::Acquire) {
+        if let Some(reference) = reference.as_mut() {
+            while let Some(samples) = reference.read()? {
+                encoder.push_reference(samples.rate, &samples.data)?;
+            }
+        }
         let chunks = if let Some(samples) = capture.read()? {
             last_data = Instant::now();
             last_padding = last_data;
@@ -74,11 +116,11 @@ fn run() -> Result<()> {
             // WASAPI loopback legitimately yields no buffers while the output is idle.
             // Microphones should continue producing samples; device errors still propagate
             // from read() for either source.
-            if args[1] == "microphone" && last_data.elapsed() > Duration::from_secs(30) {
+            if args.source == "microphone" && last_data.elapsed() > Duration::from_secs(30) {
                 bail!("No audio samples received. Check OS audio permission and restart capture.");
             }
             thread::sleep(Duration::from_millis(5));
-            if args[1] == "system" && last_data.elapsed() > Duration::from_millis(150)
+            if last_data.elapsed() > Duration::from_millis(150)
                 && last_padding.elapsed() >= Duration::from_millis(50) {
                 let ms = last_padding.elapsed().as_millis().min(250) as u32;
                 last_padding = Instant::now();
@@ -90,6 +132,9 @@ fn run() -> Result<()> {
             match chunk {
                 pcm::Chunk::Audio(wav, end_of_turn) => write_event(json!({
                     "type": "audio", "audio": STANDARD.encode(wav), "endOfTurn": end_of_turn
+                }))?,
+                pcm::Chunk::Pcm(frame) => write_event(json!({
+                    "type": "pcm", "audio": STANDARD.encode(frame)
                 }))?,
                 pcm::Chunk::Silence { prolonged } => write_event(json!({ "type": "silence", "prolonged": prolonged }))?,
             }
@@ -104,6 +149,7 @@ fn run() -> Result<()> {
             peak = 0.0;
         }
     }
+    drop(reference);
     drop(capture);
     write_event(json!({ "type": "stopped" }))?;
     Ok(())

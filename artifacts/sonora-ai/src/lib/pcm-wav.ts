@@ -23,3 +23,25 @@ export function wavBase64(samples: Float32Array): string {
   for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
   return btoa(binary);
 }
+
+/** Coalesce queued phrases without exceeding the server's eight-second PCM limit. */
+export function joinWavPhrases(first: string, second: string): string | null {
+  try {
+    const a = Uint8Array.from(atob(first), char => char.charCodeAt(0));
+    const b = Uint8Array.from(atob(second), char => char.charCodeAt(0));
+    const size = a.length + b.length - 44;
+    if (a.length < 46 || b.length < 46 || size > 256044) return null;
+    const header = (bytes: Uint8Array) => String.fromCharCode(...bytes.subarray(0, 4)) === "RIFF"
+      && String.fromCharCode(...bytes.subarray(8, 16)) === "WAVEfmt ";
+    if (!header(a) || !header(b)) return null;
+    const bytes = new Uint8Array(size);
+    bytes.set(a);
+    bytes.set(b.subarray(44), a.length);
+    const view = new DataView(bytes.buffer);
+    view.setUint32(4, size - 8, true);
+    view.setUint32(40, size - 44, true);
+    let binary = "";
+    for (let index = 0; index < bytes.length; index += 8192) binary += String.fromCharCode(...bytes.subarray(index, index + 8192));
+    return btoa(binary);
+  } catch { return null; }
+}

@@ -5,17 +5,18 @@ import Modal from "@/components/modal";
 import AnswerPreferencesEditor from "@/components/answer-preferences-editor";
 import { SwitchRow } from "@/components/session-wizard";
 import { apiRequest, sessionPreferences, summarizePreferences } from "@/lib/answer-preferences";
+import { CALL_LANGUAGES, type CallLanguage } from "@/lib/call-languages";
 
 const field = "mt-1.5 w-full rounded-lg border border-white/10 bg-[#191a1d] px-3 py-2.5 text-sm text-white outline-none focus:border-white/25";
 const MODELS = ["gemini-2.5-flash", "gemini-3-flash-preview"] as const;
-const LANGS = ["English", "Spanish", "French", "German"] as const;
+const LANGS = CALL_LANGUAGES.map(language => language.name);
 
 export default function SessionPreferencesDialog({ session, onClose, onSaved }: {
   session: CallSession; onClose: () => void; onSaved: (session: CallSession) => void;
 }) {
   const [instructions, setInstructions] = useState(session.instructions);
   const [model, setModel] = useState<(typeof MODELS)[number]>(MODELS.find((m) => m === session.model) ?? "gemini-2.5-flash");
-  const [language, setLanguage] = useState<(typeof LANGS)[number]>(LANGS.find((l) => l === session.language) ?? "English");
+  const [language, setLanguage] = useState<CallLanguage>(CALL_LANGUAGES.find((item) => item.name === session.language)?.name ?? "English");
   const [autoAnswer, setAutoAnswer] = useState(session.autoAnswer);
   const [saveTranscript, setSaveTranscript] = useState(session.saveTranscript);
   const [prefs, setPrefs] = useState<AnswerPreferences>(() => sessionPreferences(session));

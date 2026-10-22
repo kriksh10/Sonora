@@ -1,3 +1,36 @@
+## Uploaded release integrated — 2026-10-22
+
+The latest uploaded Windows installer is now the pinned private preview download:
+
+- Filename: `Sonora-0.3.5-win-x64.exe`
+- Size: `111124259` bytes
+- SHA-256: `929ec3488ddca5fc499593a884df28fb4c1bcb4e7960a25a5560acd7d5d6dbf8`
+- Unsigned; real Windows installation, microphone/output capture, and capture exclusion remain unverified here.
+
+The actual NSIS executable was unpacked and its embedded ASAR runtime modules and
+native audio helper were compared with the uploaded source/build. The private
+object was uploaded and fully read back with checksum verification. The actual
+111 MB object also passed the protected HTTP range handler and browser download
+assembler test. This is not proof of a signed-in production browser download or
+native audio behavior.
+
+The uploaded phrase encoder, echo-reference support, desktop opacity updates,
+language selection, screenshot question flow, and session interface were merged.
+Existing approval gates, private storage, protected downloads, and checksum
+assembly were deliberately retained rather than replaced by the snapshot's
+public download links or local credential-file loader.
+
+Speechmatics is optional and is not configured in this environment. Gemini phrase
+transcription remains the fallback. Hosted integration adds bounded startup
+buffering, live-socket fallback, access/round-aware stream cleanup, and queued WAV
+phrase coalescing to respect the transcription request interval. Unit checks use
+controlled provider fixtures; no real Speechmatics streaming test was performed.
+
+The release reuses version 0.3.5, so version-only update checking cannot identify
+this replacement. Approved users must explicitly download and reinstall this
+checksum after publishing the hosted changes. Publishing the site does not update
+an installed Electron executable. No Mac installer was included in this upload.
+
 # Sonora desktop verification
 
 ## Uploaded Windows candidate and private downloads

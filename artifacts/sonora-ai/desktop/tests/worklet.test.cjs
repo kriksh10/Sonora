@@ -20,7 +20,7 @@ test('worklet makes independent 4.5-second 16 kHz chunks and leaves outputs sile
   assert.equal(chunks.length, 1);
   assert.equal(chunks[0].samples.length, 72000);
   assert.equal(chunks[0].endOfTurn, false);
-  assert.ok(Math.abs(chunks[0].samples[0] - .1) < .00001);
+  assert.ok(Math.abs(chunks[0].samples[0] - .2) < .00001);
   assert.equal(messages.filter(m => typeof m.peak === 'number').length, 24);
   assert.ok(output.every(value => value === 0));
 });
@@ -40,6 +40,17 @@ test('trailing acoustic silence marks a turn boundary without losing short speec
   const chunks = messages.filter(m => m.samples);
   assert.equal(chunks.length, 1);
   assert.equal(chunks[0].endOfTurn, true);
-  assert.equal(chunks[0].samples.length, 72000);
+  assert.equal(chunks[0].samples.length, 59200);
   assert.ok(chunks[0].samples.subarray(0, 48000).some(x => x > 0));
+});
+test('quiet speech is lifted and near-silence is still skipped', () => {
+  const quiet = processor();
+  quiet.node.process([[new Float32Array(48000 * 5).fill(0.01)]]);
+  const lifted = quiet.messages.find(m => m.samples);
+  assert.ok(lifted);
+  assert.ok(Math.abs(lifted.samples[0] - 0.08) < 0.00001);
+  const silent = processor();
+  silent.node.process([[new Float32Array(48000 * 5).fill(0.001)]]);
+  assert.equal(silent.messages.some(m => m.samples), false);
+  assert.equal(silent.messages.some(m => m.silent), true);
 });

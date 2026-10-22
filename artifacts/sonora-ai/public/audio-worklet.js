@@ -1,4 +1,4 @@
-// Explicit capture only. 4.5s chunks respect the provider's 4s per-source interval.
+// Explicit capture only. A finished phrase is sent after a pause, and a chunk never exceeds 4.5 seconds.
 class SonoraPcm extends AudioWorkletProcessor {
   constructor() {
     super();
@@ -33,16 +33,31 @@ class SonoraPcm extends AudioWorkletProcessor {
         this.trailingQuiet = Math.abs(sample) < 0.003 ? this.trailingQuiet + 1 : 0;
         this.sum = 0;
         this.count = 0;
-        if (this.used === this.samples.length) {
+        const full = this.used === this.samples.length;
+        const turn = this.used >= 16000 && this.trailingQuiet >= 11200 && this.peak > 0.003;
+        if (full || turn) {
           if (this.peak > 0.003) {
-            this.port.postMessage({ samples: this.samples, endOfTurn: this.trailingQuiet >= 11200 }, [this.samples.buffer]);
+            const out = this.samples.slice(0, this.used);
+            // Same bounded lift as the native encoder: quiet mic or tab audio
+            // becomes usable, and samples already near 0.2 stay unchanged.
+            if (this.peak < 0.2) {
+              const gain = Math.min(8, 0.2 / this.peak);
+              for (let i = 0; i < out.length; i++) {
+                const value = out[i] * gain;
+                out[i] = value > 1 ? 1 : value < -1 ? -1 : value;
+              }
+            }
+            this.port.postMessage({ samples: out, endOfTurn: this.trailingQuiet >= 11200 }, [out.buffer]);
             this.silentChunks = 0;
-          } else {
+          } else if (full) {
             this.port.postMessage({ silent: true, prolonged: ++this.silentChunks >= 4 });
+          } else {
+            continue;
           }
           this.samples = new Float32Array(72000);
           this.used = 0;
           this.peak = 0;
+          this.trailingQuiet = 0;
         }
       }
     }

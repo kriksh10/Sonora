@@ -3,11 +3,19 @@ const { spawn } = require('node:child_process');
 const { StringDecoder } = require('node:string_decoder');
 const { validDeviceName } = require('./audio-devices.cjs');
 
+function validPcm(value) {
+  if (typeof value !== 'string' || value.length > 20000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) return false;
+  const bytes = Buffer.from(value, 'base64').length;
+  return bytes >= 320 && bytes <= 3200 && bytes % 320 === 0;
+}
+
 function validWav(value) {
-  if (typeof value !== 'string' || value.length > 260000 || value.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) return false;
+  if (typeof value !== 'string' || value.length > 260000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) return false;
   const wav = Buffer.from(value, 'base64');
-  // Current native encoder: 4.5 seconds. Retain supported six-second helpers.
-  return [144044, 192044].includes(wav.length) && wav.toString('ascii', 0, 4) === 'RIFF' &&
+  // One to 4.5 seconds of mono 16 kHz PCM. A pause can end a phrase before the cap.
+  const dataBytes = wav.length - 44;
+  return dataBytes >= 32000 && dataBytes <= 144000 && dataBytes % 2 === 0 &&
+    wav.toString('ascii', 0, 4) === 'RIFF' &&
     wav.toString('ascii', 8, 16) === 'WAVEfmt ' && wav.readUInt32LE(4) === wav.length - 8 &&
     wav.readUInt32LE(16) === 16 && wav.readUInt16LE(20) === 1 &&
     wav.readUInt16LE(22) === 1 && wav.readUInt32LE(24) === 16000 &&
@@ -41,10 +49,13 @@ function createNativeAudioHost({ binary, confirm, emit, onActive, spawnProcess =
     stop();
     current?.child?.kill('SIGKILL');
   }
-  async function start(id, source, deviceName) {
+  async function start(id, source, deviceName, referenceDevice) {
     if (typeof id !== 'string' || !/^[a-f0-9-]{36}$/i.test(id) ||
         !['microphone', 'system'].includes(source)) throw new Error('Invalid native audio request.');
     if (deviceName !== undefined && !validDeviceName(deviceName)) throw new Error('Invalid audio device.');
+    if (referenceDevice !== undefined && (source !== 'microphone' || !validDeviceName(referenceDevice))) {
+      throw new Error('Invalid echo reference device.');
+    }
     if (current || consentBusy) throw new Error('Audio is already starting, active, or stopping.');
     const record = { id, cancelled: false, ready: false };
     current = record;
@@ -74,7 +85,7 @@ function createNativeAudioHost({ binary, confirm, emit, onActive, spawnProcess =
       try {
         const env = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
           ['PATH', 'HOME', 'TMPDIR', 'TMP', 'TEMP', 'SystemRoot', 'SYSTEMROOT', 'WINDIR', 'APPDATA', 'LOCALAPPDATA'].includes(key)));
-        record.child = spawnProcess(binary, ['--source', source, ...(deviceName ? ['--device-name', deviceName] : [])], {
+        record.child = spawnProcess(binary, ['--source', source, ...(deviceName ? ['--device-name', deviceName] : []), ...(referenceDevice ? ['--reference-device', referenceDevice] : [])], {
           stdio: ['pipe', 'pipe', 'ignore'], shell: false, windowsHide: true, env,
         });
         record.child.stdin.on('error', () => fail('Native audio control pipe closed.'));
@@ -101,6 +112,9 @@ function createNativeAudioHost({ binary, confirm, emit, onActive, spawnProcess =
               onActive(true);
               watchdog();
               resolve({ captureId: id });
+            } else if (event.type === 'pcm' && record.ready && validPcm(event.audio)) {
+              watchdog();
+              send({ type: 'pcm', audio: event.audio });
             } else if (event.type === 'audio' && record.ready && validWav(event.audio)) {
               watchdog();
               send({ type: 'audio', audio: event.audio, endOfTurn: event.endOfTurn === true });
@@ -153,7 +167,7 @@ function createNativeAudioManager(options) {
   const channels = new Map();
   const changed = () => options.onActive([...channels.values()].some(record => record.host.isActive()));
   return {
-    async start(id, source, deviceName) {
+    async start(id, source, deviceName, referenceDevice) {
       if (!['microphone', 'system'].includes(source)) throw new Error('Invalid native audio source.');
       for (const [key, record] of channels) {
         if (!record.host.isBusy()) channels.delete(key);
@@ -165,7 +179,7 @@ function createNativeAudioManager(options) {
         onActive: changed,
       });
       channels.set(source, { id, host });
-      try { return await host.start(id, source, deviceName); }
+      try { return await host.start(id, source, deviceName, referenceDevice); }
       catch (error) {
         if (!host.isBusy()) channels.delete(source);
         changed();
@@ -183,4 +197,4 @@ function createNativeAudioManager(options) {
     isActive: () => [...channels.values()].some(record => record.host.isActive()),
   };
 }
-module.exports = { createNativeAudioHost, createNativeAudioManager, validWav };
+module.exports = { createNativeAudioHost, createNativeAudioManager, validWav, validPcm };

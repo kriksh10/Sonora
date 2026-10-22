@@ -61,6 +61,8 @@ export type LiveSessionViewProps = {
   answerRecentShortcut?: "alt-enter" | "ctrl-shift-enter";
   onAnswerRecentShortcutChange?: (value: "alt-enter" | "ctrl-shift-enter") => void;
   timingSummary?: string;
+  onClaimSpeaker?: () => void;
+  onScreenshot?: () => void;
 };
 
 function Meter({ name, value }: { name: string; value: number }) {
@@ -82,13 +84,13 @@ function TranscriptPane(p: { sessionId: string; spoken: LiveEntry[]; interim: st
     <section className="lsv-pane" aria-label="Transcript">
       <header>
         <span>Transcript</span>
-        <em>{p.live ? "Chunks of about six seconds" : "Audio off"}</em>
+        <em>{p.live ? "Words appear as people talk" : "Audio off"}</em>
       </header>
       <FollowLatestPane resetKey={p.sessionId} label="Live transcript" testId="transcript-pane">
         {p.spoken.length === 0 && !p.interim && (
           <div className="lsv-empty">
             <strong>{p.live ? "Listening. Nothing transcribed yet." : "No transcript yet."}</strong>
-            {p.live ? "Text appears after each chunk is processed." : "Press Start audio, or type a question."}
+            {p.live ? "Words show up while someone is speaking." : "Press Start audio, or type a question."}
           </div>
         )}
         {p.spoken.map((e, i) => {
@@ -203,7 +205,9 @@ export default function LiveSessionView(p: LiveSessionViewProps) {
   else if (!live) hint = "Audio is stopped. Sonora cannot hear or answer automatically until you start audio.";
   else if (phone) hint = "";
   else if (!p.remoteConfirmed) hint = "Mapping off: confirm mic = you, call = interviewer. Stop audio to change it.";
-  else if (source === "microphone") hint = "Microphone captures you, not the interviewer. Use Call audio for automatic answers, or ask manually.";
+  else if (source === "microphone") hint = window.sonoraDesktop
+    ? "Microphone captures you, not the interviewer. Use Call audio for automatic answers, or ask manually."
+    : "Microphone captures you. Choose Meeting tab and share the call tab with audio to hear the interviewer.";
   else if (!autoOn) hint = "Auto Answer is off. Ask manually or turn it on.";
 
   const computerAutoPaused = !phone && !ended && (!p.remoteConfirmed || source === "microphone" || !autoOn);
@@ -247,7 +251,7 @@ export default function LiveSessionView(p: LiveSessionViewProps) {
                   <select aria-label="Audio source" className="lsv-select" data-testid="select-audio-source" value={source} disabled={lockAudio || ended} title={lockAudio ? "Stop audio before changing" : undefined}
                     onChange={(e) => p.onAudioSourceChange(e.target.value as AudioSource)}>
                     <option value="microphone">Microphone</option>
-                    <option value="system" disabled={!window.sonoraDesktop}>Call audio{!window.sonoraDesktop ? " (desktop only)" : ""}</option>
+                    <option value="system">{window.sonoraDesktop ? "Call audio" : "Meeting tab"}</option>
                     {p.supportsDualAudio && <option value="both">Both</option>}
                   </select>
                   <label className="lsv-check" title={lockAudio ? "Stop audio before changing" : undefined}>
@@ -255,7 +259,7 @@ export default function LiveSessionView(p: LiveSessionViewProps) {
                       onChange={(e) => p.onRemoteConfirmedChange(e.target.checked)} />
                     Mic = me · call = interviewer
                   </label>
-                  {source !== "microphone" && p.onSystemDeviceChange && (
+                  {window.sonoraDesktop && source !== "microphone" && p.onSystemDeviceChange && (
                     <CallOutputPicker value={p.systemDevice ?? ""} onChange={p.onSystemDeviceChange} disabled={lockAudio} />
                   )}
                 </>
@@ -305,6 +309,8 @@ export default function LiveSessionView(p: LiveSessionViewProps) {
                 Auto Answer {autoOn ? (!p.remoteConfirmed ? "paused, mapping off" : source === "microphone" ? "paused, no call source" : "on, remote only") : "off"}
               </span>}
               {p.pipelineStatus && <span className="lsv-chip" role="status" data-testid="text-pipeline-status">{p.pipelineStatus}</span>}
+              {p.onClaimSpeaker && p.pipelineStatus?.startsWith("Speaker ") && <button type="button" className="lsv-btn" onClick={p.onClaimSpeaker}>This speaker is me</button>}
+              {p.onScreenshot && <button type="button" className="lsv-btn" onClick={p.onScreenshot}>Send screenshot</button>}
               {p.timingSummary && <span className="lsv-chip" data-testid="text-timing-summary">{p.timingSummary}</span>}
               {p.channelStatus && <span className="lsv-chip">{phone ? `Laptop mic: ${p.channelStatus.microphone}` : `Mic: ${p.channelStatus.microphone} · Call: ${p.channelStatus.system}`}</span>}
               {p.levels && live && (phone ? <Meter name="Mixed" value={p.levels.microphone} /> : <><Meter name="Mic" value={p.levels.microphone} /><Meter name="Call" value={p.levels.system} /></>)}
