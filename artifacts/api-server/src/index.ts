@@ -1,9 +1,28 @@
+import fs from "node:fs";
 import http from "node:http";
+import path from "node:path";
 import { WebSocketServer } from "ws";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { bootstrapConfiguredAccess } from "./lib/bootstrap-access";
 import { bindLiveSocket } from "./routes/live-audio";
+
+function loadLocalSpeechmaticsKey() {
+  if (process.env.SPEECHMATICS_API_KEY) return;
+  const candidates = [
+    path.resolve(process.cwd(), "secrets/speechmatics.env"),
+    path.resolve(process.cwd(), "../../secrets/speechmatics.env"),
+  ];
+  for (const file of candidates) {
+    if (!fs.existsSync(file)) continue;
+    for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
+      const match = /^(SPEECHMATICS_API_KEY)=(.*)$/.exec(line.trim());
+      if (match?.[2] && !process.env[match[1]]) process.env[match[1]] = match[2].trim();
+    }
+    return;
+  }
+}
+loadLocalSpeechmaticsKey();
 
 const rawPort = process.env["PORT"];
 
@@ -20,14 +39,14 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 const server = http.createServer(app);
-const sockets = new WebSocketServer({ noServer: true, maxPayload: 3200 });
+const sockets = new WebSocketServer({ noServer: true });
 server.on("upgrade", (request, socket, head) => {
   const url = new URL(request.url ?? "", "http://localhost");
   if (url.pathname !== "/api/live-audio") { socket.destroy(); return; }
   sockets.handleUpgrade(request, socket, head, ws => {
     bindLiveSocket(url.searchParams.get("ticket") ?? "", {
       on: (event, listener) => { ws.on(event, listener); },
-      send: data => { if (ws.readyState === ws.OPEN) ws.send(data); },
+      send: data => ws.send(data),
       close: () => ws.close(),
     });
   });

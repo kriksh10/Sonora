@@ -11,7 +11,6 @@ import {
   UpdateSessionBody,
   UpdateSessionPreferencesBody,
   SaveAnswerDefaultsBody,
-  ImportSessionJobLinkBody,
 } from "@workspace/api-zod";
 import { approvedWriteCondition, roundMatches, sessionStillUsable, stopSessionOperations, watchSession } from "../lib/session-lifecycle";
 import { logger } from "../lib/logger";
@@ -106,10 +105,8 @@ router.get("/sessions", async (req, res, next) => {
 
 router.post("/sessions/job-link", async (req, res) => {
   if (!currentUserId(req, res)) return;
-  const input = ImportSessionJobLinkBody.safeParse(req.body);
-  if (!input.success) return res.status(400).json({ error: "Provide a valid public https job link." });
   try {
-    const text = await readPublicJobPage(input.data.url);
+    const text = await readPublicJobPage(String(req.body?.url ?? ""));
     return res.json({ text });
   } catch (cause) {
     return res.status(400).json({ error: cause instanceof Error ? cause.message : "The job page could not be read. Paste the description instead." });

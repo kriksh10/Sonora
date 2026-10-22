@@ -1,4 +1,4 @@
-import { wavBase64, joinWavPhrases } from "./pcm-wav";
+import { wavBase64 } from "./pcm-wav";
 import { createTranscriptionPacing, waitForTranscription } from "./transcription-pacing";
 
 // Both channels share one provider lane; server concurrency limits remain enforced.
@@ -15,12 +15,26 @@ type Options = {
   onNotice: (text: string) => void;
   onTurnEnded?: () => void;
   onError: (error: Error) => void;
+  onPcm?: (samples: Float32Array, rate: number) => void;
   onLevel?: (level: number, state: string) => void;
   onPhase?: (state: string) => void;
   onTiming?: (transcriptionMs: number) => void;
   transcribe?: boolean;
 };
 export type AudioCapture = { start: () => Promise<void>; stop: () => void };
+
+function pcm16ToFloat(audio: string) {
+  const binary = atob(audio);
+  const samples = new Float32Array(binary.length >> 1);
+  for (let index = 0; index < samples.length; index += 1) {
+    const low = binary.charCodeAt(index * 2);
+    const high = binary.charCodeAt(index * 2 + 1);
+    let value = low | (high << 8);
+    if (value & 0x8000) value -= 0x10000;
+    samples[index] = value / 32768;
+  }
+  return samples;
+}
 
 export function createAudioGroup(captures: AudioCapture[]): AudioCapture {
   let stopped = false;
@@ -53,17 +67,6 @@ export function createDesktopAudio(options: Options): AudioCapture {
   let liveSocketFailed = false;
   const liveFrames: string[] = [];
   let liveSending = false;
-  const canStream = () => !stopped && liveMode !== "off";
-  const liveUrl = `${import.meta.env.BASE_URL}api/sessions/${options.sessionId}/live-audio`;
-  const phraseFallback = () => {
-    if (stopped || liveMode === "off") return;
-    liveMode = "off";
-    liveFrames.length = 0;
-    const socket = liveSocket;
-    liveSocket = null;
-    socket?.close();
-    options.onNotice("Live transcription is unavailable. Continuing with Gemini phrase transcription.");
-  };
   const notePause = () => {
     if (active || pending.length) speakerPaused = true;
     else options.onTurnEnded?.();
@@ -76,12 +79,11 @@ export function createDesktopAudio(options: Options): AudioCapture {
     stopped = true;
     abort.abort();
     pending = [];
-    liveFrames.length = 0;
     unsubscribeNative?.();
     if (nativeId) void window.sonoraDesktop?.stopNativeCapture?.(nativeId).catch(() => {});
     liveSocket?.close();
     if (liveStarted) {
-      void fetch(liveUrl, {
+      void fetch(`/api/sessions/${options.sessionId}/live-audio`, {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ stop: true, source: options.source, ...(options.roundNumber ? { roundNumber: options.roundNumber } : {}) }),
       }).catch(() => {});
@@ -117,7 +119,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
         options.onPhase?.("Transcribing");
         pacing.mark(options.source);
         const startedAt = Date.now();
-        const response = await fetch(`${import.meta.env.BASE_URL}api/sessions/${options.sessionId}/transcribe`, {
+        const response = await fetch(`/api/sessions/${options.sessionId}/transcribe`, {
           method: "POST", credentials: "include", signal: AbortSignal.any([abort.signal, AbortSignal.timeout(30_000)]),
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ audio, mimeType: "audio/wav", source: options.source, ...(options.roundNumber ? { roundNumber: options.roundNumber } : {}) }),
@@ -149,35 +151,33 @@ export function createDesktopAudio(options: Options): AudioCapture {
     });
   };
   const postFrame = async (audio: string) => {
-    const response = await fetch(liveUrl, {
+    const response = await fetch(`/api/sessions/${options.sessionId}/live-audio`, {
       method: "POST", credentials: "include", signal: AbortSignal.any([abort.signal, AbortSignal.timeout(20_000)]),
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ audio, source: options.source, ...(options.roundNumber ? { roundNumber: options.roundNumber } : {}) }),
     });
+    if (response.status === 404 || response.status === 503) { liveMode = "off"; return; }
     const result = await response.json().catch(() => ({}));
-    if ([401, 403, 409].includes(response.status)) { fail(new Error(result.error || "Access or interview round changed. Refresh the session.")); return; }
-    if (!response.ok) { phraseFallback(); return; }
-    applyLive(result);
+    if (response.ok) applyLive(result);
   };
   const postLive = async (audio: string) => {
     if (liveMode === "off" || stopped) return;
     liveStarted = true;
     try {
       if (!liveSocketFailed && !liveSocket) {
-        const response = await fetch(liveUrl, {
+        const response = await fetch(`/api/sessions/${options.sessionId}/live-audio`, {
           method: "POST", credentials: "include", signal: AbortSignal.any([abort.signal, AbortSignal.timeout(20_000)]),
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ open: true, source: options.source, ...(options.roundNumber ? { roundNumber: options.roundNumber } : {}) }),
         });
+        if (response.status === 404 || response.status === 503) { liveMode = "off"; return; }
         const opened = await response.json().catch(() => ({}));
-        if ([401, 403, 409].includes(response.status)) { fail(new Error(opened.error || "Access or interview round changed. Refresh the session.")); return; }
-        if (!response.ok) { phraseFallback(); return; }
         if (response.ok && opened.ticket && typeof WebSocket === "function" && typeof location !== "undefined") {
-          const url = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}${import.meta.env.BASE_URL}api/live-audio?ticket=${encodeURIComponent(opened.ticket)}`;
+          const url = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/api/live-audio?ticket=${encodeURIComponent(opened.ticket)}`;
           const ws = new WebSocket(url);
           ws.binaryType = "arraybuffer";
           await new Promise<void>((resolve, reject) => {
-            const timer = setTimeout(() => { ws.close(); reject(new Error("Live transcription timed out.")); }, 8_000);
+            const timer = setTimeout(() => reject(new Error("Live transcription timed out.")), 8_000);
             ws.addEventListener("open", () => { clearTimeout(timer); resolve(); }, { once: true });
             ws.addEventListener("error", () => { clearTimeout(timer); reject(new Error("Live transcription socket failed.")); }, { once: true });
           });
@@ -185,9 +185,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
             if (typeof event.data !== "string") return;
             try { applyLive(JSON.parse(event.data)); } catch { /* ignore a malformed live message */ }
           });
-          if (!canStream()) { ws.close(); return; }
-          ws.addEventListener("close", () => { if (liveSocket === ws) phraseFallback(); });
-          ws.addEventListener("error", phraseFallback);
+          ws.addEventListener("close", () => { if (liveSocket === ws) liveSocket = null; });
           liveSocket = ws;
           liveMode = "on";
         } else liveSocketFailed = true;
@@ -201,30 +199,22 @@ export function createDesktopAudio(options: Options): AudioCapture {
       liveSocketFailed = true;
       liveSocket?.close();
       liveSocket = null;
-      if (canStream()) await postFrame(audio).catch(phraseFallback);
+      if (!stopped && liveMode !== "off") await postFrame(audio).catch(() => { liveMode = "off"; });
     }
   };
   const pushLive = (audio: string) => {
     if (liveMode === "off" || stopped || options.transcribe === false) return;
     liveFrames.push(audio);
-    // Native frames are 10 ms; retain enough bounded startup audio for provider negotiation.
-    if (liveFrames.length > 2000) { phraseFallback(); return; }
+    if (liveFrames.length > 100) liveFrames.shift();
     if (liveSending) return;
     liveSending = true;
     void (async () => {
-      while (liveFrames.length && canStream()) await postLive(liveFrames.shift()!);
+      while (liveFrames.length && !stopped) await postLive(liveFrames.shift()!);
       liveSending = false;
     })();
   };
   const enqueue = (audio: string, capturedAt = new Date().toISOString(), endOfTurn?: boolean) => {
     if (stopped) return;
-    const tail = pending[pending.length - 1];
-    const joined = tail && joinWavPhrases(tail.audio, audio);
-    if (tail && joined) {
-      tail.audio = joined;
-      tail.endOfTurn = endOfTurn;
-      return;
-    }
     if (options.transcribe === false) return;
     if (pending.length >= 2) { fail(new Error("Transcription is falling behind. Capture stopped to avoid dropping speech. If using Both, switch to Call audio only to prioritize interviewer answers, then restart. You can also type a question.")); return; }
     pending.push({ audio, capturedAt, endOfTurn });
@@ -241,6 +231,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
             if (stopped || event.captureId !== nativeId) return;
             if (event.type === "error") fail(new Error(event.message || "Native audio stopped."));
             else if (event.type === "pcm" && event.audio) {
+              options.onPcm?.(pcm16ToFloat(event.audio), 16000);
               if (liveMode !== "off") void pushLive(event.audio);
             }
             else if (event.type === "audio" && event.audio) {
@@ -282,6 +273,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
           if (event.data.silent) notePause();
           if (event.data.prolonged) options.onNotice("No audible speech for 18 seconds. Check your selected source, volume, and OS audio permission.");
           if (!event.data.samples) return;
+          options.onPcm?.(event.data.samples, 16000);
           enqueue(wavBase64(event.data.samples), undefined, event.data.endOfTurn);
         };
         await context.resume();

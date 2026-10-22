@@ -91,13 +91,8 @@ export async function openSpeechStream(language: string, terms: string[]): Promi
   };
 
   await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => { socket.close(); reject(new Error("Live transcription timed out.")); }, 12_000);
-    const fail = () => {
-      clearTimeout(timer);
-      failed = true;
-      socket.close();
-      reject(new Error("Live transcription could not start."));
-    };
+    const timer = setTimeout(() => reject(new Error("Live transcription timed out.")), 12_000);
+    const fail = () => { clearTimeout(timer); reject(new Error("Live transcription could not start.")); };
     socket.addEventListener("error", fail);
     socket.addEventListener("close", () => { if (!started) fail(); });
     socket.addEventListener("open", () => {
@@ -108,11 +103,11 @@ export async function openSpeechStream(language: string, terms: string[]): Promi
           language: speechmaticsLanguage(language),
           model: "enhanced",
           enable_partials: true,
-          max_delay: 0.7,
-          max_delay_mode: "fixed",
+          max_delay: 2,
+          max_delay_mode: "flexible",
           diarization: "speaker",
           speaker_diarization_config: { max_speakers: 2 },
-          ...(terms.length ? { additional_vocab: terms.map(content => ({ content })) } : {}),
+          ...(terms.length ? { additional_vocab: terms } : {}),
         },
       }));
     });

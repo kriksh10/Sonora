@@ -1,19 +1,16 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
-import https from "node:https";
 
 const BLOCKED_HOSTS = new Set(["localhost", "metadata.google.internal", "metadata.internal"]);
 
 export function blockedAddress(address: string) {
-  const ip = address.toLowerCase().replace(/^\[|\]$/g, "");
-  if (isIP(ip) === 6) return !/^[23]/.test(ip) || /^(2001:(?:db8|0):|2002:)/.test(ip);
-  if (isIP(ip) !== 4) return true;
-  const parts = ip.split(".").map(Number);
+  const ip = address.toLowerCase();
+  if (ip === "::1" || ip === "0.0.0.0" || ip.startsWith("fc") || ip.startsWith("fd") || ip.startsWith("fe80:")) return true;
+  const v4 = ip.startsWith("::ffff:") ? ip.slice(7) : ip;
+  const parts = v4.split(".").map(Number);
+  if (parts.length !== 4 || parts.some(part => !Number.isInteger(part) || part < 0 || part > 255)) return false;
   const [a, b] = parts;
-  return a === 0 || a === 10 || a === 127 || a >= 224 || (a === 169 && b === 254)
-    || (a === 172 && b >= 16 && b <= 31) || (a === 192 && [0, 168].includes(b))
-    || (a === 198 && [18, 19, 51].includes(b)) || (a === 203 && b === 0)
-    || (a === 100 && b >= 64 && b <= 127);
+  return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
 }
 
 export function htmlToText(html: string) {
@@ -36,7 +33,6 @@ async function publicUrl(raw: string, lookupHost: (host: string) => Promise<stri
   try { url = new URL(raw.trim()); }
   catch { throw new Error("That job link is not a valid address."); }
   if (url.protocol !== "https:") throw new Error("Use an https job link.");
-  if (url.port && url.port !== "443") throw new Error("Use a public https job page on the standard port.");
   if (url.username || url.password) throw new Error("Remove the sign-in from the job link.");
   const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
   if (!host || BLOCKED_HOSTS.has(host) || host.endsWith(".local") || host.endsWith(".internal")) {
@@ -44,54 +40,26 @@ async function publicUrl(raw: string, lookupHost: (host: string) => Promise<stri
   }
   const addresses = isIP(host) ? [host] : await lookupHost(host);
   if (!addresses.length || addresses.some(blockedAddress)) throw new Error("That job link is not a public page.");
-  return { url, addresses };
-}
-
-/** Pin the validated DNS result for the connection to prevent DNS-rebinding SSRF. */
-async function fetchPublicPage(url: URL, addresses: string[]): Promise<Response> {
-  return new Promise((resolve, reject) => {
-    const request = https.get(url, {
-      lookup: (_host, options, callback) => {
-        const address = addresses[0];
-        if (options.all) callback(null, addresses.map(value => ({ address: value, family: isIP(value) })));
-        else callback(null, address, isIP(address));
-      },
-      signal: AbortSignal.timeout(8_000),
-      headers: { accept: "text/html,text/plain", "user-agent": "SonoraJobImport" },
-    }, response => {
-      const chunks: Buffer[] = [];
-      let size = 0;
-      response.on("data", (chunk: Buffer) => {
-        size += chunk.length;
-        if (size > 512_000) { response.destroy(); reject(new Error("The job page is too large. Paste the description instead.")); }
-        else chunks.push(chunk);
-      });
-      response.on("error", () => reject(new Error("The job page could not be read. Paste the description instead.")));
-      response.on("end", () => resolve(new Response(Buffer.concat(chunks), {
-        status: response.statusCode ?? 502,
-        headers: { "content-type": String(response.headers["content-type"] ?? ""), location: String(response.headers.location ?? "") },
-      })));
-    });
-    request.on("error", () => reject(new Error("The job page could not be read. Paste the description instead.")));
-  });
+  return url;
 }
 
 export async function readPublicJobPage(raw: string, options: {
   fetchPage?: typeof fetch;
   lookupHost?: (host: string) => Promise<string[]>;
 } = {}) {
+  const fetchPage = options.fetchPage ?? fetch;
   const lookupHost = options.lookupHost ?? (async host => (await lookup(host, { all: true })).map(item => item.address));
   let current = await publicUrl(raw, lookupHost);
   for (let hop = 0; hop < 3; hop += 1) {
-    const response = options.fetchPage ? await options.fetchPage(current.url, {
+    const response = await fetchPage(current, {
       redirect: "manual",
       signal: AbortSignal.timeout(8_000),
       headers: { accept: "text/html,text/plain", "user-agent": "SonoraJobImport" },
-    }) : await fetchPublicPage(current.url, current.addresses);
+    });
     if ([301, 302, 303, 307, 308].includes(response.status)) {
       const next = response.headers.get("location");
       if (!next) throw new Error("The job page redirected without a destination.");
-      current = await publicUrl(new URL(next, current.url).toString(), lookupHost);
+      current = await publicUrl(new URL(next, current).toString(), lookupHost);
       continue;
     }
     if (!response.ok) throw new Error("The job page could not be read. Paste the description instead.");

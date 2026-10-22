@@ -13,111 +13,6 @@ tags:
   - name: sessions
     description: Private interview and regular-call sessions
 paths:
-  /sessions/job-link:
-    post:
-      operationId: importSessionJobLink
-      summary: Read a public HTTPS job description for an approved user
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/JobLinkInput"
-      responses:
-        "200":
-          description: Extracted job description
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/JobLinkResult"
-        "400":
-          description: Invalid or unreadable public job link
-        "401":
-          description: Sign-in required
-        "403":
-          description: Approval required
-  /sessions/{id}/live-audio:
-    post:
-      operationId: sendSessionLiveAudio
-      summary: Open, feed or stop optional live transcription for the current interview round
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/LiveAudioInput"
-      responses:
-        "200":
-          description: Live transcription state or one-time WebSocket ticket
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/LiveAudioResult"
-        "400":
-          description: Invalid audio frame
-        "401":
-          description: Sign-in required
-        "403":
-          description: Approval required
-        "404":
-          description: Session not found
-        "409":
-          description: Interview round ended or changed
-        "503":
-          description: Live service unavailable; use Gemini phrase transcription
-  /desktop/releases:
-    get:
-      operationId: getDesktopRelease
-      summary: Public desktop installer availability
-      responses:
-        "200":
-          description: Release metadata without private storage locations
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DesktopRelease"
-        "503":
-          description: Installer storage unavailable
-  /desktop/installers/windows-x64:
-    get:
-      operationId: downloadWindowsInstaller
-      summary: Public Windows installer download
-      parameters:
-        - in: header
-          name: Range
-          required: false
-          schema:
-            type: string
-          description: A single byte range, for example bytes=0-4194303
-      responses:
-        "200":
-          description: Windows installer attachment
-          content:
-            application/octet-stream:
-              schema:
-                type: string
-                format: binary
-        "206":
-          description: Installer byte range; Content-Range identifies the returned bytes
-          headers:
-            Content-Range:
-              schema:
-                type: string
-          content:
-            application/octet-stream:
-              schema:
-                type: string
-                format: binary
-        "416":
-          description: Invalid or unsatisfiable single byte range
-        "503":
-          description: Installer storage unavailable
   /access/status:
     get:
       operationId: getAccessStatus
@@ -549,70 +444,6 @@ components:
               error:
                 type: string
   schemas:
-    JobLinkInput:
-      type: object
-      required: [url]
-      properties:
-        url: { type: string, format: uri, maxLength: 2048 }
-    JobLinkResult:
-      type: object
-      required: [text]
-      properties:
-        text: { type: string }
-    LiveAudioInput:
-      type: object
-      required: [source]
-      properties:
-        source: { type: string, enum: [microphone, system] }
-        roundNumber: { type: integer, minimum: 1 }
-        audio: { type: string, maxLength: 8000 }
-        open: { type: boolean }
-        stop: { type: boolean }
-    LiveAudioResult:
-      type: object
-      properties:
-        ticket: { type: string }
-        accepted: { type: boolean }
-        text: { type: string }
-        final: { type: boolean }
-        partial: { type: string }
-        speaker: { type: string }
-    DesktopBuild:
-      type: object
-      required: [platform, architecture, label, status, url, sha256, sizeBytes, signing, minimumOs]
-      properties:
-        platform:
-          type: string
-          enum: [windows, mac]
-        architecture:
-          type: string
-        label:
-          type: string
-        status:
-          type: string
-          enum: [unavailable, preview, verified]
-        url:
-          type: [string, "null"]
-        sha256:
-          type: [string, "null"]
-        sizeBytes:
-          type: [integer, "null"]
-        signing:
-          type: string
-        minimumOs:
-          type: string
-    DesktopRelease:
-      type: object
-      required: [version, publishedAt, builds]
-      properties:
-        version:
-          type: string
-        publishedAt:
-          type: [string, "null"]
-        builds:
-          type: array
-          items:
-            $ref: "#/components/schemas/DesktopBuild"
     AccessStatus:
       type: object
       required: [status, role, email, requested]
@@ -816,10 +647,6 @@ components:
           maxLength: 24000
         test:
           type: boolean
-        screenshot:
-          type: string
-          maxLength: 700000
-          description: Optional explicitly consented JPEG screenshot encoded as base64
     NewCallSession:
       type: object
       required: [sessionType]

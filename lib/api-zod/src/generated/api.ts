@@ -8,82 +8,6 @@
 import * as zod from 'zod';
 
 
-/**
- * @summary Read a public HTTPS job description for an approved user
- */
-export const importSessionJobLinkBodyUrlMax = 2048;
-
-
-
-export const ImportSessionJobLinkBody = zod.object({
-  "url": zod.string().url().max(importSessionJobLinkBodyUrlMax)
-})
-
-export const ImportSessionJobLinkResponse = zod.object({
-  "text": zod.string()
-})
-
-
-/**
- * @summary Open, feed or stop optional live transcription for the current interview round
- */
-export const SendSessionLiveAudioParams = zod.object({
-  "id": zod.coerce.string()
-})
-
-
-export const sendSessionLiveAudioBodyAudioMax = 8000;
-
-
-
-export const SendSessionLiveAudioBody = zod.object({
-  "source": zod.enum(['microphone', 'system']),
-  "roundNumber": zod.number().int().min(1).optional(),
-  "audio": zod.string().max(sendSessionLiveAudioBodyAudioMax).optional(),
-  "open": zod.boolean().optional(),
-  "stop": zod.boolean().optional()
-})
-
-export const SendSessionLiveAudioResponse = zod.object({
-  "ticket": zod.string().optional(),
-  "accepted": zod.boolean().optional(),
-  "text": zod.string().optional(),
-  "final": zod.boolean().optional(),
-  "partial": zod.string().optional(),
-  "speaker": zod.string().optional()
-})
-
-
-/**
- * @summary Public desktop installer availability
- */
-export const GetDesktopReleaseResponse = zod.object({
-  "version": zod.string(),
-  "publishedAt": zod.string().nullable(),
-  "builds": zod.array(zod.object({
-  "platform": zod.enum(['windows', 'mac']),
-  "architecture": zod.string(),
-  "label": zod.string(),
-  "status": zod.enum(['unavailable', 'preview', 'verified']),
-  "url": zod.string().nullable(),
-  "sha256": zod.string().nullable(),
-  "sizeBytes": zod.number().int().nullable(),
-  "signing": zod.string(),
-  "minimumOs": zod.string()
-}))
-})
-
-
-/**
- * @summary Public Windows installer download
- */
-export const DownloadWindowsInstallerHeader = zod.object({
-  "Range": zod.string().optional().describe('A single byte range, for example bytes=0-4194303')
-})
-
-export const DownloadWindowsInstallerResponse = zod.unknown()
-
-
 export const GetAccessStatusResponse = zod.object({
   "status": zod.enum(['pending', 'approved', 'denied', 'revoked']),
   "role": zod.enum(['owner', 'approver', 'user']),
@@ -736,8 +660,6 @@ export const generateSessionAnswerBodyQuestionMax = 8000;
 
 export const generateSessionAnswerBodyPreviousAnswerMax = 24000;
 
-export const generateSessionAnswerBodyScreenshotMax = 700000;
-
 
 
 export const GenerateSessionAnswerBody = zod.object({
@@ -746,8 +668,7 @@ export const GenerateSessionAnswerBody = zod.object({
   "stream": zod.boolean().optional(),
   "action": zod.enum(['answer', 'shorten', 'explain', 'again']).optional(),
   "previousAnswer": zod.string().max(generateSessionAnswerBodyPreviousAnswerMax).optional(),
-  "test": zod.boolean().optional(),
-  "screenshot": zod.string().max(generateSessionAnswerBodyScreenshotMax).optional().describe('Optional explicitly consented JPEG screenshot encoded as base64')
+  "test": zod.boolean().optional()
 })
 
 export const GenerateSessionAnswerResponse = zod.object({

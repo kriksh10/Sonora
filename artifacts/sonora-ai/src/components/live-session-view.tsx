@@ -63,6 +63,10 @@ export type LiveSessionViewProps = {
   timingSummary?: string;
   onClaimSpeaker?: () => void;
   onScreenshot?: () => void;
+  voiceReady?: boolean;
+  voiceRecording?: boolean;
+  onRecordVoice?: () => void;
+  onClearVoice?: () => void;
 };
 
 function Meter({ name, value }: { name: string; value: number }) {
@@ -310,6 +314,8 @@ export default function LiveSessionView(p: LiveSessionViewProps) {
               </span>}
               {p.pipelineStatus && <span className="lsv-chip" role="status" data-testid="text-pipeline-status">{p.pipelineStatus}</span>}
               {p.onClaimSpeaker && p.pipelineStatus?.startsWith("Speaker ") && <button type="button" className="lsv-btn" onClick={p.onClaimSpeaker}>This speaker is me</button>}
+              {p.onRecordVoice && <button type="button" className="lsv-btn" disabled={live || p.voiceRecording} onClick={p.onRecordVoice}>{p.voiceRecording ? "Listening…" : p.voiceReady ? "Record my voice again" : "Record my voice"}</button>}
+              {p.voiceReady && p.onClearVoice && <button type="button" className="lsv-btn" onClick={p.onClearVoice}>Clear saved voice</button>}
               {p.onScreenshot && <button type="button" className="lsv-btn" onClick={p.onScreenshot}>Send screenshot</button>}
               {p.timingSummary && <span className="lsv-chip" data-testid="text-timing-summary">{p.timingSummary}</span>}
               {p.channelStatus && <span className="lsv-chip">{phone ? `Laptop mic: ${p.channelStatus.microphone}` : `Mic: ${p.channelStatus.microphone} · Call: ${p.channelStatus.system}`}</span>}
