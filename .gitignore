@@ -1,0 +1,13 @@
+node_modules
+dist
+tmp
+*.tsbuildinfo
+.expo
+.env
+.env.*
+secrets/
+.DS_Store
+/generated-artifacts/
+/attached_assets/*.zip
+/artifacts/sonora-ai/desktop/assets/
+target/
