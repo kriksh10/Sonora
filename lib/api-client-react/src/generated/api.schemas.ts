@@ -178,8 +178,8 @@ export interface SessionPreferencesInput {
   answerPreferences?: AnswerPreferences;
   /** @maxLength 8000 */
   instructions?: string;
-  model?: SessionPreferencesInputModel;
-  language?: SessionPreferencesInputLanguage;
+  model?: string;
+  language?: string;
   autoAnswer?: boolean;
   saveTranscript?: boolean;
 }
@@ -304,6 +304,7 @@ export type NewCallSessionSessionType = typeof NewCallSessionSessionType[keyof t
 export const NewCallSessionSessionType = {
   interview: 'interview',
   call: 'call',
+  mock: 'mock',
 } as const;
 
 export type NewCallSessionAnswerPreference = typeof NewCallSessionAnswerPreference[keyof typeof NewCallSessionAnswerPreference];
@@ -352,8 +353,8 @@ export interface NewCallSession {
   instructions?: string;
   answerPreference?: NewCallSessionAnswerPreference;
   answerPreferences?: AnswerPreferences;
-  model?: NewCallSessionModel;
-  language?: NewCallSessionLanguage;
+  model?: string;
+  language?: string;
   autoAnswer?: boolean;
   saveTranscript?: boolean;
 }
@@ -402,6 +403,7 @@ export type CallSessionSessionType = typeof CallSessionSessionType[keyof typeof 
 export const CallSessionSessionType = {
   interview: 'interview',
   call: 'call',
+  mock: 'mock',
 } as const;
 
 export type CallSessionStatus = typeof CallSessionStatus[keyof typeof CallSessionStatus];

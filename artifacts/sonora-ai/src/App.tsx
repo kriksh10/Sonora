@@ -16,6 +16,7 @@ import DesktopBrowserSignIn from '@/components/desktop-browser-sign-in';
 import DesktopConnect from '@/pages/desktop-connect';
 import AccessGate from '@/components/access-gate';
 import SettingsPage from '@/pages/settings';
+import PricingCatalog from '@/components/pricing-catalog';
 
 const queryClient = new QueryClient();
 const clerkPubKey = publishableKeyFromHost(
@@ -420,37 +421,25 @@ function DashboardPage() {
 
 function PricingOffers() {
   return (
-    <div className="reference-pricing-grid">
-      <article className="reference-plan reference-plan-free">
-        <div className="reference-plan-top">
-          <div>
-            <div className="reference-plan-kicker">Free tier</div>
-            <h3>Free</h3>
+    <div>
+      <div className="reference-pricing-grid">
+        <article className="reference-plan reference-plan-free">
+          <div className="reference-plan-top">
+            <div>
+              <div className="reference-plan-kicker">Free tier</div>
+              <h3>Free</h3>
+            </div>
+            <span>10 FREE SESSIONS</span>
           </div>
-          <span>10 FREE SESSIONS</span>
-        </div>
-        <p className="reference-plan-price">$0 <small>/ to start</small></p>
-        <ul>
-          <li><Check size={15} /> 10 free sessions</li>
-        </ul>
-        <a className="reference-plan-action" href={signUpHref}>Get 10 Free Sessions <ArrowRight size={15} /></a>
-      </article>
-      <article className="reference-plan reference-plan-signal">
-        <div className="reference-plan-top">
-          <div>
-            <div className="reference-plan-kicker">For people in motion</div>
-            <h3>Signal</h3>
-          </div>
-          <span>POPULAR</span>
-        </div>
-        <p className="reference-plan-price">$16 <small>/ month</small></p>
-        <ul>
-          <li><Check size={15} /> Unlimited recordings and uploads</li>
-          <li><Check size={15} /> Live guidance and smart highlights</li>
-          <li><Check size={15} /> Exportable briefs and integrations</li>
-        </ul>
-        <a className="reference-plan-action is-signal" href={signUpHref}>Start with Signal <ArrowRight size={15} /></a>
-      </article>
+          <p className="reference-plan-price">$0 <small>/ to start</small></p>
+          <ul>
+            <li><Check size={15} /> 10 sessions, up to 10 minutes each</li>
+            <li><Check size={15} /> Longer sessions bill in 30-minute credit blocks</li>
+          </ul>
+          <a className="reference-plan-action" href={signUpHref}>Get 10 Free Sessions <ArrowRight size={15} /></a>
+        </article>
+      </div>
+      <PricingCatalog />
     </div>
   );
 }

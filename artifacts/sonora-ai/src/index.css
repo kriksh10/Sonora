@@ -1285,3 +1285,23 @@ html[data-sonora-theme="light"]:not(.sonora-desktop) .sonora-workspace .bg-\[\#2
   .reference-plan-top > span { white-space: normal; }
   .reference-plan { padding: 22px 18px; }
 }
+
+.parity-catalog { margin-top: 28px; text-align: left; }
+.parity-todo { margin: 0 auto 16px; max-width: 720px; border: 1px solid #e0b15a; border-radius: 12px; background: #fff6df; color: #5c4310; padding: 12px 14px; font-size: .9rem; }
+.parity-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.parity-pack-title { margin: 28px 0 8px; text-align: center; }
+.parity-soon { margin-top: 16px; text-align: center; font-weight: 700; }
+.credits-counter { border: 1px solid rgba(255,255,255,.16); border-radius: 999px; padding: 6px 10px; font-size: .72rem; color: #d9f5df; }
+.session-studio { display: grid; gap: 12px; margin-top: 16px; }
+.studio-timer, .studio-actions, .studio-row, .studio-extend { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.studio-timer strong { font-variant-numeric: tabular-nums; }
+.studio-card { border: 1px solid rgba(255,255,255,.1); border-radius: 12px; padding: 12px; background: rgba(0,0,0,.2); }
+.studio-card h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; font-size: .95rem; }
+.studio-card textarea, .studio-resume { width: 100%; min-height: 88px; margin-top: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,.12); background: #101113; color: inherit; padding: 8px; }
+.studio-thread { display: grid; gap: 6px; font-size: .85rem; }
+.studio-question { font-weight: 650; }
+.studio-card button, .studio-actions button { border: 1px solid rgba(255,255,255,.14); border-radius: 8px; background: transparent; color: inherit; padding: 8px 10px; }
+@media (max-width: 680px) {
+  .credits-counter { width: 100%; text-align: center; }
+  .parity-grid { grid-template-columns: 1fr; }
+}

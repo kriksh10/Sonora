@@ -36,6 +36,25 @@ function pcm16ToFloat(audio: string) {
   return samples;
 }
 
+/** True when POST /transcribe exists and Gemini STT is configured. 400 still means the route is up. */
+export async function serverSttAvailable(sessionId: string) {
+  try {
+    const response = await fetch(`/api/sessions/${sessionId}/transcribe`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ probe: true }),
+      signal: AbortSignal.timeout(4000),
+    });
+    if (response.status === 404 || response.status === 503) return false;
+    if (!response.ok) return response.status < 500;
+    const data = await response.json().catch(() => ({}));
+    return data.available !== false;
+  } catch {
+    return false;
+  }
+}
+
 export function createAudioGroup(captures: AudioCapture[]): AudioCapture {
   let stopped = false;
   const stop = () => { stopped = true; captures.forEach(capture => capture.stop()); };
@@ -125,6 +144,11 @@ export function createDesktopAudio(options: Options): AudioCapture {
           body: JSON.stringify({ audio, mimeType: "audio/wav", source: options.source, ...(options.roundNumber ? { roundNumber: options.roundNumber } : {}) }),
         });
         const result = await response.json().catch(() => ({}));
+        if (response.status === 404 || response.status === 503) {
+          const unavailable = new Error("Server transcription is unavailable.");
+          unavailable.name = "ServerSttUnavailable";
+          throw unavailable;
+        }
         if (!response.ok) throw new Error(result.error || `Transcription failed (${response.status}).`);
         if (!stopped) {
           options.onTiming?.(Date.now() - startedAt);

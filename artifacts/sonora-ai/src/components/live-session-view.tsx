@@ -204,17 +204,17 @@ export default function LiveSessionView(p: LiveSessionViewProps) {
     state === "interrupted" ? "Interrupted, partial" :
     state === "complete" ? "Complete" : "No answer yet";
 
+  const autoReady = autoOn && source !== "microphone" && p.remoteConfirmed;
   let hint = "";
   if (ended) hint = "Session ended. Actions are disabled.";
-  else if (!live) hint = "Audio is stopped. Sonora cannot hear or answer automatically until you start audio.";
   else if (phone) hint = "";
-  else if (!p.remoteConfirmed) hint = "Mapping off: confirm mic = you, call = interviewer. Stop audio to change it.";
-  else if (source === "microphone") hint = window.sonoraDesktop
-    ? "Microphone captures you, not the interviewer. Use Call audio for automatic answers, or ask manually."
-    : "Microphone captures you. Choose Meeting tab and share the call tab with audio to hear the interviewer.";
-  else if (!autoOn) hint = "Auto Answer is off. Ask manually or turn it on.";
+  else if (!live) hint = "Audio is stopped. The microphone is you. A shared meeting tab is the interviewer.";
+  else if (!autoOn) hint = "Auto Answer is off. The microphone is you and will not be answered. Turn it on and share the meeting tab to answer the interviewer.";
+  else if (source === "microphone") hint = "Auto Answer is on. This microphone is you, so Sonora will not answer it. Share the meeting tab — that audio is the interviewer.";
+  else if (!p.remoteConfirmed) hint = "Auto Answer is on. Confirm the shared meeting tab is the interviewer. Your microphone is you and stays manual.";
+  else hint = "Auto Answer is on. Meeting-tab audio is the interviewer. Your microphone is you and stays manual.";
 
-  const computerAutoPaused = !phone && !ended && (!p.remoteConfirmed || source === "microphone" || !autoOn);
+  const showAutoBanner = !phone && !ended;
   const startLabel = p.requestingAudio ? "Cancel request" : live ? "Stop" : phone ? "Start phone listening" : autoOn && p.remoteConfirmed && source !== "microphone" ? "Start audio + answers" : "Start listening";
 
   return (
@@ -223,7 +223,7 @@ export default function LiveSessionView(p: LiveSessionViewProps) {
         <span className="lsv-grip" aria-hidden="true"><i /><i /></span>
         <div className="lsv-title">
           <strong>{p.session.title}</strong>
-          <span>{p.session.company || (p.session.sessionType === "interview" ? "Interview" : "Call")} · {p.session.saveTranscript ? "Transcript saved" : "Transcript not saved"}</span>
+          <span>{p.session.company || (p.session.sessionType === "mock" ? "Mock interview" : p.session.sessionType === "interview" ? "Interview" : "Call")} · {p.session.saveTranscript ? "Transcript saved" : "Transcript not saved"}</span>
         </div>
         <div className="lsv-controls">
           <span className="lsv-timer" aria-label={`Elapsed ${p.duration}`}><i className="lsv-dot" />{live ? "Recording " : ""}{p.duration}</span>
@@ -358,24 +358,22 @@ export default function LiveSessionView(p: LiveSessionViewProps) {
         </div>
       )}
 
-      {computerAutoPaused && (
-        <div className="lsv-note-bar" role="status" data-testid="auto-answer-setup">
-          Automatic answers are paused.{" "}
-          {source === "microphone" ? "Microphone is you, not the interviewer. " : !p.remoteConfirmed ? "Confirm call audio is the interviewer. " : "Auto Answer is off. "}
-          {!lockAudio && source === "microphone" && window.sonoraDesktop && (
-            <button type="button" data-testid="button-use-call-audio" className="lsv-link" onClick={() => p.onAudioSourceChange("system")}>Use call audio</button>
+      {showAutoBanner && (
+        <div className={`lsv-note-bar ${autoReady && live ? "ok" : ""}`} role="status" data-testid="auto-answer-setup">
+          {hint}
+          {!lockAudio && autoOn && source === "microphone" && (
+            <button type="button" data-testid="button-use-call-audio" className="lsv-link" onClick={() => p.onAudioSourceChange("system")}>Share meeting tab</button>
           )}
-          {!lockAudio && source !== "microphone" && !p.remoteConfirmed && (
+          {!lockAudio && autoOn && source !== "microphone" && !p.remoteConfirmed && (
             <label className="lsv-check">
               <input type="checkbox" data-testid="checkbox-confirm-interviewer" checked={false} onChange={(e) => p.onRemoteConfirmedChange(e.target.checked)} />
-              Call audio is the interviewer
+              Meeting tab is the interviewer
             </label>
           )}
           {!autoOn && p.onAutoAnswerChange && (
-            <button type="button" data-testid="button-enable-auto-answer" className="lsv-link" onClick={() => p.onAutoAnswerChange?.(true)}>Enable Auto Answer</button>
+            <button type="button" data-testid="button-enable-auto-answer" className="lsv-link" onClick={() => p.onAutoAnswerChange?.(true)}>Turn on Auto Answer</button>
           )}
-          {lockAudio && <span>Stop audio to change source or mapping.</span>}
-          {!window.sonoraDesktop && <span>Call audio needs the desktop app.</span>}
+          {lockAudio && <span>Stop audio before changing the source.</span>}
         </div>
       )}
 

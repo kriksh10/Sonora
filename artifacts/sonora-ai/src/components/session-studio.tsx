@@ -1,0 +1,215 @@
+import { useEffect, useRef, useState } from "react";
+import { Camera, Eraser, MessageSquare, Timer } from "lucide-react";
+import type { CallSession } from "@workspace/api-client-react";
+import { BILLING_BLOCK_MINUTES, FREE_SESSION_MINUTES } from "@/lib/pricing";
+import {
+  captureDisplayFrame,
+  downloadPdf,
+  downloadText,
+  generateQuestionBank,
+  generateSessionNotes,
+  nextMockQuestion,
+  readAutoExtend,
+  readNotes,
+  saveAutoExtend,
+  scoreMockAnswer,
+  tailorResume,
+  type BankItem,
+  type SessionNotes,
+} from "@/lib/session-tools";
+
+function clock(ms: number) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  const body = `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  return hours ? `${hours}:${body}` : body;
+}
+
+export function SessionTimer({ startedAt, now }: { startedAt: string | null; now: number }) {
+  const elapsed = startedAt ? now - new Date(startedAt).getTime() : 0;
+  const blockMs = BILLING_BLOCK_MINUTES * 60 * 1000;
+  const intoBlock = elapsed > 0 ? elapsed % blockMs : 0;
+  const remaining = elapsed > 0 ? blockMs - intoBlock : blockMs;
+  const freeLeft = Math.max(0, FREE_SESSION_MINUTES * 60 * 1000 - elapsed);
+  return (
+    <div className="studio-timer" aria-live="polite">
+      <Timer size={14} />
+      <strong>{startedAt ? clock(elapsed) : "00:00"}</strong>
+      <span>{startedAt ? `${clock(remaining)} left in this 30-min block` : "Timer starts when the session starts"}</span>
+      {startedAt && freeLeft > 0 && <span>{clock(freeLeft)} left in the free 10 minutes</span>}
+    </div>
+  );
+}
+
+export function CreditsCounter({ label }: { label: string }) {
+  return <span className="credits-counter" data-testid="text-credits">{label}</span>;
+}
+
+export function creditLabel(input: { bypass: boolean; balance: number; freeRemaining: number; unlimitedUntil: string | null }) {
+  if (input.bypass) return "Credits: unlimited";
+  if (input.unlimitedUntil && new Date(input.unlimitedUntil).getTime() > Date.now()) return "Credits: pass active";
+  return `Credits: ${input.balance} · ${input.freeRemaining} free sessions left`;
+}
+
+export default function SessionStudio({
+  session,
+  now,
+  onAsk,
+  onClear,
+  onUseScreenshot,
+}: {
+  session: CallSession;
+  now: number;
+  onAsk: (question: string) => void;
+  onClear: () => void;
+  onUseScreenshot: (image: string, question: string) => void;
+}) {
+  const [chat, setChat] = useState("");
+  const [thread, setThread] = useState<{ role: "you" | "sonora"; text: string }[]>([]);
+  const [autoExtend, setAutoExtend] = useState(() => readAutoExtend(session.id));
+  const [notes, setNotes] = useState<SessionNotes | null>(() => readNotes(session.id));
+  const [notesBusy, setNotesBusy] = useState(false);
+  const [bank, setBank] = useState<BankItem[]>([]);
+  const [bankBusy, setBankBusy] = useState(false);
+  const [resume, setResume] = useState(session.resumeText);
+  const [tailored, setTailored] = useState("");
+  const [resumeBusy, setResumeBusy] = useState(false);
+  const [mockQuestion, setMockQuestion] = useState("");
+  const [mockAnswer, setMockAnswer] = useState("");
+  const [mockFeedback, setMockFeedback] = useState("");
+  const [mockScore, setMockScore] = useState<number | null>(null);
+  const [mockBusy, setMockBusy] = useState(false);
+  const [toolError, setToolError] = useState("");
+  const notesAttempt = useRef<string | null>(null);
+
+  useEffect(() => {
+    setAutoExtend(readAutoExtend(session.id));
+    setNotes(readNotes(session.id));
+    setResume(session.resumeText);
+    setThread([]);
+    setMockQuestion("");
+    setMockFeedback("");
+    setMockScore(null);
+  }, [session.id, session.resumeText]);
+
+  useEffect(() => {
+    if (session.status !== "ended" || notes || notesAttempt.current === session.id) return;
+    notesAttempt.current = session.id;
+    setNotesBusy(true);
+    void generateSessionNotes(session).then(setNotes).catch((cause) => {
+      setToolError(cause instanceof Error ? cause.message : "Notes could not be written.");
+    }).finally(() => setNotesBusy(false));
+  }, [session, notes]);
+
+  const sendChat = () => {
+    const text = chat.trim();
+    if (!text) return;
+    setThread((items) => [...items, { role: "you", text }]);
+    setChat("");
+    onAsk(text);
+  };
+
+  return (
+    <div className="session-studio">
+      <SessionTimer startedAt={session.startedAt} now={now} />
+      <label className="studio-extend">
+        <input
+          type="checkbox"
+          checked={autoExtend}
+          onChange={(event) => {
+            setAutoExtend(event.target.checked);
+            void saveAutoExtend(session.id, event.target.checked);
+          }}
+        />
+        Auto-extend in 30-minute credit blocks
+      </label>
+      <div className="studio-actions">
+        <button type="button" onClick={() => void captureDisplayFrame().then((image) => {
+          if (!image) return;
+          onUseScreenshot(image, "Look at this screenshot and help with the coding or on-screen question.");
+        }).catch(() => setToolError("Screen capture was cancelled or is not available in this browser."))}>
+          <Camera size={14} /> Screenshot
+        </button>
+        <button type="button" onClick={() => { setThread([]); setChat(""); onClear(); }}>
+          <Eraser size={14} /> Clear
+        </button>
+      </div>
+      <section className="studio-card" aria-label="Chat">
+        <h3><MessageSquare size={14} /> Chat</h3>
+        <div className="studio-thread">
+          {thread.length === 0 && <p>Ask anything about this session. Sonora uses the job description, resume, and transcript.</p>}
+          {thread.map((item, index) => <p key={index}><strong>{item.role === "you" ? "You" : "Sonora"}:</strong> {item.text}</p>)}
+        </div>
+        <div className="studio-row">
+          <textarea value={chat} onChange={(event) => setChat(event.target.value)} placeholder="Ask a free-form question" aria-label="Chat message"
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendChat(); }
+            }} />
+          <button type="button" onClick={sendChat}>Send</button>
+        </div>
+      </section>
+      {session.sessionType === "mock" && (
+        <section className="studio-card" aria-label="Mock interview">
+          <h3>Mock interview</h3>
+          <button type="button" disabled={mockBusy} onClick={() => {
+            setMockBusy(true); setToolError("");
+            void nextMockQuestion(session).then(setMockQuestion).catch((cause) => setToolError(cause instanceof Error ? cause.message : "Could not ask a question.")).finally(() => setMockBusy(false));
+          }}>{mockBusy ? "Working…" : "Ask me a question"}</button>
+          {mockQuestion && <p className="studio-question">{mockQuestion}</p>}
+          <textarea value={mockAnswer} onChange={(event) => setMockAnswer(event.target.value)} placeholder="Type your answer, or paste what you said" aria-label="Mock answer" />
+          <button type="button" disabled={mockBusy || !mockQuestion || !mockAnswer.trim()} onClick={() => {
+            setMockBusy(true);
+            void scoreMockAnswer(session, mockQuestion, mockAnswer).then((result) => {
+              setMockFeedback(result.feedback);
+              setMockScore(result.score);
+            }).catch((cause) => setToolError(cause instanceof Error ? cause.message : "Could not score the answer.")).finally(() => setMockBusy(false));
+          }}>Get feedback and score</button>
+          {mockScore !== null && <p>Score: {mockScore}/100</p>}
+          {mockFeedback && <p>{mockFeedback}</p>}
+        </section>
+      )}
+      {session.status === "ended" && (
+        <section className="studio-card" aria-label="Session notes">
+          <h3>Notes</h3>
+          {notesBusy && <p>Writing notes…</p>}
+          {notes && (
+            <>
+              <p><strong>Summary.</strong> {notes.summary}</p>
+              <p><strong>Questions asked.</strong> {notes.questionsAsked || "None captured."}</p>
+              <p><strong>Next steps.</strong> {notes.nextSteps || "None captured."}</p>
+            </>
+          )}
+        </section>
+      )}
+      <section className="studio-card" aria-label="Question bank">
+        <h3>Question bank</h3>
+        <button type="button" disabled={bankBusy} onClick={() => {
+          setBankBusy(true);
+          void generateQuestionBank(session).then(setBank).catch((cause) => setToolError(cause instanceof Error ? cause.message : "Could not build the question bank.")).finally(() => setBankBusy(false));
+        }}>{bankBusy ? "Writing questions…" : "Generate likely questions"}</button>
+        {bank.map((item) => (
+          <article key={item.question}>
+            <p><strong>{item.question}</strong></p>
+            <p>{item.modelAnswer}</p>
+          </article>
+        ))}
+      </section>
+      <section className="studio-card" aria-label="Resume maker">
+        <h3>Resume maker</h3>
+        <textarea value={resume} onChange={(event) => setResume(event.target.value)} aria-label="Resume text" placeholder="Paste the resume to tailor" />
+        <div className="studio-row">
+          <button type="button" disabled={resumeBusy || !resume.trim()} onClick={() => {
+            setResumeBusy(true);
+            void tailorResume(session, resume).then(setTailored).catch((cause) => setToolError(cause instanceof Error ? cause.message : "Could not tailor the resume.")).finally(() => setResumeBusy(false));
+          }}>{resumeBusy ? "Tailoring…" : "Tailor to this job"}</button>
+          <button type="button" disabled={!tailored} onClick={() => downloadText("sonora-resume.txt", tailored)}>Download text</button>
+          <button type="button" disabled={!tailored} onClick={() => downloadPdf("sonora-resume.pdf", tailored)}>Download PDF</button>
+        </div>
+        {tailored && <pre className="studio-resume">{tailored}</pre>}
+      </section>
+      {toolError && <p role="alert">{toolError}</p>}
+    </div>
+  );
+}
