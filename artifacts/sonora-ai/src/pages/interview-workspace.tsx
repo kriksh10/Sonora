@@ -22,7 +22,7 @@ import SessionWizard from "@/components/session-wizard";
 import SessionPreferencesDialog from "@/components/session-preferences-dialog";
 import { sessionPreferences, summarizePreferences } from "@/lib/answer-preferences";
 import LiveSessionView from "@/components/live-session-view";
-import { createDesktopAudio, createAudioGroup, type AudioCapture } from "@/lib/desktop-audio";
+import { createDesktopAudio, createAudioGroup, serverSttAvailable, type AudioCapture } from "@/lib/desktop-audio";
 import { browserLanguage } from "@/lib/call-languages";
 import { createInterviewerQuestions } from "@/lib/interviewer-questions";
 import { createPhraseBuffer } from "@/lib/phrase-buffer";
@@ -31,7 +31,7 @@ import { requestAnswer } from "@/lib/answer-stream";
 import AudioReadiness from "@/components/audio-readiness";
 import Modal from "@/components/modal";
 import { useAccess } from "@/components/access-gate";
-import { captureSpeaker, mayAutoAnswer, createRecentUtterance, type InterviewInputMode } from "@/lib/interview-input";
+import { captureSpeaker, mayAutoAnswer, createRecentUtterance, friendlyCaptureError, type InterviewInputMode } from "@/lib/interview-input";
 import { firstTextTiming } from "@/lib/live-timing";
 import SessionStudio, { CreditsCounter, creditLabel } from "@/components/session-studio";
 import { apiRequest } from "@/lib/answer-preferences";
@@ -545,9 +545,11 @@ export default function InterviewWorkspace() {
 
   const endSession = async () => {
     if (!selected) return;
+    phrasesRef.current?.flush();
     stopCapture();
     answerAbortRef.current?.abort();
     try {
+      await transcriptWritesRef.current;
       const updated = await api<CallSession>(`/sessions/${selected.id}`, {
         method: "PATCH",
         body: JSON.stringify({ status: "ended", roundNumber: selected.roundNumber }),
@@ -631,7 +633,12 @@ export default function InterviewWorkspace() {
       return;
     }
     setLiveMode(true);
-    if (window.sonoraDesktop || inputMode === "phone" || audioSource === "system") {
+    const serverStt = window.sonoraDesktop ? true : await serverSttAvailable(selected.id);
+    if (!serverStt && audioSource !== "microphone" && !window.sonoraDesktop) {
+      setError("Meeting-tab audio is transcribed on the server, and that service is unavailable right now. You can type a question, or switch to the microphone to try browser speech recognition.");
+      return;
+    }
+    if (serverStt || window.sonoraDesktop || inputMode === "phone" || audioSource !== "microphone") {
       const captureToken = ++captureTokenRef.current;
       mySpeakerRef.current = "";
       recentAudioRef.current = { microphone: new Float32Array(0), system: new Float32Array(0) };
@@ -680,6 +687,7 @@ export default function InterviewWorkspace() {
             ? `Speaker ${metadata.speakerLabel}`
             : currentMode === "phone" ? "Mixed phone speech transcribed" : speaker === "interviewer" ? "Collecting interviewer question" : "Listening-only for this source");
           phrasesRef.current?.push(text, { source: metadata.source, speaker, capturedAt: metadata.capturedAt });
+          if (metadata.endOfTurn) phrasesRef.current?.flush();
         },
         onNotice: text => { if (captureToken === captureTokenRef.current) setNotice(text); },
         onTurnEnded: () => {
@@ -688,8 +696,15 @@ export default function InterviewWorkspace() {
         },
         onError: cause => {
           if (captureToken !== captureTokenRef.current) return;
+          const serverDown = cause instanceof Error && cause.name === "ServerSttUnavailable";
           stopCapture();
-          setError(cause.message);
+          if (serverDown && !window.sonoraDesktop && sources.every((item) => item === "microphone")) {
+            void startBrowserSpeech(captureTokenRef.current);
+            return;
+          }
+          setError(serverDown
+            ? "Server transcription is unavailable, so this audio cannot be transcribed here. Type a question, or try the microphone if browser speech recognition is available."
+            : friendlyCaptureError(cause, source === "system" ? "system" : "microphone"));
         },
       }));
       const group = createAudioGroup(captures);
@@ -708,16 +723,30 @@ export default function InterviewWorkspace() {
         setListening(true);
         setNotice(inputMode === "phone"
           ? "Phone-speaker capture is on. Both voices are mixed; use Answer recent, or explicitly enable mixed-audio automatic answers."
-          : `${audioSource === "both" ? "Separate microphone and call channels are" : audioSource === "system" ? "Call audio is" : "Microphone is"} on. ${audioSource === "microphone" ? "Your microphone never triggers auto-answer in computer-call mode." : remoteConfirmed ? "Confirmed remote questions can trigger Auto Answer." : "Speaker mapping unconfirmed: auto-answer is paused."}`);
+          : `${audioSource === "both" ? "Microphone and meeting tab are" : audioSource === "system" ? "Meeting tab is" : "Microphone is"} on. Server transcription is sending short audio clips to Gemini. ${audioSource === "microphone" ? "The microphone is you, so Auto Answer will not reply to it." : remoteConfirmed ? "Auto Answer can reply when the meeting tab asks a question." : "Confirm the meeting tab is the interviewer before Auto Answer will reply."}`);
       } catch (cause) {
         if (captureToken !== captureTokenRef.current) return;
         stopCapture();
-        setError(cause instanceof Error ? cause.message : "Could not start desktop audio.");
+        const serverDown = cause instanceof Error && cause.name === "ServerSttUnavailable";
+        if (serverDown && !window.sonoraDesktop && sources.every((item) => item === "microphone")) {
+          await startBrowserSpeech(captureTokenRef.current);
+          return;
+        }
+        setError(serverDown
+          ? "Server transcription is unavailable, so meeting-tab audio cannot be transcribed in this browser. Type a question, or try again when the speech service is up."
+          : friendlyCaptureError(cause, sources.includes("system") ? "system" : "microphone"));
       } finally {
         if (captureToken === captureTokenRef.current) setRequestingMic(false);
       }
       return;
     }
+    setNotice("Server transcription is unavailable. This browser’s speech recognition is a fallback and may fail outside Google Chrome.");
+    await startBrowserSpeech(captureTokenRef.current + 1);
+  };
+
+  const startBrowserSpeech = async (captureToken: number) => {
+    const session = selected;
+    if (!session) return;
     const speechWindow = window as WindowWithSpeechRecognition;
     const SpeechRecognition =
       speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
@@ -729,7 +758,7 @@ export default function InterviewWorkspace() {
       setError("This browser cannot request microphone access. Type a question below to test Gemini.");
       return;
     }
-    const captureToken = ++captureTokenRef.current;
+    captureTokenRef.current = captureToken;
     setRequestingMic(true);
     try {
       setError("");
@@ -742,7 +771,7 @@ export default function InterviewWorkspace() {
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
-      recognition.lang = browserLanguage(selected?.language);
+      recognition.lang = browserLanguage(session.language);
       recognition.onresult = (event) => {
         if (captureToken !== captureTokenRef.current) return;
         let interim = "";
@@ -764,11 +793,9 @@ export default function InterviewWorkspace() {
       recognition.onerror = (event) => {
         stream.getTracks().forEach((track) => track.stop());
         if (captureToken !== captureTokenRef.current) return;
-        setError(
-          event.error === "not-allowed"
-            ? "Microphone permission was denied. Allow microphone access in your browser settings and try again."
-            : `Speech recognition stopped (${event.error}). You can still type a question.`,
-        );
+        setError(event.error === "not-allowed" || event.error === "audio-capture"
+          ? friendlyCaptureError(Object.assign(new Error(event.error), { name: event.error === "not-allowed" ? "NotAllowedError" : "Error" }), "speech")
+          : `Browser speech recognition stopped (${event.error}). You can still type a question.`);
         setListening(false);
         streamRef.current = null;
       };
@@ -780,10 +807,10 @@ export default function InterviewWorkspace() {
         streamRef.current = null;
       };
       recognitionRef.current = recognition;
-      if (selected.status === "ready") {
-        const updated = await api<CallSession>(`/sessions/${selected.id}`, {
+      if (session.status === "ready") {
+        const updated = await api<CallSession>(`/sessions/${session.id}`, {
           method: "PATCH",
-          body: JSON.stringify({ status: "active", roundNumber: selected.roundNumber }),
+          body: JSON.stringify({ status: "active", roundNumber: session.roundNumber }),
         });
         if (captureToken !== captureTokenRef.current) {
           stream.getTracks().forEach((track) => track.stop());
@@ -806,13 +833,7 @@ export default function InterviewWorkspace() {
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
       setListening(false);
-      setError(
-        cause instanceof DOMException && cause.name === "NotAllowedError"
-          ? "Microphone permission was denied. Allow microphone access in your browser settings."
-          : cause instanceof Error
-            ? cause.message
-            : "Could not start microphone transcription.",
-      );
+      setError(friendlyCaptureError(cause, "speech"));
     } finally {
       if (captureToken === captureTokenRef.current) setRequestingMic(false);
     }
