@@ -250,7 +250,7 @@ function ClerkProviderWithRoutes() {
         <ClerkQueryClientCacheInvalidator />
         <TooltipProvider>
           <RoutedErrorBoundary>
-            <Switch>
+            <ResolvedAuth><Switch>
               <Route path="/download">{() => <main className="min-h-screen bg-[#101113]"><DesktopDownloads /></main>}</Route>
               <Route path="/desktop-connect/:id">{(params) => <GatedDesktopConnect key={params.id} params={params} />}</Route>
               <Route path="/sign-in/*?" component={SignInPage} />
@@ -262,13 +262,27 @@ function ClerkProviderWithRoutes() {
               <Route path="/settings" component={SettingsPage} />
               <Route path="/" component={HomeRedirect} />
               <Route component={NotFound} />
-            </Switch>
+            </Switch></ResolvedAuth>
           </RoutedErrorBoundary>
           <Toaster />
         </TooltipProvider>
       </QueryClientProvider>
     </ClerkProvider>
   );
+}
+
+function ResolvedAuth({ children }: { children: ReactNode }) {
+  const { isLoaded } = useAuth();
+  const [timedOut, setTimedOut] = useState(false);
+  useEffect(() => {
+    if (isLoaded) return;
+    const timer = setTimeout(() => setTimedOut(true), CLERK_LOAD_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [isLoaded]);
+  if (isLoaded) return children;
+  return <main className="auth-screen" role="status">
+    {timedOut ? <section className="auth-fallback"><h1>Sonora AI sign-in is taking longer than expected</h1><p>Check your connection and try again.</p><button onClick={() => window.location.reload()}>Try again</button><a href={homeHref}>Back to home</a></section> : <p>Loading Sonora AI…</p>}
+  </main>;
 }
 
 function ClerkQueryClientCacheInvalidator() {
@@ -393,7 +407,7 @@ function GatedDesktopConnect({ params }: { params: { id: string } }) {
 
 function HomeRedirect() {
   const { isLoaded, isSignedIn, userId } = useAuth();
-  if (!isLoaded) return window.sonoraDesktop ? <SignInPage /> : <LandingHome />;
+  if (!isLoaded) return <div className="auth-screen" role="status"><p>Loading Sonora AI…</p></div>;
   return isSignedIn ? <AccessGate key={userId}><InterviewWorkspace key={userId} /></AccessGate> : window.sonoraDesktop ? <SignInPage /> : <LandingHome />;
 }
 
@@ -446,6 +460,7 @@ function PricingOffers() {
 }
 
 function MarketingHeader({ current }: { current?: 'pricing' | 'privacy' | 'terms' }) {
+  const { isSignedIn } = useAuth();
   return (
     <header className="reference-nav-bar">
       <nav className="reference-nav reference-nav-simple" aria-label="Sonora AI">
@@ -460,8 +475,8 @@ function MarketingHeader({ current }: { current?: 'pricing' | 'privacy' | 'terms
           <a href="/pricing" aria-current={current === 'pricing' ? 'page' : undefined}>Pricing</a>
         </div>
         <div className="reference-nav-actions">
-          <a className="reference-signin-link" href={signInHref}>Sign in</a>
-          <a className="reference-dark-button" href={signUpHref}>Try for Free <ArrowRight size={14} /></a>
+          <a className="reference-signin-link" href={isSignedIn ? `${basePath}/settings` : signInHref}>{isSignedIn ? 'Settings' : 'Sign in'}</a>
+          <a className="reference-dark-button" href={isSignedIn ? `${basePath}/dashboard` : signUpHref}>{isSignedIn ? 'Dashboard' : 'Try for Free'} <ArrowRight size={14} /></a>
         </div>
       </nav>
     </header>

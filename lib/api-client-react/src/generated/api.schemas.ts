@@ -692,6 +692,11 @@ export type SessionErrorResponse = {
   error: string;
 };
 
+export type GetBillingCatalog200 = {
+  checkout: boolean;
+  [key: string]: unknown;
+ };
+
 export type RunPreparationTool200 = {
   text: string;
 };

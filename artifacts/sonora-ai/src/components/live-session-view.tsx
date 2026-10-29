@@ -24,6 +24,8 @@ export type LiveSessionViewProps = {
   error: string;
   audioSource: AudioSource;
   remoteConfirmed: boolean;
+  microphoneAuto: boolean;
+  onMicrophoneAutoChange: (value: boolean) => void;
   supportsDualAudio: boolean;
   systemDevice?: string;
   onSystemDeviceChange?: (value: string) => void;
@@ -204,18 +206,17 @@ export default function LiveSessionView(p: LiveSessionViewProps) {
     state === "interrupted" ? "Interrupted, partial" :
     state === "complete" ? "Complete" : "No answer yet";
 
-  const autoReady = autoOn && source !== "microphone" && p.remoteConfirmed;
+  const autoReady = autoOn && (source !== "microphone" || p.microphoneAuto);
   let hint = "";
   if (ended) hint = "Session ended. Actions are disabled.";
   else if (phone) hint = "";
   else if (!live) hint = "Audio is stopped. The microphone is you. A shared meeting tab is the interviewer.";
   else if (!autoOn) hint = "Auto Answer is off. The microphone is you and will not be answered. Turn it on and share the meeting tab to answer the interviewer.";
-  else if (source === "microphone") hint = "Auto Answer is on. This microphone is you, so Sonora will not answer it. Share the meeting tab — that audio is the interviewer.";
-  else if (!p.remoteConfirmed) hint = "Auto Answer is on. Confirm the shared meeting tab is the interviewer. Your microphone is you and stays manual.";
+  else if (source === "microphone") hint = p.microphoneAuto ? "Microphone questions will be answered. This may include your own speech." : "Enable microphone questions in Session, or share meeting audio.";
   else hint = "Auto Answer is on. Meeting-tab audio is the interviewer. Your microphone is you and stays manual.";
 
   const showAutoBanner = !phone && !ended;
-  const startLabel = p.requestingAudio ? "Cancel request" : live ? "Stop" : phone ? "Start phone listening" : autoOn && p.remoteConfirmed && source !== "microphone" ? "Start audio + answers" : "Start listening";
+  const startLabel = p.requestingAudio ? "Cancel request" : live ? "Stop" : phone ? "Start phone listening" : autoReady ? "Start audio + answers" : "Start listening";
 
   return (
     <section data-testid="live-session-view" aria-label={`Live session: ${p.session.title}`} className={`lsv-root ${live ? "lsv-live" : ""}`}>
@@ -262,6 +263,11 @@ export default function LiveSessionView(p: LiveSessionViewProps) {
                     <input type="checkbox" data-testid="checkbox-remote-confirmed" checked={p.remoteConfirmed} disabled={lockAudio || ended}
                       onChange={(e) => p.onRemoteConfirmedChange(e.target.checked)} />
                     Mic = me · call = interviewer
+                  </label>
+                  <label className="lsv-check">
+                    <input type="checkbox" checked={p.microphoneAuto} disabled={ended}
+                      onChange={e => p.onMicrophoneAutoChange(e.target.checked)} />
+                    Also answer microphone questions (may include me)
                   </label>
                   {window.sonoraDesktop && source !== "microphone" && p.onSystemDeviceChange && (
                     <CallOutputPicker value={p.systemDevice ?? ""} onChange={p.onSystemDeviceChange} disabled={lockAudio} />
@@ -310,7 +316,7 @@ export default function LiveSessionView(p: LiveSessionViewProps) {
               <span className="lsv-legend">Diagnostics</span>
               <span className={`lsv-chip ${live ? "ok" : ""}`}>{live ? "Capture started" : "Audio off"}</span>
               {!phone && <span className={`lsv-chip ${autoOn && p.remoteConfirmed && source !== "microphone" ? "ok" : "warn"}`}>
-                Auto Answer {autoOn ? (!p.remoteConfirmed ? "paused, mapping off" : source === "microphone" ? "paused, no call source" : "on, remote only") : "off"}
+                Auto Answer {autoOn ? (source === "microphone" && !p.microphoneAuto ? "mic opt-in needed" : p.microphoneAuto ? "on, call + mic" : "on, call audio") : "off"}
               </span>}
               {p.pipelineStatus && <span className="lsv-chip" role="status" data-testid="text-pipeline-status">{p.pipelineStatus}</span>}
               {p.onClaimSpeaker && p.pipelineStatus?.startsWith("Speaker ") && <button type="button" className="lsv-btn" onClick={p.onClaimSpeaker}>This speaker is me</button>}
@@ -367,7 +373,7 @@ export default function LiveSessionView(p: LiveSessionViewProps) {
           {!lockAudio && autoOn && source !== "microphone" && !p.remoteConfirmed && (
             <label className="lsv-check">
               <input type="checkbox" data-testid="checkbox-confirm-interviewer" checked={false} onChange={(e) => p.onRemoteConfirmedChange(e.target.checked)} />
-              Meeting tab is the interviewer
+              Label my microphone as Candidate (meeting audio is Interviewer)
             </label>
           )}
           {!autoOn && p.onAutoAnswerChange && (

@@ -1,8 +1,8 @@
-// Explicit capture only. A finished phrase is sent after a pause, and a chunk never exceeds 4.5 seconds.
+// Independently decodable 5–6 second PCM clips preserve enough context for STT.
 class SonoraPcm extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.samples = new Float32Array(72000);
+    this.samples = new Float32Array(96000);
     this.used = 0;
     this.phase = 0;
     this.sum = 0;
@@ -34,7 +34,7 @@ class SonoraPcm extends AudioWorkletProcessor {
         this.sum = 0;
         this.count = 0;
         const full = this.used === this.samples.length;
-        const turn = this.used >= 16000 && this.trailingQuiet >= 11200 && this.peak > 0.003;
+        const turn = this.used >= 80000 && this.trailingQuiet >= 11200 && this.peak > 0.003;
         if (full || turn) {
           if (this.peak > 0.003) {
             const out = this.samples.slice(0, this.used);
@@ -50,11 +50,11 @@ class SonoraPcm extends AudioWorkletProcessor {
             this.port.postMessage({ samples: out, endOfTurn: this.trailingQuiet >= 11200 }, [out.buffer]);
             this.silentChunks = 0;
           } else if (full) {
-            this.port.postMessage({ silent: true, prolonged: ++this.silentChunks >= 4 });
+            this.port.postMessage({ silent: true, prolonged: ++this.silentChunks >= 3 });
           } else {
             continue;
           }
-          this.samples = new Float32Array(72000);
+          this.samples = new Float32Array(96000);
           this.used = 0;
           this.peak = 0;
           this.trailingQuiet = 0;

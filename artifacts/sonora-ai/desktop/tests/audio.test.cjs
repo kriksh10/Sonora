@@ -14,6 +14,19 @@ function bundle(relative) {
 const wavCode = bundle('../../src/lib/pcm-wav.ts');
 const validatorCode = bundle('../../../api-server/src/lib/audio-chunks.ts');
 const captureCode = bundle('../../src/lib/desktop-audio.ts');
+const compatCode = bundle('../../src/lib/compat-pcm.ts');
+test('compatibility processor preserves 5–6s mono PCM and skips silence', () => {
+  const context = vm.createContext({ Float32Array, Math });
+  vm.runInContext(compatCode, context);
+  const events = [];
+  const collect = context.subject.createCompatPcm(48000, event => events.push(event));
+  for (let i = 0; i < 6; i++) collect(new Float32Array(48000).fill(.1));
+  assert.equal(events.filter(e => e.samples).length, 1);
+  assert.equal(events.find(e => e.samples).samples.length, 96000);
+  for (let i = 0; i < 18; i++) collect(new Float32Array(48000));
+  assert.equal(events.filter(e => e.samples).length, 1);
+  assert.ok(events.some(e => e.prolonged));
+});
 test('client WAV encoder roundtrips through server validation, rejects malformed/oversize data', () => {
   const client = vm.createContext({ Uint8Array, Float32Array, ArrayBuffer, DataView, btoa, atob });
   vm.runInContext(wavCode, client);
@@ -68,6 +81,7 @@ function captureHarness(overrides = {}) {
   }
   const context = vm.createContext({
     Uint8Array, Float32Array, ArrayBuffer, DataView, btoa, atob, AbortController, AbortSignal,
+    setTimeout, clearTimeout, Date,
     window: { sonoraDesktop: { setCaptureActive: async value => { bridgeStates.push(value); } } },
     navigator: { mediaDevices: { getUserMedia: async () => stream, getDisplayMedia: async () => stream } },
     AudioContext: Context, AudioWorkletNode: Worklet, MediaStream: class { constructor() {} },
@@ -88,6 +102,76 @@ test('stop after permission request releases tracks even if permission resolves 
   await started;
   assert.equal(harness.track.stopped, true);
   assert.ok(!harness.bridgeStates.includes(true));
+});
+test('a throttled clip is skipped without stopping the microphone or later transcription', async () => {
+  let requests = 0;
+  const texts = [], errors = [], notices = [];
+  const harness = captureHarness({ fetch: async () => {
+    requests++;
+    return requests === 1 ? { ok: false, status: 429, json: async () => ({ error: "busy" }) }
+      : { ok: true, status: 200, json: async () => ({ text: "How do threads share memory?" }) };
+  } });
+  const capture = harness.context.subject.createDesktopAudio({ source: "microphone", sessionId: "test",
+    onError: error => errors.push(error.message), onNotice: text => notices.push(text), onText: text => texts.push(text) });
+  await capture.start();
+  harness.node.port.onmessage({ data: { samples: new Float32Array(96000).fill(.1) } });
+  await new Promise(setImmediate);
+  harness.node.port.onmessage({ data: { samples: new Float32Array(96000).fill(.1) } });
+  await new Promise(resolve => setTimeout(resolve, 4300));
+  assert.equal(harness.track.stopped, false);
+  assert.deepEqual(errors, []);
+  assert.ok(notices.some(text => /continuing to listen/.test(text)));
+  assert.deepEqual(texts, ["How do threads share memory?"]);
+  capture.stop();
+});
+test('a throttled availability probe does not switch to a separate browser speech pipeline', async () => {
+  const harness = captureHarness({ fetch: async () => ({ ok: false, status: 429 }) });
+  assert.equal(await harness.context.subject.serverSttAvailable("test"), true);
+});
+test('worklet failure uses compatibility capture, sends WAV and never plays back input', async () => {
+  let processor, closed = false;
+  class CompatibilityContext {
+    state = "running";
+    sampleRate = 16000;
+    destination = {};
+    audioWorklet = { addModule: async () => { throw new Error("Worklet unavailable"); } };
+    createMediaStreamSource() { return { connect() {} }; }
+    createScriptProcessor() { processor = { connect() {}, disconnect() {}, onaudioprocess: null }; return processor; }
+    resume() { return Promise.resolve(); }
+    close() { closed = true; return Promise.resolve(); }
+  }
+  const texts = [], notices = [], errors = [];
+  const harness = captureHarness({ AudioContext: CompatibilityContext });
+  const capture = harness.context.subject.createDesktopAudio({ source: "microphone", sessionId: "test",
+    onError: error => errors.push(error.message), onNotice: text => notices.push(text), onText: text => texts.push(text) });
+  await capture.start();
+  const output = new Float32Array(4096).fill(.5);
+  processor.onaudioprocess({ inputBuffer: { getChannelData: () => new Float32Array(96000).fill(.1) },
+    outputBuffer: { getChannelData: () => output } });
+  await new Promise(setImmediate);
+  assert.deepEqual(texts, ["What is a closure?"]);
+  assert.deepEqual(errors, []);
+  assert.ok(notices.some(text => /Compatibility audio capture/.test(text)));
+  assert.ok(output.every(value => value === 0));
+  capture.stop();
+  assert.equal(processor.onaudioprocess, null);
+  assert.equal(closed, true);
+});
+test('queue pressure skips old speech with a notice rather than stopping capture', async () => {
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
+  const errors = [], notices = [];
+  const harness = captureHarness({ fetch: () => pending });
+  const capture = harness.context.subject.createDesktopAudio({ source: "system", sessionId: "test",
+    onError: error => errors.push(error.message), onNotice: text => notices.push(text), onText() {} });
+  await capture.start();
+  for (let i = 0; i < 8; i++) harness.node.port.onmessage({ data: { samples: new Float32Array(96000).fill(.1) } });
+  assert.equal(harness.track.stopped, false);
+  assert.deepEqual(errors, []);
+  assert.ok(notices.some(text => /older queued clip was skipped/.test(text)));
+  capture.stop();
+  release({ ok: true, json: async () => ({ text: "" }) });
+  await new Promise(setImmediate);
 });
 test('provider failure stops tracks, closes audio context and reports recoverable error', async () => {
   const errors = [];

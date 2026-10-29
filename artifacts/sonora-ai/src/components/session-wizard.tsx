@@ -17,7 +17,7 @@ type Draft = {
 };
 const emptyDraft: Draft = {
   sessionType: "interview", company: "", role: "", description: "", title: "", resumeText: "", documentsText: "",
-  instructions: "", model: "gemini-2.5-flash", language: "English", autoAnswer: false, saveTranscript: true, autoExtend: false,
+  instructions: "", model: "gemini-2.5-flash", language: "English", autoAnswer: true, saveTranscript: true, autoExtend: false,
 };
 
 function interviewTitle(role: string, company: string) {

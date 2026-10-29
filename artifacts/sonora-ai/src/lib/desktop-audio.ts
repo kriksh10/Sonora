@@ -1,11 +1,13 @@
 import { wavBase64 } from "./pcm-wav";
 import { createTranscriptionPacing, waitForTranscription } from "./transcription-pacing";
+import { createCompatPcm, type PcmEvent } from "./compat-pcm";
 
 // Both channels share one provider lane; server concurrency limits remain enforced.
 let transcriptionLane: Promise<void> = Promise.resolve();
 const pacing = createTranscriptionPacing();
 
 type Options = {
+  context?: AudioContext;
   source: "microphone" | "system";
   deviceName?: string;
   referenceDevice?: string;
@@ -46,6 +48,8 @@ export async function serverSttAvailable(sessionId: string) {
       body: JSON.stringify({ probe: true }),
       signal: AbortSignal.timeout(4000),
     });
+    // Busy is not unavailable: let the clip queue handle server throttling.
+    if (response.status === 429) return true;
     if (response.status === 404 || response.status === 503) return false;
     if (!response.ok) return false;
     const data = await response.json().catch(() => ({}));
@@ -74,12 +78,14 @@ export function createAudioGroup(captures: AudioCapture[]): AudioCapture {
 /** Bounded FIFO with at most two waiting chunks; stop on lag instead of silently losing speech. */
 export function createDesktopAudio(options: Options): AudioCapture {
   let stopped = false;
-  let context: AudioContext | null = null;
+  let context: AudioContext | null = options.context ?? null;
   let stream: MediaStream | null = null;
   let node: AudioWorkletNode | null = null;
+  let compatibilityNode: ScriptProcessorNode | null = null;
   let active = false;
   let pending: { audio: string; capturedAt: string; endOfTurn?: boolean }[] = [];
   let speakerPaused = false;
+  let lastText = "";
   let liveMode: "try" | "on" | "off" = "try";
   let liveStarted = false;
   let liveSocket: WebSocket | null = null;
@@ -108,6 +114,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
       }).catch(() => {});
     }
     if (node) { node.port.onmessage = null; node.disconnect(); }
+    if (compatibilityNode) { compatibilityNode.onaudioprocess = null; compatibilityNode.disconnect(); }
     stream?.getTracks().forEach(track => track.stop());
     if (context && context.state !== "closed") void context.close().catch(() => {});
     if (!nativeId) void window.sonoraDesktop?.setCaptureActive(false).catch(() => {});
@@ -116,6 +123,19 @@ export function createDesktopAudio(options: Options): AudioCapture {
     if (stopped) return;
     stop();
     options.onError(error instanceof Error ? error : new Error("Desktop audio stopped."));
+  };
+  const startupStep = async <T>(operation: Promise<T>, message: string): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let cancel: () => void = () => {};
+    try {
+      return await Promise.race([operation, new Promise<T>((_resolve, reject) => {
+        cancel = () => reject(new Error("Audio startup cancelled."));
+        abort.signal.addEventListener("abort", cancel, { once: true });
+        timer = setTimeout(() => reject(new Error(`${message}. Please retry.`)), 10_000);
+      })]);
+    } finally {
+      clearTimeout(timer); abort.signal.removeEventListener("abort", cancel);
+    }
   };
   const pump = async () => {
     if (active || stopped) return;
@@ -144,6 +164,14 @@ export function createDesktopAudio(options: Options): AudioCapture {
           body: JSON.stringify({ audio, mimeType: "audio/wav", source: options.source, ...(options.roundNumber ? { roundNumber: options.roundNumber } : {}) }),
         });
         const result = await response.json().catch(() => ({}));
+        if (response.status === 429) {
+          // Another tab/provider request may occupy the shared server lane.
+          // Do not stop the microphone or retry indefinitely with stale speech.
+          options.onNotice("Transcription busy; skipping one clip and continuing to listen.");
+          options.onPhase?.("Waiting for transcription capacity");
+          await waitForTranscription(4100, abort.signal);
+          continue;
+        }
         if (response.status === 404 || response.status === 503) {
           const unavailable = new Error("Server transcription is unavailable.");
           unavailable.name = "ServerSttUnavailable";
@@ -155,7 +183,11 @@ export function createDesktopAudio(options: Options): AudioCapture {
           options.onPhase?.(result.text ? "Speech transcribed" : "Audio received · no clear speech");
           const paused = speakerPaused;
           speakerPaused = false;
-          if (result.text) options.onText(result.text, {
+          const text = typeof result.text === "string" ? result.text.trim() : "";
+          // Suppress repeated greeting-only hallucinations, not repeated real questions.
+          const filler = /^(hello|hi|hey|thank you|thanks)[.! ]*$/i.test(text) && text.toLowerCase() === lastText.toLowerCase();
+          lastText = text;
+          if (text && !filler) options.onText(text, {
             source: options.source, capturedAt, ...((endOfTurn || paused) ? { endOfTurn: true } : {}),
           });
           else if (paused) options.onTurnEnded?.();
@@ -240,7 +272,10 @@ export function createDesktopAudio(options: Options): AudioCapture {
   const enqueue = (audio: string, capturedAt = new Date().toISOString(), endOfTurn?: boolean) => {
     if (stopped) return;
     if (options.transcribe === false) return;
-    if (pending.length >= 2) { fail(new Error("Transcription is falling behind. Capture stopped to avoid dropping speech. If using Both, switch to Call audio only to prioritize interviewer answers, then restart. You can also type a question.")); return; }
+    if (pending.length >= 3) {
+      pending.shift();
+      options.onNotice("Transcription is catching up; an older queued clip was skipped. Listening is still on.");
+    }
     pending.push({ audio, capturedAt, endOfTurn });
     void pump();
   };
@@ -283,24 +318,40 @@ export function createDesktopAudio(options: Options): AudioCapture {
         if (stopped) { stream.getTracks().forEach(track => track.stop()); return; }
         if (!stream.getAudioTracks().length) throw new Error("No audio source was shared. Allow system audio, or choose microphone input.");
         stream.getTracks().forEach(track => track.addEventListener("ended", () => fail(new Error("The shared audio source ended. Capture stopped.")), { once: true }));
-        context = new AudioContext();
-        await context.audioWorklet.addModule(`${import.meta.env.BASE_URL}audio-worklet.js`);
-        if (stopped) return;
+        context ??= new AudioContext();
         const source = context.createMediaStreamSource(new MediaStream(stream.getAudioTracks()));
-        node = new AudioWorkletNode(context, "sonora-pcm");
-        source.connect(node);
-        node.connect(context.destination);
-        node.onprocessorerror = () => fail(new Error("Audio processing stopped. Retry capture."));
-        node.port.onmessage = (event: MessageEvent<{ samples?: Float32Array; silent?: boolean; prolonged?: boolean; peak?: number; endOfTurn?: boolean }>) => {
+        const receive = (data: PcmEvent) => {
           if (stopped) return;
-          if (typeof event.data.peak === "number") options.onLevel?.(event.data.peak, event.data.peak > 0.003 ? "Audio activity" : "Silent samples");
-          if (event.data.silent) notePause();
-          if (event.data.prolonged) options.onNotice("No audible speech for 18 seconds. Check your selected source, volume, and OS audio permission.");
-          if (!event.data.samples) return;
-          options.onPcm?.(event.data.samples, 16000);
-          enqueue(wavBase64(event.data.samples), undefined, event.data.endOfTurn);
+          if (typeof data.peak === "number") options.onLevel?.(data.peak, data.peak > 0.003 ? "Audio activity" : "Silent samples");
+          if (data.silent) notePause();
+          if (data.prolonged) options.onNotice("No audible speech for 18 seconds. Check your selected source, volume, and OS audio permission.");
+          if (!data.samples) return;
+          options.onPcm?.(data.samples, 16000);
+          enqueue(wavBase64(data.samples), undefined, data.endOfTurn);
         };
-        await context.resume();
+        try {
+          options.onPhase?.("Loading audio processor");
+          await startupStep(context.audioWorklet.addModule(`${import.meta.env.BASE_URL}audio-worklet.js`), "Audio processor did not load");
+          if (stopped) return;
+          node = new AudioWorkletNode(context, "sonora-pcm");
+          node.port.onmessage = event => receive(event.data);
+          node.onprocessorerror = () => fail(new Error("Audio processing stopped. Retry capture."));
+          source.connect(node); node.connect(context.destination);
+        } catch (error) {
+          if (stopped) return;
+          if (!context.createScriptProcessor) throw error;
+          // Deprecated but widely supported; used only when worklet startup fails.
+          compatibilityNode = context.createScriptProcessor(4096, 1, 1);
+          const collect = createCompatPcm(context.sampleRate, receive);
+          compatibilityNode.onaudioprocess = event => {
+            event.outputBuffer.getChannelData(0).fill(0);
+            collect(event.inputBuffer.getChannelData(0));
+          };
+          source.connect(compatibilityNode); compatibilityNode.connect(context.destination);
+          options.onNotice("Compatibility audio capture is active because the worklet did not load.");
+        }
+        options.onPhase?.("Activating microphone audio");
+        await startupStep(context.resume(), "Audio could not start. Click Start listening again to allow audio playback");
         if (stopped) return;
         await window.sonoraDesktop?.setCaptureActive(true);
       } catch (error) { stop(); throw error; }

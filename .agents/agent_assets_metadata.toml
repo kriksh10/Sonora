@@ -42,3 +42,10 @@ mtime_ms = 1792470303175
 storage_uri = "gcs://replit-rams-assets-spock/rams/assets/repl:87c45247-c74b-45db-b8e5-2e324bcf7153/afdfae58-36ff-4b8b-81a1-debcf2fa1c17/a68288e8-ee49-4e4c-9998-f1c50e899a52"
 storage_version_token = "1792470389953653"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "5-28U1AffNdFnx0o6iDSM"
+uri = "file://generated-artifacts/qa/spoken-question.mp3"
+type = "audio"
+title = "sonora_transcription_question"
+description = "Text-to-speech audio: Can you explain the difference between a process and a thread? When would you use each one?"

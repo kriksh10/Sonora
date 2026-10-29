@@ -25,6 +25,14 @@ export const GetDesktopReleaseResponse = zod.object({
 })
 
 
+/**
+ * @summary Public plan catalog and test checkout capability, without credentials
+ */
+export const GetBillingCatalogResponse = zod.object({
+  "checkout": zod.boolean()
+})
+
+
 export const GetCreditBalanceResponse = zod.object({
   "balance": zod.number().int(),
   "freeRemaining": zod.number().int(),

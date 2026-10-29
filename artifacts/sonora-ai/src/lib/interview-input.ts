@@ -3,7 +3,8 @@ export type CaptureSource = "microphone" | "system";
 
 /** A phone speaker and the candidate share one microphone; never invent identity. */
 export function captureSpeaker(mode: InterviewInputMode, source: CaptureSource, confirmed: boolean) {
-  if (mode === "phone" || !confirmed) return "unknown" as const;
+  if (mode === "phone") return "unknown" as const;
+  if (source === "microphone" && !confirmed) return "unknown" as const;
   return source === "system" ? "interviewer" as const : "candidate" as const;
 }
 
@@ -24,11 +25,11 @@ export function friendlyCaptureError(error: unknown, source: "microphone" | "sys
 
 export function mayAutoAnswer(
   mode: InterviewInputMode, source: CaptureSource, confirmed: boolean,
-  phoneOptIn: boolean, sessionAutoAnswer: boolean,
+  phoneOptIn: boolean, sessionAutoAnswer: boolean, microphoneOptIn = false,
 ) {
   return mode === "phone"
     ? source === "microphone" && phoneOptIn
-    : source === "system" && confirmed && sessionAutoAnswer;
+    : sessionAutoAnswer && (source === "system" || microphoneOptIn);
 }
 
 /** Only the recent utterance, never an unbounded microphone conversation. */

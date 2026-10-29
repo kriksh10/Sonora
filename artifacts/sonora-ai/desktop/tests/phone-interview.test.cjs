@@ -19,13 +19,15 @@ test('phone and normal call routing stay distinct: mixed voices never become int
   const { captureSpeaker, mayAutoAnswer } = load('../../src/lib/interview-input.ts');
   assert.equal(captureSpeaker('phone', 'microphone', true), 'unknown');
   assert.equal(captureSpeaker('computer', 'microphone', true), 'candidate');
-  assert.equal(captureSpeaker('computer', 'system', false), 'unknown');
+  assert.equal(captureSpeaker('computer', 'system', false), 'interviewer');
   assert.equal(captureSpeaker('computer', 'system', true), 'interviewer');
   assert.equal(mayAutoAnswer('phone', 'microphone', false, false, true), false);
   assert.equal(mayAutoAnswer('phone', 'microphone', false, true, false), true);
   assert.equal(mayAutoAnswer('phone', 'system', true, true, true), false);
   assert.equal(mayAutoAnswer('computer', 'microphone', true, true, true), false);
-  assert.equal(mayAutoAnswer('computer', 'system', false, true, true), false);
+  assert.equal(mayAutoAnswer('computer', 'system', false, true, true), true);
+  assert.equal(mayAutoAnswer('computer', 'microphone', false, false, true, true), true);
+  assert.equal(mayAutoAnswer('computer', 'microphone', false, false, false, true), false);
   assert.equal(mayAutoAnswer('computer', 'system', true, false, true), true);
 });
 

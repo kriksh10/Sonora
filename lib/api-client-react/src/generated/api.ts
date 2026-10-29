@@ -40,6 +40,7 @@ import type {
   DesktopAuthState,
   DesktopRelease,
   ExtractedText,
+  GetBillingCatalog200,
   HealthStatus,
   NewCallSession,
   PreparationInput,
@@ -143,6 +144,83 @@ export function useGetDesktopRelease<TData = Awaited<ReturnType<typeof getDeskto
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetDesktopReleaseQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetBillingCatalogUrl = () => {
+
+
+
+
+  return `/api/billing/catalog`
+}
+
+/**
+ * @summary Public plan catalog and test checkout capability, without credentials
+ */
+export const getBillingCatalog = async ( options?: Parameters<typeof customFetch>[1]): Promise<GetBillingCatalog200> => {
+
+  return customFetch<GetBillingCatalog200>(getGetBillingCatalogUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetBillingCatalogQueryKey = () => {
+    return [
+    `/api/billing/catalog`
+    ] as const;
+    }
+
+
+export const getGetBillingCatalogQueryOptions = <TData = Awaited<ReturnType<typeof getBillingCatalog>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBillingCatalog>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetBillingCatalogQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBillingCatalog>>> = ({ signal }) => getBillingCatalog({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBillingCatalog>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetBillingCatalogQueryResult = NonNullable<Awaited<ReturnType<typeof getBillingCatalog>>>
+export type GetBillingCatalogQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Public plan catalog and test checkout capability, without credentials
+ */
+
+export function useGetBillingCatalog<TData = Awaited<ReturnType<typeof getBillingCatalog>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBillingCatalog>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetBillingCatalogQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

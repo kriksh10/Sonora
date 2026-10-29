@@ -143,6 +143,7 @@ export default function InterviewWorkspace() {
   const [editOpen, setEditOpen] = useState(false);
   const [answerInput, setAnswerInput] = useState("");
   const [answer, setAnswer] = useState("");
+  const [answerCleared, setAnswerCleared] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [listening, setListening] = useState(false);
@@ -160,6 +161,10 @@ export default function InterviewWorkspace() {
   const desktopCaptureRef = useRef<AudioCapture[]>([]);
   const [audioSource, setAudioSource] = useState<"microphone" | "system" | "both">(window.sonoraDesktop ? "system" : "microphone");
   const [remoteConfirmed, setRemoteConfirmed] = useState(false);
+  const [microphoneAuto, setMicrophoneAuto] = useState(false);
+  const microphoneAutoRef = useRef(false);
+  const preparedAudioContextRef = useRef<AudioContext | null>(null);
+  microphoneAutoRef.current = microphoneAuto;
   const [inputMode, setInputMode] = useState<InterviewInputMode>("computer");
   const [phoneConsent, setPhoneConsent] = useState(false);
   const [phoneAuto, setPhoneAuto] = useState(false);
@@ -211,7 +216,7 @@ export default function InterviewWorkspace() {
   const shownEntries = (selected?.transcript ?? []).filter((entry) => roundView === "all" || roundOf(entry) === (roundView === "current" ? currentRound : roundView));
   const roundList = [...(selected?.rounds ?? []).filter((round) => round.number !== currentRound), { number: currentRound, startedAt: selected?.startedAt ?? null, endedAt: selected?.endedAt ?? null }]
     .sort((a, b) => a.number - b.number);
-  const visibleAnswer = answer ||
+  const visibleAnswer = answerCleared ? "" : answer ||
       [...currentEntries].reverse().find((entry) => entry.role === "assistant")?.text ||
       "";
 
@@ -323,14 +328,15 @@ export default function InterviewWorkspace() {
 
   const askGemini = useCallback(
     async (question: string, source: "typed" | "microphone" | "system" = "typed", persistQuestion = true,
-      action: "answer" | "shorten" | "explain" | "again" = "answer", previousAnswer?: string, receivedAt?: number) => {
+      action: "answer" | "shorten" | "explain" | "again" = "answer", previousAnswer?: string, receivedAt?: number, stayInWorkspace = false) => {
       if (!selected) return;
       if (selected.status === "ended") { setError("This session has ended. Create a new session to ask questions."); return; }
       const cleanQuestion = question.trim();
       if (!cleanQuestion || !/[\p{L}\p{N}]/u.test(cleanQuestion)) return;
       if (answerInFlightRef.current) return;
       if (settingsBusyRef.current) { setNotice("Wait for answer settings to finish saving, then ask again."); return; }
-      setLiveMode(true);
+      if (!stayInWorkspace) setLiveMode(true);
+      setAnswerCleared(false);
       answerInFlightRef.current = true;
       setBusy(true);
       setLatestQuestion(cleanQuestion);
@@ -387,6 +393,7 @@ export default function InterviewWorkspace() {
             ),
           );
         }
+        return response.answer;
       } catch (cause) {
         if (selectedIdRef.current === selected.id && (selectedSessionRef.current?.roundNumber ?? 1) === askRound) {
           setAnswerState("interrupted");
@@ -398,6 +405,7 @@ export default function InterviewWorkspace() {
           setBusy(false);
         }
       }
+      return undefined;
     },
     [refreshSessions, saveTranscript, selected, settingsBusy],
   );
@@ -414,8 +422,8 @@ export default function InterviewWorkspace() {
       const mode = inputRef.current.mode;
       const optedIn = inputRef.current.phoneAuto;
       const heard = phrase.source === "system" ? "system" : "microphone";
-      if (!mayAutoAnswer(mode, heard, remoteConfirmed, optedIn, !!selectedSessionRef.current?.autoAnswer)) return;
-      if (mode === "phone") questionsRef.current?.pushMixed(phrase.text, optedIn, true);
+      if (!mayAutoAnswer(mode, heard, remoteConfirmed, optedIn, !!selectedSessionRef.current?.autoAnswer, microphoneAutoRef.current)) return;
+      if (mode === "phone" || heard === "microphone") questionsRef.current?.pushMixed(phrase.text, mode === "phone" ? optedIn : microphoneAutoRef.current, true);
       else questionsRef.current?.push(phrase.text, phrase.speaker, true);
     }).catch(cause => {
       if (token !== captureTokenRef.current) return;
@@ -455,6 +463,9 @@ export default function InterviewWorkspace() {
     recentAudioRef.current = { microphone: new Float32Array(0), system: new Float32Array(0) };
     captureTokenRef.current += 1;
     for (const capture of desktopCaptureRef.current) capture.stop();
+    const prepared = preparedAudioContextRef.current;
+    preparedAudioContextRef.current = null;
+    if (prepared && prepared.state !== "closed") void prepared.close().catch(() => {});
     desktopCaptureRef.current = [];
     questionsRef.current?.reset();
     recentPhoneRef.current.clear();
@@ -479,6 +490,7 @@ export default function InterviewWorkspace() {
     inputRef.current = { mode, phoneAuto: false };
     setPhoneConsent(false); setPhoneAuto(false);
     setRemoteConfirmed(false);
+    setMicrophoneAuto(false);
     setAudioSource(mode === "phone" ? "microphone" : window.sonoraDesktop ? "system" : "microphone");
     setNotice("Input changed. Audio is off until you explicitly start it.");
     setTimingSummary(""); setTranscriptionTiming("");
@@ -516,6 +528,8 @@ export default function InterviewWorkspace() {
     lastRequestRef.current = null;
     setReadinessOpen(false);
     setRemoteConfirmed(false);
+    setMicrophoneAuto(false);
+    setAnswerCleared(false);
     setPhoneAuto(false); setPhoneConsent(false);
     inputRef.current = { mode: inputRef.current.mode, phoneAuto: false };
     setTimingSummary(""); setTranscriptionTiming("");
@@ -633,13 +647,31 @@ export default function InterviewWorkspace() {
       return;
     }
     setLiveMode(true);
+    // Unlock WebAudio during the click, before awaiting an API probe. Browsers
+    // can suspend a context created after an asynchronous permission/network step.
+    if (!window.sonoraDesktop && typeof AudioContext !== "undefined") {
+      try {
+        const prepared = new AudioContext();
+        preparedAudioContextRef.current = prepared;
+        void prepared.resume().catch(() => {});
+      } catch { setError("This browser could not initialize audio. Try another supported browser."); return; }
+    }
+    const startToken = ++captureTokenRef.current;
+    setRequestingMic(true);
+    setError("");
     const serverStt = window.sonoraDesktop ? true : await serverSttAvailable(selected.id);
+    if (startToken !== captureTokenRef.current) return;
+    if (!serverStt && preparedAudioContextRef.current) {
+      void preparedAudioContextRef.current.close().catch(() => {});
+      preparedAudioContextRef.current = null;
+    }
     if (!serverStt && audioSource !== "microphone" && !window.sonoraDesktop) {
+      setRequestingMic(false);
       setError("Meeting-tab audio is transcribed on the server, and that service is unavailable right now. You can type a question, or switch to the microphone to try browser speech recognition.");
       return;
     }
     if (serverStt || window.sonoraDesktop || inputMode === "phone" || audioSource !== "microphone") {
-      const captureToken = ++captureTokenRef.current;
+      const captureToken = startToken;
       mySpeakerRef.current = "";
       recentAudioRef.current = { microphone: new Float32Array(0), system: new Float32Array(0) };
       setRequestingMic(true);
@@ -652,6 +684,7 @@ export default function InterviewWorkspace() {
       }
       const captures = sources.map(source => createDesktopAudio({
         source,
+        ...(preparedAudioContextRef.current ? { context: preparedAudioContextRef.current } : {}),
         ...(source === "system" && systemDevice ? { deviceName: systemDevice } : {}),
         ...(source === "microphone" && audioSource === "both" && systemDevice ? { referenceDevice: systemDevice } : {}),
         sessionId: selected.id,
@@ -723,7 +756,7 @@ export default function InterviewWorkspace() {
         setListening(true);
         setNotice(inputMode === "phone"
           ? "Phone-speaker capture is on. Both voices are mixed; use Answer recent, or explicitly enable mixed-audio automatic answers."
-          : `${audioSource === "both" ? "Microphone and meeting tab are" : audioSource === "system" ? "Meeting tab is" : "Microphone is"} on. Server transcription is sending short audio clips to Gemini. ${audioSource === "microphone" ? "The microphone is you, so Auto Answer will not reply to it." : remoteConfirmed ? "Auto Answer can reply when the meeting tab asks a question." : "Confirm the meeting tab is the interviewer before Auto Answer will reply."}`);
+          : `${audioSource === "both" ? "Microphone and meeting tab are" : audioSource === "system" ? "Meeting tab is" : "Microphone is"} on. Gemini receives independent 5–6 second WAV clips. Meeting questions can be auto-answered; microphone questions require explicit opt-in.`);
       } catch (cause) {
         if (captureToken !== captureTokenRef.current) return;
         stopCapture();
@@ -924,6 +957,7 @@ export default function InterviewWorkspace() {
           requestingAudio={requestingMic} interimTranscript={interimTranscript}
           duration={formatDuration(selected.startedAt, now)} notice={notice} error={error}
           audioSource={audioSource} remoteConfirmed={remoteConfirmed} supportsDualAudio={supportsDualAudio}
+          microphoneAuto={microphoneAuto} onMicrophoneAutoChange={value => { questionsRef.current?.reset(); setMicrophoneAuto(value); }}
           systemDevice={systemDevice} onSystemDeviceChange={setSystemDevice}
           inputMode={inputMode} onInputModeChange={changeInputMode}
           phoneConsent={phoneConsent} onPhoneConsentChange={value => {
@@ -1165,14 +1199,16 @@ export default function InterviewWorkspace() {
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-white/40"><Sparkles size={12} /> {selected.model} · {summarizePreferences(sessionPreferences(selected))} · {selected.language} <button type="button" data-testid="button-edit-preferences" onClick={() => setEditOpen(true)} className="ml-2 rounded-md border border-white/10 px-2 py-1 text-white/70 hover:bg-white/5">Edit preferences</button></div>
                       {currentEntries.some((entry) => entry.source === "microphone") && <button type="button" onClick={() => setAnswerInput([...currentEntries].reverse().find((entry) => entry.source === "microphone")?.text ?? "")} className="mt-3 text-xs font-medium text-emerald-300 hover:text-emerald-200">Use latest microphone transcript as the question</button>}
                     </form>
+                    <label className="flex gap-2 text-sm"><input type="checkbox" checked={microphoneAuto} onChange={e => setMicrophoneAuto(e.target.checked)} />Also auto-answer microphone questions (may include your own speech)</label>
                     <SessionStudio key={`${selected.id}:${selected.roundNumber}`}
                       session={selected}
                       now={now}
-                      onAsk={(question) => void askGemini(question)}
-                      onClear={() => { setAnswer(""); setAnswerInput(""); setLatestQuestion(""); }}
+                      busy={busy}
+                      onAsk={(question) => askGemini(question, "typed", true, "answer", undefined, undefined, true)}
+                      onClear={() => { setAnswer(""); setAnswerCleared(true); setAnswerInput(""); setLatestQuestion(""); setAnswerState("idle"); lastRequestRef.current = null; setNotice("Visible chat and answer cleared. Your saved transcript is unchanged."); }}
                       onUseScreenshot={(image, question) => {
                         screenshotRef.current = image;
-                        void askGemini(question);
+                        return askGemini(question, "typed", true, "answer", undefined, undefined, true);
                       }}
                     />
                   </div>

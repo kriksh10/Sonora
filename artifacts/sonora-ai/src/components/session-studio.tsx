@@ -60,12 +60,14 @@ export default function SessionStudio({
   onAsk,
   onClear,
   onUseScreenshot,
+  busy = false,
 }: {
   session: CallSession;
   now: number;
-  onAsk: (question: string) => void;
+  onAsk: (question: string) => Promise<string | undefined>;
   onClear: () => void;
-  onUseScreenshot: (image: string, question: string) => void;
+  onUseScreenshot: (image: string, question: string) => Promise<string | undefined>;
+  busy?: boolean;
 }) {
   const [chat, setChat] = useState("");
   const [thread, setThread] = useState<{ role: "you" | "sonora"; text: string }[]>([]);
@@ -83,6 +85,9 @@ export default function SessionStudio({
   const [mockScore, setMockScore] = useState<number | null>(null);
   const [mockBusy, setMockBusy] = useState(false);
   const [toolError, setToolError] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
+  const ended = session.status === "ended";
+  const locked = ended || busy || chatBusy;
   const notesAttempt = useRef<string | null>(null);
   const [savedToolsLoaded, setSavedToolsLoaded] = useState(false);
 
@@ -120,12 +125,18 @@ export default function SessionStudio({
     }).finally(() => setNotesBusy(false));
   }, [session, notes, savedToolsLoaded]);
 
-  const sendChat = () => {
+  const sendChat = async () => {
     const text = chat.trim();
-    if (!text) return;
+    if (!text || locked) return;
     setThread((items) => [...items, { role: "you", text }]);
     setChat("");
-    onAsk(text);
+    setChatBusy(true); setToolError("");
+    try {
+      const reply = await onAsk(text);
+      if (reply) setThread(items => [...items, { role: "sonora", text: reply }]);
+      else setToolError("No reply was completed. Check the session error and retry.");
+    } catch (cause) { setToolError(cause instanceof Error ? cause.message : "Chat failed. Try again."); }
+    finally { setChatBusy(false); }
   };
 
   return (
@@ -147,16 +158,25 @@ export default function SessionStudio({
         Auto-extend in 30-minute credit blocks
       </label>
       <div className="studio-actions">
-        <button type="button" onClick={() => void captureDisplayFrame().then((image) => {
-          if (!image) return;
-          onUseScreenshot(image, "Look at this screenshot and help with the coding or on-screen question.");
-        }).catch(() => setToolError("Screen capture was cancelled or is not available in this browser."))}>
+        <button type="button" disabled={locked} onClick={async () => {
+          setChatBusy(true); setToolError("");
+          try {
+            const image = await captureDisplayFrame();
+            if (!image) { setToolError("No screenshot was captured."); return; }
+            setThread(items => [...items, { role: "you", text: "Help with this screenshot." }]);
+            const reply = await onUseScreenshot(image, "Look at this screenshot and help with the coding or on-screen question.");
+            if (reply) setThread(items => [...items, { role: "sonora", text: reply }]);
+            else setToolError("Screenshot answer failed. Check the session error and retry.");
+          } catch { setToolError("Screen capture was cancelled or could not be analyzed."); }
+          finally { setChatBusy(false); }
+        }}>
           <Camera size={14} /> Screenshot
         </button>
-        <button type="button" onClick={() => { setThread([]); setChat(""); onClear(); }}>
+        <button type="button" disabled={locked} onClick={() => { setThread([]); setChat(""); setToolError(""); onClear(); }}>
           <Eraser size={14} /> Clear
         </button>
       </div>
+      {ended && <p role="status">Chat, Screenshot and Clear are unavailable on ended sessions. Restart the interview for another round to use live tools.</p>}
       <section className="studio-card" aria-label="Chat">
         <h3><MessageSquare size={14} /> Chat</h3>
         <div className="studio-thread">
@@ -164,11 +184,11 @@ export default function SessionStudio({
           {thread.map((item, index) => <p key={index}><strong>{item.role === "you" ? "You" : "Sonora"}:</strong> {item.text}</p>)}
         </div>
         <div className="studio-row">
-          <textarea value={chat} onChange={(event) => setChat(event.target.value)} placeholder="Ask a free-form question" aria-label="Chat message"
+          <textarea disabled={locked} value={chat} onChange={(event) => setChat(event.target.value)} placeholder="Ask a free-form question" aria-label="Chat message"
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendChat(); }
             }} />
-          <button type="button" onClick={sendChat}>Send</button>
+          <button type="button" disabled={locked || !chat.trim()} onClick={() => void sendChat()}>{chatBusy ? "Replying…" : "Send"}</button>
         </div>
       </section>
       {session.sessionType === "mock" && (

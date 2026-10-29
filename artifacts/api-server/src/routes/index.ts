@@ -11,12 +11,19 @@ import lifecycleRouter from "./session-lifecycle";
 import { requireApprovedAccess } from "../lib/app-access";
 import billingRouter from "./billing";
 import sessionToolsRouter from "./session-tools";
+import { catalogForClient } from "../billing/stripe-checkout";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(desktopReleasesRouter);
 router.use(accessRouter);
+// Public commercial configuration exposes only a capability flag and catalog,
+// never credentials. Actual checkout remains behind approval and authentication.
+router.get("/billing/catalog", (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json(catalogForClient());
+});
 router.use(["/sessions", "/answer-preferences", "/files", "/billing"], requireApprovedAccess);
 router.use(billingRouter);
 router.use(sessionToolsRouter);

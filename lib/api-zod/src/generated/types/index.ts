@@ -42,6 +42,7 @@ export * from './desktopBuildPlatform';
 export * from './desktopBuildStatus';
 export * from './desktopRelease';
 export * from './extractedText';
+export * from './getBillingCatalog200';
 export * from './healthStatus';
 export * from './healthStatusDesktopAnswerProtocol';
 export * from './healthStatusDesktopAudioProtocol';

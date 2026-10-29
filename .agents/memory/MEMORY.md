@@ -7,3 +7,4 @@
 - [Answers without resume coverage](missing-resume-answers.md) — Missing resume topics still need experienced, practical answers at the selected length; do not invent personal experience.
 - [External copy merges](external-copy-merges.md) — Preserve workspace-only capabilities when integrating changes from external Sonora copies.
 - [Recoverable SDK errors](recoverable-sdk-errors.md) — Recovery UI can render behind a blocking dev overlay; verify controls remain usable during third-party outages.
+- [Speech verification](speech-verification.md) — Compare real recognized words and silence; exercise busy probes and audio clips without silently switching input pipelines.
