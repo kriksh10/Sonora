@@ -3,6 +3,8 @@ import { ArrowLeft, ChevronDown, ChevronUp, Mic, MoreHorizontal, Send, Settings2
 import type { CallSession, TranscriptEntry } from "@workspace/api-client-react";
 import FollowLatestPane from "@/components/follow-latest-pane";
 import SafeMarkdown from "@/components/safe-markdown";
+import CaptureDiagnostics from "@/components/capture-diagnostics";
+import type { CaptureDiagnostic } from "@/lib/continuous-audio";
 import CallOutputPicker from "@/components/call-output-picker";
 import "./live-session-view.css";
 
@@ -13,6 +15,7 @@ type LiveEntry = TranscriptEntry & {
 };
 
 export type LiveSessionViewProps = {
+  captureDiagnostics?: CaptureDiagnostic[];
   session: CallSession;
   answer: string;
   busy: boolean;
@@ -354,6 +357,7 @@ export default function LiveSessionView(p: LiveSessionViewProps) {
         </div>
       )}
 
+      <CaptureDiagnostics events={p.captureDiagnostics ?? []} />
       {phone && live && !ended && (
         <div className="lsv-phone-live" data-testid="phone-live-strip">
           <span className="lsv-chip warn">Mixed audio, speaker unknown{p.phoneAuto ? "" : " · manual answers"}</span>

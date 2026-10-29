@@ -1,6 +1,7 @@
 import { wavBase64 } from "./pcm-wav";
 import { createTranscriptionPacing, waitForTranscription } from "./transcription-pacing";
 import { createCompatPcm, type PcmEvent } from "./compat-pcm";
+import { createContinuousWindows, createWavOverlap, removeOverlapText, type CaptureDiagnostic } from "./continuous-audio";
 
 // Both channels share one provider lane; server concurrency limits remain enforced.
 let transcriptionLane: Promise<void> = Promise.resolve();
@@ -21,6 +22,7 @@ type Options = {
   onLevel?: (level: number, state: string) => void;
   onPhase?: (state: string) => void;
   onTiming?: (transcriptionMs: number) => void;
+  onDiagnostic?: (event: CaptureDiagnostic) => void;
   transcribe?: boolean;
 };
 export type AudioCapture = { start: () => Promise<void>; stop: () => void };
@@ -75,7 +77,7 @@ export function createAudioGroup(captures: AudioCapture[]): AudioCapture {
   };
 }
 
-/** Bounded FIFO with at most two waiting chunks; stop on lag instead of silently losing speech. */
+/** Continuous capture and a bounded, observable Gemini-only transcription queue. */
 export function createDesktopAudio(options: Options): AudioCapture {
   let stopped = false;
   let context: AudioContext | null = options.context ?? null;
@@ -83,15 +85,17 @@ export function createDesktopAudio(options: Options): AudioCapture {
   let node: AudioWorkletNode | null = null;
   let compatibilityNode: ScriptProcessorNode | null = null;
   let active = false;
-  let pending: { audio: string; capturedAt: string; endOfTurn?: boolean }[] = [];
+  type Clip = { audio: string; capturedAt: string; endOfTurn?: boolean; overlap: boolean; durationMs: number; sequence: number; retries: number };
+  let pending: Clip[] = [];
+  let inFlight: Clip | null = null;
+  let sequence = 0, lastSequence = 0, nativePcmSeen = false;
   let speakerPaused = false;
   let lastText = "";
-  let liveMode: "try" | "on" | "off" = "try";
-  let liveStarted = false;
-  let liveSocket: WebSocket | null = null;
-  let liveSocketFailed = false;
-  const liveFrames: string[] = [];
-  let liveSending = false;
+  const diagnose = (event: string, detail: string, clip?: Clip) => options.onDiagnostic?.({
+    at: new Date().toISOString(), source: options.source, event, detail, queueDepth: pending.length,
+    ...(clip ? { clip: clip.sequence, durationMs: clip.durationMs } : {}),
+  });
+  const overlapWav = createWavOverlap();
   const notePause = () => {
     if (active || pending.length) speakerPaused = true;
     else options.onTurnEnded?.();
@@ -101,18 +105,14 @@ export function createDesktopAudio(options: Options): AudioCapture {
   const abort = new AbortController();
   const stop = () => {
     if (stopped) return;
+    for (const clip of pending) diagnose("dropped", "Capture stopped with clip queued.", clip);
+    if (inFlight && !pending.includes(inFlight)) diagnose("dropped", "In-flight transcription cancelled by Stop.", inFlight);
+    if (continuous.pendingMs()) diagnose("dropped", `Capture stopped with ${continuous.pendingMs()}ms of unfinished new audio.`);
     stopped = true;
     abort.abort();
     pending = [];
     unsubscribeNative?.();
     if (nativeId) void window.sonoraDesktop?.stopNativeCapture?.(nativeId).catch(() => {});
-    liveSocket?.close();
-    if (liveStarted) {
-      void fetch(`/api/sessions/${options.sessionId}/live-audio`, {
-        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stop: true, source: options.source, ...(options.roundNumber ? { roundNumber: options.roundNumber } : {}) }),
-      }).catch(() => {});
-    }
     if (node) { node.port.onmessage = null; node.disconnect(); }
     if (compatibilityNode) { compatibilityNode.onaudioprocess = null; compatibilityNode.disconnect(); }
     stream?.getTracks().forEach(track => track.stop());
@@ -123,6 +123,21 @@ export function createDesktopAudio(options: Options): AudioCapture {
     if (stopped) return;
     stop();
     options.onError(error instanceof Error ? error : new Error("Desktop audio stopped."));
+  };
+  const retry = async (clip: Clip, detail: string) => {
+    if (clip.retries++ < 2) {
+      if (pending.length >= 12) {
+        const dropped = pending.pop()!;
+        diagnose("dropped", "Queue capacity exceeded while retaining a retry.", dropped);
+      }
+      pending.unshift(clip);
+      diagnose("retry", `${detail}; retry ${clip.retries}/2. Capture continues.`, clip);
+      options.onNotice("Transcription is busy; retaining this clip for retry. Capture is still running.");
+      await waitForTranscription(4100, abort.signal);
+    } else {
+      diagnose("skipped", `${detail}; retry limit exceeded. Capture continues.`, clip);
+      options.onNotice("A transcription clip failed after two retries. See capture diagnostics. Listening is still on.");
+    }
   };
   const startupStep = async <T>(operation: Promise<T>, message: string): Promise<T> => {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -142,7 +157,9 @@ export function createDesktopAudio(options: Options): AudioCapture {
     active = true;
     try {
       while (pending.length && !stopped) {
-        const { audio, capturedAt, endOfTurn } = pending.shift()!;
+        const clip = pending.shift()!;
+        inFlight = clip;
+        const { audio, capturedAt, endOfTurn } = clip;
         const previous = transcriptionLane;
         let release!: () => void;
         transcriptionLane = new Promise<void>(resolve => { release = resolve; });
@@ -158,26 +175,34 @@ export function createDesktopAudio(options: Options): AudioCapture {
         options.onPhase?.("Transcribing");
         pacing.mark(options.source);
         const startedAt = Date.now();
-        const response = await fetch(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/api/sessions/${options.sessionId}/transcribe`, {
+        diagnose("sent", "POST /api/sessions/:id/transcribe · Gemini · audio/wav", clip);
+        let response: Response;
+        try { response = await fetch(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/api/sessions/${options.sessionId}/transcribe`, {
           method: "POST", credentials: "include", signal: AbortSignal.any([abort.signal, AbortSignal.timeout(30_000)]),
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ audio, mimeType: "audio/wav", source: options.source, ...(options.roundNumber ? { roundNumber: options.roundNumber } : {}) }),
-        });
-        const result = await response.json().catch(() => ({}));
-        if (response.status === 429) {
-          // Another tab/provider request may occupy the shared server lane.
-          // Do not stop the microphone or retry indefinitely with stale speech.
-          options.onNotice("Transcription busy; skipping one clip and continuing to listen.");
-          options.onPhase?.("Waiting for transcription capacity");
-          await waitForTranscription(4100, abort.signal);
+        }); } catch (error) {
+          if (abort.signal.aborted) throw error;
+          await retry(clip, "Transcription network timeout or failure");
           continue;
         }
+        const result = await response.json().catch(() => ({}));
+        if (response.status === 429) {
+          options.onPhase?.("Waiting for transcription capacity");
+          await retry(clip, "Server throttled transcription (429)");
+          continue;
+        }
+        if ([500, 502, 504].includes(response.status)) { await retry(clip, `Transcription returned ${response.status}`); continue; }
         if (response.status === 404 || response.status === 503) {
+          diagnose("skipped", `Gemini transcription service unavailable (${response.status}); capture stopped.`, clip);
           const unavailable = new Error("Server transcription is unavailable.");
           unavailable.name = "ServerSttUnavailable";
           throw unavailable;
         }
-        if (!response.ok) throw new Error(result.error || `Transcription failed (${response.status}).`);
+        if (!response.ok) {
+          diagnose("skipped", `Transcription rejected (${response.status}); capture stopped.`, clip);
+          throw new Error(result.error || `Transcription failed (${response.status}).`);
+        }
         if (!stopped) {
           options.onTiming?.(Date.now() - startedAt);
           options.onPhase?.(result.text ? "Speech transcribed" : "Audio received · no clear speech");
@@ -186,99 +211,38 @@ export function createDesktopAudio(options: Options): AudioCapture {
           const text = typeof result.text === "string" ? result.text.trim() : "";
           // Suppress repeated greeting-only hallucinations, not repeated real questions.
           const filler = /^(hello|hi|hey|thank you|thanks)[.! ]*$/i.test(text) && text.toLowerCase() === lastText.toLowerCase();
-          lastText = text;
-          if (text && !filler) options.onText(text, {
+          const joined = clip.overlap && clip.sequence === lastSequence + 1 ? removeOverlapText(lastText, text) : text;
+          lastText = text; lastSequence = clip.sequence;
+          diagnose("completed", text ? `Recognized ${text.split(/\s+/).length} words; removed ${Math.max(0, text.length - joined.length)} overlapping characters.` : "No speech recognized.", clip);
+          if (joined && !filler) options.onText(joined, {
             source: options.source, capturedAt, ...((endOfTurn || paused) ? { endOfTurn: true } : {}),
           });
           else if (paused) options.onTurnEnded?.();
         }
-        } finally { release(); }
+        } finally { inFlight = null; release(); }
       }
     } catch (error) { fail(error); }
     finally { active = false; }
   };
-  const applyLive = (result: { accepted?: boolean; partial?: string; text?: string; final?: boolean; speaker?: string }) => {
-    if (stopped || !result.accepted) return;
-    liveMode = "on";
-    if (result.partial) options.onPhase?.(result.partial);
-    if (result.final && result.text) options.onText(result.text, {
-      source: options.source, capturedAt: new Date().toISOString(), endOfTurn: true,
-      ...(result.speaker ? { speakerLabel: result.speaker } : {}),
-    });
-  };
-  const postFrame = async (audio: string) => {
-    const response = await fetch(`/api/sessions/${options.sessionId}/live-audio`, {
-      method: "POST", credentials: "include", signal: AbortSignal.any([abort.signal, AbortSignal.timeout(20_000)]),
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ audio, source: options.source, ...(options.roundNumber ? { roundNumber: options.roundNumber } : {}) }),
-    });
-    if (response.status === 404 || response.status === 503) { liveMode = "off"; return; }
-    const result = await response.json().catch(() => ({}));
-    if (response.ok) applyLive(result);
-  };
-  const postLive = async (audio: string) => {
-    if (liveMode === "off" || stopped) return;
-    liveStarted = true;
-    try {
-      if (!liveSocketFailed && !liveSocket) {
-        const response = await fetch(`/api/sessions/${options.sessionId}/live-audio`, {
-          method: "POST", credentials: "include", signal: AbortSignal.any([abort.signal, AbortSignal.timeout(20_000)]),
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ open: true, source: options.source, ...(options.roundNumber ? { roundNumber: options.roundNumber } : {}) }),
-        });
-        if (response.status === 404 || response.status === 503) { liveMode = "off"; return; }
-        const opened = await response.json().catch(() => ({}));
-        if (response.ok && opened.ticket && typeof WebSocket === "function" && typeof location !== "undefined") {
-          const url = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/api/live-audio?ticket=${encodeURIComponent(opened.ticket)}`;
-          const ws = new WebSocket(url);
-          ws.binaryType = "arraybuffer";
-          await new Promise<void>((resolve, reject) => {
-            const timer = setTimeout(() => reject(new Error("Live transcription timed out.")), 8_000);
-            ws.addEventListener("open", () => { clearTimeout(timer); resolve(); }, { once: true });
-            ws.addEventListener("error", () => { clearTimeout(timer); reject(new Error("Live transcription socket failed.")); }, { once: true });
-          });
-          ws.addEventListener("message", event => {
-            if (typeof event.data !== "string") return;
-            try { applyLive(JSON.parse(event.data)); } catch { /* ignore a malformed live message */ }
-          });
-          ws.addEventListener("close", () => { if (liveSocket === ws) liveSocket = null; });
-          liveSocket = ws;
-          liveMode = "on";
-        } else liveSocketFailed = true;
-      }
-      if (liveSocket?.readyState === WebSocket.OPEN) {
-        liveSocket.send(Uint8Array.from(atob(audio), char => char.charCodeAt(0)));
-        return;
-      }
-      await postFrame(audio);
-    } catch {
-      liveSocketFailed = true;
-      liveSocket?.close();
-      liveSocket = null;
-      if (!stopped && liveMode !== "off") await postFrame(audio).catch(() => { liveMode = "off"; });
-    }
-  };
-  const pushLive = (audio: string) => {
-    if (liveMode === "off" || stopped || options.transcribe === false) return;
-    liveFrames.push(audio);
-    if (liveFrames.length > 100) liveFrames.shift();
-    if (liveSending) return;
-    liveSending = true;
-    void (async () => {
-      while (liveFrames.length && !stopped) await postLive(liveFrames.shift()!);
-      liveSending = false;
-    })();
-  };
-  const enqueue = (audio: string, capturedAt = new Date().toISOString(), endOfTurn?: boolean) => {
+  const enqueue = (audio: string, capturedAt = new Date().toISOString(), endOfTurn?: boolean, provided?: { overlap: boolean; durationMs: number }) => {
     if (stopped) return;
     if (options.transcribe === false) return;
-    if (pending.length >= 3) {
-      pending.shift();
+    let window: { audio: string; overlap: boolean; durationMs: number };
+    try { window = provided ? { audio, ...provided } : overlapWav(audio); }
+    catch (error) { diagnose("skipped", "Invalid captured WAV; capture stopped."); fail(error); return; }
+    const clip: Clip = { ...window, capturedAt, endOfTurn, sequence: ++sequence, retries: 0 };
+    diagnose("captured", "Independent mono 16kHz WAV; 750ms boundary overlap after first clip.", clip);
+    if (pending.length >= 12) {
+      const dropped = pending.shift()!;
+      diagnose("dropped", "Queue capacity exceeded (12 waiting clips).", dropped);
       options.onNotice("Transcription is catching up; an older queued clip was skipped. Listening is still on.");
     }
-    pending.push({ audio, capturedAt, endOfTurn });
+    pending.push(clip);
     void pump();
   };
+  const continuous = createContinuousWindows((samples, overlap) => {
+    enqueue(wavBase64(samples), undefined, undefined, { overlap, durationMs: samples.length / 16 });
+  });
   return {
     stop,
     start: async () => {
@@ -290,12 +254,17 @@ export function createDesktopAudio(options: Options): AudioCapture {
             if (stopped || event.captureId !== nativeId) return;
             if (event.type === "error") fail(new Error(event.message || "Native audio stopped."));
             else if (event.type === "pcm" && event.audio) {
-              options.onPcm?.(pcm16ToFloat(event.audio), 16000);
-              if (liveMode !== "off") void pushLive(event.audio);
+              if (!nativePcmSeen) {
+                nativePcmSeen = true;
+                diagnose("path", "Native helper → Electron IPC → continuous PCM windows → server Gemini. Live-audio/Speechmatics bypassed.");
+              }
+              const samples = pcm16ToFloat(event.audio);
+              options.onPcm?.(samples, 16000);
+              if (options.transcribe !== false) continuous.push(samples);
             }
             else if (event.type === "audio" && event.audio) {
               if (event.source && event.source !== options.source) { fail(new Error("Native audio source mismatch.")); return; }
-              if (liveMode !== "on") enqueue(event.audio, event.capturedAt, event.endOfTurn);
+              if (!nativePcmSeen) enqueue(event.audio, event.capturedAt, event.endOfTurn);
             }
             else if (event.type === "silence") {
               notePause();
@@ -308,6 +277,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
             }
           });
           await desktop.startNativeCapture(nativeId, options.source, options.deviceName, options.referenceDevice);
+          diagnose("started", "Native capture bridge active; PCM streaming to Gemini selected.");
           if (stopped) { void desktop.stopNativeCapture(nativeId); return; }
           options.onNotice("Native audio capture is active. Short audio chunks are sent to Gemini for transcription.");
           return;
@@ -315,6 +285,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
         stream = options.source === "system"
           ? await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true })
           : await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true }, video: false });
+        diagnose("path", options.source === "system" ? "Browser/Electron display media → overlapping WAV → server Gemini." : "Browser microphone → overlapping WAV → server Gemini.");
         if (stopped) { stream.getTracks().forEach(track => track.stop()); return; }
         if (!stream.getAudioTracks().length) throw new Error("No audio source was shared. Allow system audio, or choose microphone input.");
         stream.getTracks().forEach(track => track.addEventListener("ended", () => fail(new Error("The shared audio source ended. Capture stopped.")), { once: true }));

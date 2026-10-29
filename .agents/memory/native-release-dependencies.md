@@ -14,3 +14,9 @@ Verify the contents of the final application archive, not just source imports or
 **Why:** A desktop update staged a required local module correctly but a separate installer allowlist omitted it. Source tests passed while the installed app crashed before opening.
 
 **How to apply:** Keep staging and installer inputs consistent and audit the emitted archive's runtime imports before considering a package successful. Archive checks still do not establish native launch or audio behavior.
+
+Inspect the exact installer served by the download route, not an arbitrary uploaded archive with the same version.
+
+**Why:** Separately supplied archives shared a version but contained different preload/native-host code. An available extracted archive was not byte-identical to the actual download.
+
+**How to apply:** Extract the served installer's payload and inspect its bridge and helper capabilities before deciding whether a hosted change needs a new installer.

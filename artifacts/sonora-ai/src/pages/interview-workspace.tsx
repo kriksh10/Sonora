@@ -23,6 +23,7 @@ import SessionPreferencesDialog from "@/components/session-preferences-dialog";
 import { sessionPreferences, summarizePreferences } from "@/lib/answer-preferences";
 import LiveSessionView from "@/components/live-session-view";
 import { createDesktopAudio, createAudioGroup, serverSttAvailable, type AudioCapture } from "@/lib/desktop-audio";
+import type { CaptureDiagnostic } from "@/lib/continuous-audio";
 import { browserLanguage } from "@/lib/call-languages";
 import { createInterviewerQuestions } from "@/lib/interviewer-questions";
 import { createPhraseBuffer } from "@/lib/phrase-buffer";
@@ -183,6 +184,7 @@ export default function InterviewWorkspace() {
   const [latestQuestion, setLatestQuestion] = useState("");
   const [answerState, setAnswerState] = useState<"idle" | "generating" | "streaming" | "complete" | "interrupted">("idle");
   const [pipelineStatus, setPipelineStatus] = useState("");
+  const [captureDiagnostics, setCaptureDiagnostics] = useState<CaptureDiagnostic[]>([]);
   const [levels, setLevels] = useState({ microphone: 0, system: 0 });
   const [channelStatus, setChannelStatus] = useState({ microphone: "Audio off", system: "Audio off" });
   const [online, setOnline] = useState(navigator.onLine);
@@ -219,6 +221,12 @@ export default function InterviewWorkspace() {
   const visibleAnswer = answerCleared ? "" : answer ||
       [...currentEntries].reverse().find((entry) => entry.role === "assistant")?.text ||
       "";
+  useEffect(() => {
+    try {
+      const cached = JSON.parse(sessionStorage.getItem(`sonora-capture:${selectedId}:${currentRound}`) ?? "[]");
+      setCaptureDiagnostics(Array.isArray(cached) ? cached.slice(-120) : []);
+    } catch { setCaptureDiagnostics([]); }
+  }, [selectedId, currentRound]);
 
   useEffect(() => {
     let mounted = true;
@@ -461,8 +469,8 @@ export default function InterviewWorkspace() {
   const stopCapture = useCallback(() => {
     phrasesRef.current?.flush();
     recentAudioRef.current = { microphone: new Float32Array(0), system: new Float32Array(0) };
-    captureTokenRef.current += 1;
     for (const capture of desktopCaptureRef.current) capture.stop();
+    captureTokenRef.current += 1;
     const prepared = preparedAudioContextRef.current;
     preparedAudioContextRef.current = null;
     if (prepared && prepared.state !== "closed") void prepared.close().catch(() => {});
@@ -697,6 +705,15 @@ export default function InterviewWorkspace() {
         onPhase: status => { if (captureToken === captureTokenRef.current) setPipelineStatus(`${source === "system" ? "Call" : "Mic"} · ${status}`); },
         onTiming: ms => {
           if (captureToken === captureTokenRef.current) setTranscriptionTiming(`Last transcription ${(ms / 1000).toFixed(1)}s`);
+        },
+        onDiagnostic: event => {
+          if (captureToken !== captureTokenRef.current) return;
+          setCaptureDiagnostics(previous => {
+            const next = [...previous, event].slice(-120);
+            try { sessionStorage.setItem(`sonora-capture:${selected.id}:${selected.roundNumber ?? 1}`, JSON.stringify(next)); }
+            catch { console.warn("Capture diagnostics are visible but could not be cached."); }
+            return next;
+          });
         },
         onPcm: samples => { if (captureToken === captureTokenRef.current) recentAudioRef.current[source] = rememberSamples(recentAudioRef.current[source], samples); },
         onText: (text, metadata) => {
@@ -977,6 +994,7 @@ export default function InterviewWorkspace() {
           latestQuestion={latestQuestion} answerState={answerState}
           pipelineStatus={!online ? "Offline · recording will not restart automatically. Reconnect, then retry." :
             settingsBusy ? "Saving settings…" : pipelineStatus}
+          captureDiagnostics={captureDiagnostics}
           onClaimSpeaker={() => {
             const label = /^Speaker (\S+)/.exec(pipelineStatus)?.[1];
             if (!label) return;

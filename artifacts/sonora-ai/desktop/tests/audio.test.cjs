@@ -15,6 +15,9 @@ const wavCode = bundle('../../src/lib/pcm-wav.ts');
 const validatorCode = bundle('../../../api-server/src/lib/audio-chunks.ts');
 const captureCode = bundle('../../src/lib/desktop-audio.ts');
 const compatCode = bundle('../../src/lib/compat-pcm.ts');
+const wavVm = vm.createContext({ Float32Array, Uint8Array, ArrayBuffer, DataView, btoa, atob });
+vm.runInContext(wavCode, wavVm);
+const fixtureWav = () => wavVm.subject.wavBase64(new Float32Array(96000).fill(.1));
 test('compatibility processor preserves 5–6s mono PCM and skips silence', () => {
   const context = vm.createContext({ Float32Array, Math });
   vm.runInContext(compatCode, context);
@@ -103,7 +106,7 @@ test('stop after permission request releases tracks even if permission resolves 
   assert.equal(harness.track.stopped, true);
   assert.ok(!harness.bridgeStates.includes(true));
 });
-test('a throttled clip is skipped without stopping the microphone or later transcription', async () => {
+test('a throttled clip is retained for retry without stopping the microphone', async () => {
   let requests = 0;
   const texts = [], errors = [], notices = [];
   const harness = captureHarness({ fetch: async () => {
@@ -120,7 +123,7 @@ test('a throttled clip is skipped without stopping the microphone or later trans
   await new Promise(resolve => setTimeout(resolve, 4300));
   assert.equal(harness.track.stopped, false);
   assert.deepEqual(errors, []);
-  assert.ok(notices.some(text => /continuing to listen/.test(text)));
+  assert.ok(notices.some(text => /retaining this clip for retry/.test(text)));
   assert.deepEqual(texts, ["How do threads share memory?"]);
   capture.stop();
 });
@@ -165,7 +168,7 @@ test('queue pressure skips old speech with a notice rather than stopping capture
   const capture = harness.context.subject.createDesktopAudio({ source: "system", sessionId: "test",
     onError: error => errors.push(error.message), onNotice: text => notices.push(text), onText() {} });
   await capture.start();
-  for (let i = 0; i < 8; i++) harness.node.port.onmessage({ data: { samples: new Float32Array(96000).fill(.1) } });
+  for (let i = 0; i < 16; i++) harness.node.port.onmessage({ data: { samples: new Float32Array(96000).fill(.1) } });
   assert.equal(harness.track.stopped, false);
   assert.deepEqual(errors, []);
   assert.ok(notices.some(text => /older queued clip was skipped/.test(text)));
@@ -233,11 +236,13 @@ test('native chunks go to the existing Gemini endpoint; stale events are ignored
   });
   await capture.start();
   f.emit({ type: 'audio', audio: 'ignored', captureId: 'stale-id' });
-  f.emit({ type: 'audio', audio: 'validated-native-wav' });
+  f.emit({ type: 'audio', audio: fixtureWav() });
   await new Promise(setImmediate);
   assert.equal(requests.length, 1);
   assert.equal(requests[0].url, '/api/sessions/session/transcribe');
-  assert.deepEqual(requests[0].body, { audio: 'validated-native-wav', mimeType: 'audio/wav', source: 'system' });
+  assert.equal(requests[0].body.mimeType, 'audio/wav');
+  assert.equal(requests[0].body.source, 'system');
+  assert.equal(Buffer.from(requests[0].body.audio, 'base64').length, 192044);
   assert.deepEqual(texts, ['Native transcript']);
   capture.stop();
   assert.equal(f.stops.length, 1);
@@ -253,7 +258,7 @@ test('silence while a chunk is transcribing marks that transcript as the end of 
     onTurnEnded: () => turns.push('ended'),
   });
   await capture.start();
-  f.emit({ type: 'audio', audio: 'validated-native-wav', endOfTurn: false });
+  f.emit({ type: 'audio', audio: fixtureWav(), endOfTurn: false });
   await new Promise(setImmediate);
   f.emit({ type: 'silence', prolonged: false });
   resolveRequest({ ok: true, json: async () => ({ text: 'Tell me about the migration' }) });
@@ -275,37 +280,38 @@ test('native start cancellation stops a late-starting helper and unsubscribes', 
   assert.equal(f.stops.length, 2);
   assert.equal(f.stops[0], f.stops[1]);
 });
-test('Speechmatics frames commit finished phrases and phrase recordings continue when live is unavailable', async () => {
-  const requests = [], texts = [], phases = [];
+test('native continuous PCM goes only to Gemini, retains overlap and ignores legacy WAV', async () => {
+  const requests = [], texts = [], diagnostics = [];
   const f = nativeHarness({ fetch: async (url, options) => {
     const body = JSON.parse(options.body);
     requests.push({ url, body });
-    if (url.endsWith('/live-audio')) {
-      if (body.open) return { ok: true, status: 200, json: async () => ({}) };
-      const frames = requests.filter(request => request.body?.audio).length;
-      if (frames === 1) return { ok: true, status: 200, json: async () => ({ accepted: true, partial: 'Where did', text: '', final: false }) };
-      return { ok: true, status: 200, json: async () => ({ accepted: true, partial: '', text: 'Where did you work?', final: true }) };
-    }
-    return { ok: true, status: 200, json: async () => ({ text: 'Phrase fallback' }) };
+    return { ok: true, status: 200, json: async () => ({ text: requests.length === 1 ? 'Can you explain a process and a thread?' : 'and a thread? How do they share memory?' }) };
   } });
   const capture = f.harness.context.subject.createDesktopAudio({
     source: 'system', sessionId: 'session', onNotice() {}, onError() {},
-    onPhase: text => phases.push(text),
+    onDiagnostic: event => diagnostics.push(event),
     onText: text => texts.push(text),
   });
   await capture.start();
   const flush = async () => { for (let i = 0; i < 8; i += 1) await new Promise(resolve => setImmediate(resolve)); };
-  f.emit({ type: 'pcm', audio: 'live-frame' });
+  const frame = Buffer.alloc(320);
+  for (let i = 0; i < 160; i++) frame.writeInt16LE(3200, i * 2);
+  for (let i = 0; i < 600; i++) f.emit({ type: 'pcm', audio: frame.toString('base64') });
   await flush();
-  assert.deepEqual(phases, ['Where did']);
-  assert.deepEqual(texts, []);
-  f.emit({ type: 'pcm', audio: 'live-frame-2' });
+  assert.deepEqual(texts, ['Can you explain a process and a thread?']);
+  for (let i = 0; i < 525; i++) f.emit({ type: 'pcm', audio: frame.toString('base64') });
+  await new Promise(resolve => setTimeout(resolve, 4200));
   await flush();
-  assert.deepEqual(texts, ['Where did you work?']);
+  assert.deepEqual(texts, ['Can you explain a process and a thread?', 'How do they share memory?']);
   f.emit({ type: 'audio', audio: 'should-not-send' });
   await new Promise(setImmediate);
-  assert.equal(requests.some(request => request.url.endsWith('/transcribe')), false);
+  assert.equal(requests.length, 2);
+  assert.ok(requests.every(request => request.url.endsWith('/transcribe') && request.body.mimeType === 'audio/wav'));
+  assert.ok(requests.every(request => Buffer.from(request.body.audio, 'base64').length === 192044));
+  assert.ok(diagnostics.some(event => event.event === 'path' && event.detail.includes('Live-audio/Speechmatics bypassed')));
+  f.emit({ type: 'pcm', audio: frame.toString('base64') });
   capture.stop();
+  assert.ok(diagnostics.some(event => event.event === 'dropped' && /unfinished new audio/.test(event.detail)));
 });
 
 test('Gemini transcription failure stops native capture with a visible error', async () => {
@@ -316,7 +322,7 @@ test('Gemini transcription failure stops native capture with a visible error', a
     onError: error => errors.push(error.message),
   });
   await capture.start();
-  f.emit({ type: 'audio', audio: 'validated-native-wav' });
+  f.emit({ type: 'audio', audio: fixtureWav() });
   await new Promise(setImmediate);
   assert.deepEqual(errors, ['Gemini unavailable']);
   assert.equal(f.stops.length, 1);
