@@ -6,33 +6,60 @@ export type CaptureDiagnostic = {
 };
 
 export const OVERLAP_SAMPLES = 12000; // 750ms at 16kHz
-const WINDOW = 96000;
+const MIN_WINDOW = 80000; // five seconds, including boundary overlap
+const WINDOW = 128000; // eight-second ceiling when speech does not pause
+const PAUSE_SAMPLES = 7200; // 450ms below the speech threshold
 
-/** Never stops/restarts capture: each window retains the previous 750ms. */
-export function createContinuousWindows(emit: (samples: Float32Array, overlap: boolean) => void) {
+/** Close at a pause after 5s, or at 8s during continuous speech. Never restart capture. */
+export function createContinuousWindows(emit: (samples: Float32Array, overlap: boolean, endOfTurn: boolean) => void) {
   const buffer = new Float32Array(WINDOW);
   let used = 0, overlap = false;
+  let energy = 0, analyzed = 0, quietSamples = 0;
   return {
     push(input: Float32Array) {
       let offset = 0;
       while (offset < input.length) {
-        const count = Math.min(WINDOW - used, input.length - offset);
+        // Analyze exact 10ms frames, independently of native event boundaries.
+        const count = Math.min(160 - analyzed, WINDOW - used, input.length - offset);
         buffer.set(input.subarray(offset, offset + count), used);
+        for (let i = offset; i < offset + count; i++) energy += input[i] * input[i];
+        analyzed += count;
         used += count; offset += count;
-        if (used !== WINDOW) continue;
-        const out = buffer.slice();
+        if (analyzed === 160) {
+          quietSamples = Math.sqrt(energy / analyzed) < .003 ? quietSamples + analyzed : 0;
+          analyzed = 0; energy = 0;
+        }
+        const endOfTurn = quietSamples >= PAUSE_SAMPLES;
+        if (used < WINDOW && !(used >= MIN_WINDOW && endOfTurn)) continue;
+        const out = buffer.slice(0, used);
         let peak = 0;
         for (const value of out) peak = Math.max(peak, Math.abs(value));
         if (peak > 0 && peak < .2) {
           const gain = Math.min(8, .2 / peak);
           for (let i = 0; i < out.length; i++) out[i] *= gain;
         }
-        emit(out, overlap);
-        buffer.copyWithin(0, WINDOW - OVERLAP_SAMPLES);
+        emit(out, overlap, endOfTurn);
+        buffer.copyWithin(0, used - OVERLAP_SAMPLES, used);
         used = OVERLAP_SAMPLES; overlap = true;
+        quietSamples = 0;
       }
     },
     pendingMs() { return Math.max(0, used - (overlap ? OVERLAP_SAMPLES : 0)) / 16; },
+  };
+}
+
+/** Keep unfinished clauses across forced clip boundaries instead of emitting word fragments. */
+export function createTranscriptSentences() {
+  let pending = "";
+  return {
+    push(text: string, endOfTurn: boolean) {
+      pending = `${pending} ${text}`.replace(/\s+/g, " ").trim();
+      if (!pending || (!endOfTurn && !/[.!?]["')\]]?$/.test(pending) && pending.length < 700)) return "";
+      const complete = pending;
+      pending = "";
+      return complete;
+    },
+    pendingWords() { return pending ? pending.split(/\s+/).length : 0; },
   };
 }
 

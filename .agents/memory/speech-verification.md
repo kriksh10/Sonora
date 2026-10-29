@@ -18,3 +18,15 @@ Trace audio capture and transcription-provider selection separately. A passing G
 **Why:** The desktop client selected a different live provider and suppressed its WAV path, while its frame backlog could silently discard speech.
 
 **How to apply:** Assert the actual endpoint used by native-transport tests. Express buffer capacity in meaningful audio duration, retain a short overlap, and surface every discarded clip; bounded buffering cannot promise lossless capture under unlimited provider failure.
+
+Audio boundaries and transcript completion are different decisions: bounded clips
+may cut continuous speech mid-sentence even when there are no missing samples.
+
+**Why:** The owner reported one/two-word fragments with microphone answering
+enabled and requested longer pause-aware clips and complete joined sentences.
+
+**How to apply:** Preserve overlap and enforce the server duration ceiling,
+estimate pauses without restarting capture, and carry unfinished text across
+forced boundaries. Distinguish local energy-based pause estimates from actual
+speaker recognition, and do not present earlier fixed-window QA as verification
+of a later pause-aware revision.

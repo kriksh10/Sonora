@@ -83,7 +83,7 @@ The new hosted path is:
     Windows native microphone/WASAPI loopback
       → native PCM events → Electron IPC/preload
       → renderer's continuous 16kHz mono accumulator
-      → six-second WAV requests every 5.25 seconds (750ms overlap)
+      → pause-aware five-to-eight-second WAV requests (750ms overlap)
       → POST /api/sessions/:id/transcribe → Replit Gemini
       → adjacent-clip suffix/prefix de-duplication → question/answer UI
 
@@ -95,6 +95,17 @@ De-duplication only applies to adjacent successfully transcribed overlapping
 clips, not across a skipped clip or unrelated question. Removal is limited to a
 short boundary of at most six words so a genuinely repeated long question is
 not erased.
+
+Native PCM boundaries now use 10ms RMS analysis: after a five-second minimum,
+450ms of quiet closes the clip. Uninterrupted speech reaches the eight-second
+server ceiling instead. Very short questions retain their following silence
+until the minimum duration; capture continues throughout. This is a local
+energy-based pause estimate, not speaker diarization or semantic sentence
+detection. Quiet/noisy microphones can affect pause detection.
+After overlap de-duplication, unfinished transcript clauses are retained across
+forced boundaries and joined until punctuation, a detected pause, or a 700
+character safety bound. Diagnostics record held word counts and Stop losses.
+The legacy WAV/browser fallback retains its existing boundary behavior.
 
 The expandable Capture diagnostics log records source, timestamps, clip number,
 duration, queue depth, selected path, submission, retry, completion and all
@@ -109,14 +120,16 @@ renderer fix and no download/version/checksum was falsely replaced.
 Existing installations receive the new adapter only after the hosted site is
 published and reloaded. Nothing was published during this work.
 
-Focused verification:18 capture/continuity tests pass, including native PCM
+Focused verification:21 capture/continuity tests pass, including native PCM
 routing exclusively to Gemini, exact sample continuity/750ms overlap,
 independently decodable WAVs, boundary text de-duplication, busy-request retry,
+pause/hesitation detection, five/eight-second bounds, sentence-fragment joining,
 queue pressure, compatibility capture and stop cancellation. Full workspace
 typecheck and build pass. These do not establish physical Windows device
 behavior.
 
-One focused native-bridge browser pass also succeeded:4,500 real fixture PCM
+Before the later pause-aware boundary refinement, one focused native-bridge
+browser pass also succeeded:4,500 real fixture PCM
 frames at20ms cadence,92.7s elapsed,17 completed clips and18 POST attempts
 including one injected429. The retried clip completed while capture stayed
 active, there were no live-audio requests, actual Gemini recognized the known

@@ -280,12 +280,12 @@ test('native start cancellation stops a late-starting helper and unsubscribes', 
   assert.equal(f.stops.length, 2);
   assert.equal(f.stops[0], f.stops[1]);
 });
-test('native continuous PCM goes only to Gemini, retains overlap and ignores legacy WAV', async () => {
+test('native PCM uses 5-8s Gemini WAVs, closes on pause, joins sentence fragments and ignores legacy WAV', async () => {
   const requests = [], texts = [], diagnostics = [];
   const f = nativeHarness({ fetch: async (url, options) => {
     const body = JSON.parse(options.body);
     requests.push({ url, body });
-    return { ok: true, status: 200, json: async () => ({ text: requests.length === 1 ? 'Can you explain a process and a thread?' : 'and a thread? How do they share memory?' }) };
+    return { ok: true, status: 200, json: async () => ({ text: requests.length === 1 ? 'Can you explain the difference between' : 'between a process and a thread?' }) };
   } });
   const capture = f.harness.context.subject.createDesktopAudio({
     source: 'system', sessionId: 'session', onNotice() {}, onError() {},
@@ -296,18 +296,21 @@ test('native continuous PCM goes only to Gemini, retains overlap and ignores leg
   const flush = async () => { for (let i = 0; i < 8; i += 1) await new Promise(resolve => setImmediate(resolve)); };
   const frame = Buffer.alloc(320);
   for (let i = 0; i < 160; i++) frame.writeInt16LE(3200, i * 2);
-  for (let i = 0; i < 600; i++) f.emit({ type: 'pcm', audio: frame.toString('base64') });
+  for (let i = 0; i < 800; i++) f.emit({ type: 'pcm', audio: frame.toString('base64') });
   await flush();
-  assert.deepEqual(texts, ['Can you explain a process and a thread?']);
-  for (let i = 0; i < 525; i++) f.emit({ type: 'pcm', audio: frame.toString('base64') });
+  assert.deepEqual(texts, []);
+  assert.ok(diagnostics.some(event => event.event === 'joining'));
+  for (let i = 0; i < 380; i++) f.emit({ type: 'pcm', audio: frame.toString('base64') });
+  for (let i = 0; i < 45; i++) f.emit({ type: 'pcm', audio: Buffer.alloc(320).toString('base64') });
   await new Promise(resolve => setTimeout(resolve, 4200));
   await flush();
-  assert.deepEqual(texts, ['Can you explain a process and a thread?', 'How do they share memory?']);
+  assert.deepEqual(texts, ['Can you explain the difference between a process and a thread?']);
   f.emit({ type: 'audio', audio: 'should-not-send' });
   await new Promise(setImmediate);
   assert.equal(requests.length, 2);
   assert.ok(requests.every(request => request.url.endsWith('/transcribe') && request.body.mimeType === 'audio/wav'));
-  assert.ok(requests.every(request => Buffer.from(request.body.audio, 'base64').length === 192044));
+  assert.deepEqual(requests.map(request => Buffer.from(request.body.audio, 'base64').length), [256044, 160044]);
+  assert.ok(diagnostics.some(event => event.event === 'captured' && event.detail.includes('speaker pause')));
   assert.ok(diagnostics.some(event => event.event === 'path' && event.detail.includes('Live-audio/Speechmatics bypassed')));
   f.emit({ type: 'pcm', audio: frame.toString('base64') });
   capture.stop();

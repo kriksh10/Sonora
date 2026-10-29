@@ -1,7 +1,7 @@
 import { wavBase64 } from "./pcm-wav";
 import { createTranscriptionPacing, waitForTranscription } from "./transcription-pacing";
 import { createCompatPcm, type PcmEvent } from "./compat-pcm";
-import { createContinuousWindows, createWavOverlap, removeOverlapText, type CaptureDiagnostic } from "./continuous-audio";
+import { createContinuousWindows, createTranscriptSentences, createWavOverlap, removeOverlapText, type CaptureDiagnostic } from "./continuous-audio";
 
 // Both channels share one provider lane; server concurrency limits remain enforced.
 let transcriptionLane: Promise<void> = Promise.resolve();
@@ -91,6 +91,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
   let sequence = 0, lastSequence = 0, nativePcmSeen = false;
   let speakerPaused = false;
   let lastText = "";
+  const sentences = createTranscriptSentences();
   const diagnose = (event: string, detail: string, clip?: Clip) => options.onDiagnostic?.({
     at: new Date().toISOString(), source: options.source, event, detail, queueDepth: pending.length,
     ...(clip ? { clip: clip.sequence, durationMs: clip.durationMs } : {}),
@@ -108,6 +109,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
     for (const clip of pending) diagnose("dropped", "Capture stopped with clip queued.", clip);
     if (inFlight && !pending.includes(inFlight)) diagnose("dropped", "In-flight transcription cancelled by Stop.", inFlight);
     if (continuous.pendingMs()) diagnose("dropped", `Capture stopped with ${continuous.pendingMs()}ms of unfinished new audio.`);
+    if (sentences.pendingWords()) diagnose("dropped", `Capture stopped with ${sentences.pendingWords()} words awaiting sentence completion.`);
     stopped = true;
     abort.abort();
     pending = [];
@@ -206,7 +208,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
         if (!stopped) {
           options.onTiming?.(Date.now() - startedAt);
           options.onPhase?.(result.text ? "Speech transcribed" : "Audio received · no clear speech");
-          const paused = speakerPaused;
+          const paused = !nativePcmSeen && speakerPaused;
           speakerPaused = false;
           const text = typeof result.text === "string" ? result.text.trim() : "";
           // Suppress repeated greeting-only hallucinations, not repeated real questions.
@@ -214,10 +216,12 @@ export function createDesktopAudio(options: Options): AudioCapture {
           const joined = clip.overlap && clip.sequence === lastSequence + 1 ? removeOverlapText(lastText, text) : text;
           lastText = text; lastSequence = clip.sequence;
           diagnose("completed", text ? `Recognized ${text.split(/\s+/).length} words; removed ${Math.max(0, text.length - joined.length)} overlapping characters.` : "No speech recognized.", clip);
-          if (joined && !filler) options.onText(joined, {
+          const complete = sentences.push(filler ? "" : joined, Boolean(endOfTurn || paused || !nativePcmSeen));
+          if (complete) options.onText(complete, {
             source: options.source, capturedAt, ...((endOfTurn || paused) ? { endOfTurn: true } : {}),
           });
-          else if (paused) options.onTurnEnded?.();
+          else if (endOfTurn || paused) options.onTurnEnded?.();
+          else if (sentences.pendingWords()) diagnose("joining", `Holding ${sentences.pendingWords()} words for sentence completion or a pause.`, clip);
         }
         } finally { inFlight = null; release(); }
       }
@@ -231,7 +235,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
     try { window = provided ? { audio, ...provided } : overlapWav(audio); }
     catch (error) { diagnose("skipped", "Invalid captured WAV; capture stopped."); fail(error); return; }
     const clip: Clip = { ...window, capturedAt, endOfTurn, sequence: ++sequence, retries: 0 };
-    diagnose("captured", "Independent mono 16kHz WAV; 750ms boundary overlap after first clip.", clip);
+    diagnose("captured", `Independent mono 16kHz WAV; 750ms boundary overlap after first clip; ${endOfTurn ? "speaker pause" : "duration boundary"}.`, clip);
     if (pending.length >= 12) {
       const dropped = pending.shift()!;
       diagnose("dropped", "Queue capacity exceeded (12 waiting clips).", dropped);
@@ -240,8 +244,8 @@ export function createDesktopAudio(options: Options): AudioCapture {
     pending.push(clip);
     void pump();
   };
-  const continuous = createContinuousWindows((samples, overlap) => {
-    enqueue(wavBase64(samples), undefined, undefined, { overlap, durationMs: samples.length / 16 });
+  const continuous = createContinuousWindows((samples, overlap, endOfTurn) => {
+    enqueue(wavBase64(samples), undefined, endOfTurn, { overlap, durationMs: samples.length / 16 });
   });
   return {
     stop,
@@ -267,7 +271,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
               if (!nativePcmSeen) enqueue(event.audio, event.capturedAt, event.endOfTurn);
             }
             else if (event.type === "silence") {
-              notePause();
+              if (!nativePcmSeen) notePause();
               if (event.prolonged) options.onNotice(options.source === "system"
               ? "No call speech for 18 seconds. Confirm Meet’s speaker/headset matches Meeting output. Check the Call meter while remote speech plays."
               : "No microphone speech for 18 seconds. Check the microphone source, volume, and OS permission.");
