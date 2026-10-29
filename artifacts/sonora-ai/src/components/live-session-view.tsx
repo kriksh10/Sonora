@@ -223,7 +223,7 @@ export default function LiveSessionView(p: LiveSessionViewProps) {
         <span className="lsv-grip" aria-hidden="true"><i /><i /></span>
         <div className="lsv-title">
           <strong>{p.session.title}</strong>
-          <span>{p.session.company || (p.session.sessionType === "interview" ? "Interview" : "Call")} · {p.session.saveTranscript ? "Transcript saved" : "Transcript not saved"}</span>
+          <span>{p.session.company || (p.session.sessionType === "mock" ? "Mock interview" : p.session.sessionType === "interview" ? "Interview" : "Call")} · {p.session.saveTranscript ? "Transcript saved" : "Transcript not saved"}</span>
         </div>
         <div className="lsv-controls">
           <span className="lsv-timer" aria-label={`Elapsed ${p.duration}`}><i className="lsv-dot" />{live ? "Recording " : ""}{p.duration}</span>

@@ -33,6 +33,9 @@ import Modal from "@/components/modal";
 import { useAccess } from "@/components/access-gate";
 import { captureSpeaker, mayAutoAnswer, createRecentUtterance, type InterviewInputMode } from "@/lib/interview-input";
 import { firstTextTiming } from "@/lib/live-timing";
+import SessionStudio, { CreditsCounter, creditLabel } from "@/components/session-studio";
+import { apiRequest } from "@/lib/answer-preferences";
+import { loadCreditBalance, type CreditBalance } from "@/lib/session-tools";
 
 type SpeechResult = {
   isFinal: boolean;
@@ -109,6 +112,7 @@ function statusTone(status: CallSession["status"]) {
 }
 
 function sessionKind(session: CallSession) {
+  if (session.sessionType === "mock") return "Mock";
   return session.sessionType === "interview" ? "Interview" : "Regular";
 }
 
@@ -132,7 +136,8 @@ export default function InterviewWorkspace() {
   const storageKey = `sonora:selected-session:${user?.id ?? "me"}`;
   const [sessions, setSessions] = useState<CallSession[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(() => { try { return localStorage.getItem(storageKey); } catch { return null; } });
-  const [filter, setFilter] = useState<"all" | "interview" | "call">("all");
+  const [filter, setFilter] = useState<"all" | "interview" | "call" | "mock">("all");
+  const [credits, setCredits] = useState<CreditBalance | null>(null);
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -243,6 +248,14 @@ export default function InterviewWorkspace() {
   useEffect(() => {
     void refreshSessions();
   }, [refreshSessions]);
+
+  useEffect(() => {
+    let mounted = true;
+    void loadCreditBalance(access.role, sessions.length).then((next) => {
+      if (mounted) setCredits(next);
+    });
+    return () => { mounted = false; };
+  }, [access.role, sessions.length]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -518,6 +531,16 @@ export default function InterviewWorkspace() {
   const startSession = async () => {
     if (!selected) return;
     setLiveMode(true);
+    if (selected.status !== "ready") return;
+    try {
+      const updated = await api<CallSession>(`/sessions/${selected.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "active", roundNumber: selected.roundNumber }),
+      });
+      setSessions((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not start the session timer.");
+    }
   };
 
   const endSession = async () => {
@@ -530,7 +553,9 @@ export default function InterviewWorkspace() {
         body: JSON.stringify({ status: "ended", roundNumber: selected.roundNumber }),
       });
       setSessions((items) => items.map((item) => (item.id === updated.id ? updated : item)));
-      setNotice("Session ended. Its transcript is saved if Save Transcript was enabled.");
+      const elapsedMinutes = updated.startedAt ? Math.ceil((Date.now() - new Date(updated.startedAt).getTime()) / 60000) : 0;
+      void apiRequest("/billing/settle", { method: "POST", body: JSON.stringify({ sessionId: updated.id, elapsedMinutes }) }).catch(() => {});
+      setNotice("Session ended. Notes will appear below. Its transcript is saved if Save Transcript was enabled.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not end the session.");
     }
@@ -931,6 +956,12 @@ export default function InterviewWorkspace() {
           <span className="hidden sm:inline">{user?.primaryEmailAddress?.emailAddress}</span>
           {(access.role === "owner" || access.role === "approver") && <button data-testid="button-access" onClick={access.openAdmin} className="rounded-lg border border-white/10 px-3 py-2 text-xs hover:bg-white/5">{access.role === "owner" ? "Access" : "Approvals"}</button>}
           <a href={`${import.meta.env.BASE_URL}settings`} className="rounded-lg border border-white/10 px-3 py-2 text-xs hover:bg-white/5">Settings</a>
+          <CreditsCounter label={creditLabel({
+            bypass: access.role === "owner" || access.role === "approver" || !!credits?.bypass,
+            balance: credits?.balance ?? 0,
+            freeRemaining: credits?.freeRemaining ?? Math.max(0, 10 - sessions.length),
+            unlimitedUntil: credits?.unlimitedUntil ?? null,
+          })} />
           {!window.sonoraDesktop && <a href={`${import.meta.env.BASE_URL}download`} className="rounded-lg border border-white/10 px-3 py-2 text-xs hover:bg-white/5">Desktop downloads</a>}
           <button
             className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 hover:bg-white/5"
@@ -988,8 +1019,8 @@ export default function InterviewWorkspace() {
                   className="w-full rounded-lg border border-white/10 bg-[#101113] py-2.5 pl-9 pr-3 text-sm outline-none placeholder:text-white/35 focus:border-white/25"
                 />
               </div>
-              <div className="mt-3 grid grid-cols-3 gap-1 rounded-lg bg-[#101113] p-1 text-xs">
-                {([["all", "All"], ["interview", "Interview"], ["call", "Regular"]] as const).map(([item, label]) => (
+              <div className="mt-3 grid grid-cols-2 gap-1 rounded-lg bg-[#101113] p-1 text-xs sm:grid-cols-4">
+                {([["all", "All"], ["interview", "Interview"], ["call", "Regular"], ["mock", "Mock"]] as const).map(([item, label]) => (
                   <button key={item} className={`rounded-md px-2 py-1.5 ${filter === item ? "bg-[#2b2d31] text-white" : "text-white/45 hover:text-white/75"}`} onClick={() => setFilter(item)}>{label}</button>
                 ))}
               </div>
@@ -1113,6 +1144,16 @@ export default function InterviewWorkspace() {
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-white/40"><Sparkles size={12} /> {selected.model} · {summarizePreferences(sessionPreferences(selected))} · {selected.language} <button type="button" data-testid="button-edit-preferences" onClick={() => setEditOpen(true)} className="ml-2 rounded-md border border-white/10 px-2 py-1 text-white/70 hover:bg-white/5">Edit preferences</button></div>
                       {currentEntries.some((entry) => entry.source === "microphone") && <button type="button" onClick={() => setAnswerInput([...currentEntries].reverse().find((entry) => entry.source === "microphone")?.text ?? "")} className="mt-3 text-xs font-medium text-emerald-300 hover:text-emerald-200">Use latest microphone transcript as the question</button>}
                     </form>
+                    <SessionStudio
+                      session={selected}
+                      now={now}
+                      onAsk={(question) => void askGemini(question)}
+                      onClear={() => { setAnswer(""); setAnswerInput(""); setLatestQuestion(""); }}
+                      onUseScreenshot={(image, question) => {
+                        screenshotRef.current = image;
+                        void askGemini(question);
+                      }}
+                    />
                   </div>
                   <div className="sonora-glass rounded-xl border border-white/10 bg-[#101113] p-4">
                     <div className="mb-3 flex items-center justify-between gap-3">

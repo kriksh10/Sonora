@@ -6,16 +6,16 @@ import AnswerPreferencesEditor from "@/components/answer-preferences-editor";
 import { SwitchRow } from "@/components/session-wizard";
 import { apiRequest, sessionPreferences, summarizePreferences } from "@/lib/answer-preferences";
 import { CALL_LANGUAGES, type CallLanguage } from "@/lib/call-languages";
+import { GEMINI_MODELS, resolveGeminiModel } from "@/lib/pricing";
 
 const field = "mt-1.5 w-full rounded-lg border border-white/10 bg-[#191a1d] px-3 py-2.5 text-sm text-white outline-none focus:border-white/25";
-const MODELS = ["gemini-2.5-flash", "gemini-3-flash-preview"] as const;
 const LANGS = CALL_LANGUAGES.map(language => language.name);
 
 export default function SessionPreferencesDialog({ session, onClose, onSaved }: {
   session: CallSession; onClose: () => void; onSaved: (session: CallSession) => void;
 }) {
   const [instructions, setInstructions] = useState(session.instructions);
-  const [model, setModel] = useState<(typeof MODELS)[number]>(MODELS.find((m) => m === session.model) ?? "gemini-2.5-flash");
+  const [model, setModel] = useState(resolveGeminiModel(session.model));
   const [language, setLanguage] = useState<CallLanguage>(CALL_LANGUAGES.find((item) => item.name === session.language)?.name ?? "English");
   const [autoAnswer, setAutoAnswer] = useState(session.autoAnswer);
   const [saveTranscript, setSaveTranscript] = useState(session.saveTranscript);
@@ -49,8 +49,8 @@ export default function SessionPreferencesDialog({ session, onClose, onSaved }: 
             <label className="text-xs text-white/45">Call language
               <select value={language} onChange={(e) => setLanguage(e.target.value as typeof language)} className={field}>{LANGS.map((l) => <option key={l}>{l}</option>)}</select></label>
             <label className="text-xs text-white/45">Gemini model
-              <select value={model} onChange={(e) => setModel(e.target.value as typeof model)} className={field}>
-                <option value="gemini-2.5-flash">Gemini 2.5 Flash</option><option value="gemini-3-flash-preview">Gemini 3 Flash Preview</option></select></label>
+              <select value={model} onChange={(e) => setModel(resolveGeminiModel(e.target.value))} className={field}>
+                {GEMINI_MODELS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
           </div>
           <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-[#191a1d] p-3">
             <div className="min-w-0 text-sm"><div className="font-semibold">Answer preferences</div>
