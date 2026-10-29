@@ -5,6 +5,7 @@ import { clerkMiddleware } from "@clerk/express";
 import { publishableKeyFromHost } from "@clerk/shared/keys";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { stripeWebhook } from "./routes/billing";
 import {
   CLERK_PROXY_PATH,
   clerkProxyMiddleware,
@@ -34,6 +35,7 @@ app.use(
 );
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 app.use(cors({ credentials: true, origin: true }));
+app.post("/api/billing/webhook", express.raw({ type: "application/json", limit: "256kb" }), stripeWebhook);
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(

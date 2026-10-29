@@ -18,6 +18,7 @@ import { interviewAnswerPolicy } from "../lib/interview-answer-policy";
 import { relevantDocuments, transcriptForAnswer } from "../lib/answer-context";
 import { readPublicJobPage } from "../lib/job-page";
 import { answerPreferenceInstructions, standardAnswerPreferences, withAnswerPreferences } from "../lib/answer-preferences";
+import { titleForNewSession } from "./session-create-title";
 
 const router: IRouter = Router();
 const runningAnswers = new Set<string>();
@@ -120,13 +121,10 @@ router.post("/sessions", async (req, res, next) => {
   if (!parsed.success) {
     return res.status(400).json({ error: "Check the session details and context length, then try again." });
   }
-  const sessionType = req.body?.sessionType === "call" ? "call" : "interview";
-  const company = sessionType === "interview" ? asText(req.body?.company, 200) : "";
+  const sessionType = parsed.data.sessionType;
+  const company = sessionType !== "call" ? asText(req.body?.company, 200) : "";
   const description = asText(req.body?.description, 8_000);
-  const title =
-    sessionType === "interview"
-      ? company || "Interview session"
-      : asText(req.body?.title, 200) || "Regular call";
+  const title = titleForNewSession(sessionType, asText(req.body?.title, 200), company);
   try {
     const [defaults] = parsed.data.answerPreferences || parsed.data.answerPreference ? [] :
       await db.select().from(answerDefaultsTable).where(eq(answerDefaultsTable.userId, userId)).limit(1);
@@ -138,16 +136,13 @@ router.post("/sessions", async (req, res, next) => {
         title,
         company: company || null,
         description,
-        resumeText: sessionType === "interview" ? asText(req.body?.resumeText) : "",
+        resumeText: sessionType !== "call" ? asText(req.body?.resumeText) : "",
         documentsText: asText(req.body?.documentsText),
         instructions: asText(req.body?.instructions, 8_000),
         answerPreference: asText(req.body?.answerPreference, 40) || "concise",
         answerPreferences: parsed.data.answerPreferences ??
           (parsed.data.answerPreference ? null : defaults?.preferences ?? standardAnswerPreferences),
-        model:
-          req.body?.model === "gemini-3-flash-preview"
-            ? "gemini-3-flash-preview"
-            : "gemini-2.5-flash",
+        model: parsed.data.model ?? "gemini-2.5-flash",
         language: asText(req.body?.language, 40) || "English",
         autoAnswer: asBoolean(req.body?.autoAnswer, false),
         saveTranscript: asBoolean(req.body?.saveTranscript, true),
@@ -317,11 +312,11 @@ router.post("/sessions/:id/answer", async (req, res, next) => {
     const roundEntries = (session.transcript ?? []).filter(entry => (entry.roundNumber ?? 1) === (session.roundNumber ?? 1));
     const prompt = [
       `Respond in ${session.language || "English"}. ${answerStyle}`,
-      session.sessionType === "interview"
+      session.sessionType !== "call"
         ? `Company: ${session.company || "not specified"}`
         : `Call title: ${session.title}`,
       `Job description: ${session.description || "not provided"}`,
-      `Candidate resume: ${session.sessionType === "interview" ? session.resumeText || "not provided" : "not applicable to Regular Call"}`,
+      `Candidate resume: ${session.sessionType !== "call" ? session.resumeText || "not provided" : "not applicable to Regular Call"}`,
       `Reference documents, limited to passages related to this question: ${relevantDocuments(session.documentsText, question)}`,
       `Candidate instructions: ${session.instructions || "none"}`,
       `Heard so far. Answer the interviewer. Lines marked "Candidate already said" are facts already spoken, not a new question: ${transcriptForAnswer(roundEntries)}`,

@@ -15,10 +15,10 @@ export interface DesktopBuild {
   status: DesktopBuildStatus;
   /** @nullable */
   url: string | null;
-  /** @nullable */
-  sha256: string | null;
-  /** @nullable */
-  sizeBytes: number | null;
   signing: string;
   minimumOs: string;
+  /** @nullable */
+  sizeBytes: number | null;
+  /** @nullable */
+  sha256: string | null;
 }

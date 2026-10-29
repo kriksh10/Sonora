@@ -1,3 +1,5 @@
 <svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect width="180" height="180" rx="36" fill="#FF3C00"/>
+  <title>Sonora AI</title>
+  <rect width="180" height="180" rx="36" fill="#75c853"/>
+  <path d="M90 36v108M54 58l72 64M126 58 54 122" fill="none" stroke="#19321d" stroke-linecap="round" stroke-width="14"/>
 </svg>

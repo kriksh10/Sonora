@@ -22,7 +22,7 @@ import SessionWizard from "@/components/session-wizard";
 import SessionPreferencesDialog from "@/components/session-preferences-dialog";
 import { sessionPreferences, summarizePreferences } from "@/lib/answer-preferences";
 import LiveSessionView from "@/components/live-session-view";
-import { createDesktopAudio, createAudioGroup, type AudioCapture } from "@/lib/desktop-audio";
+import { createDesktopAudio, createAudioGroup, serverSttAvailable, type AudioCapture } from "@/lib/desktop-audio";
 import { browserLanguage } from "@/lib/call-languages";
 import { createInterviewerQuestions } from "@/lib/interviewer-questions";
 import { createPhraseBuffer } from "@/lib/phrase-buffer";
@@ -31,8 +31,11 @@ import { requestAnswer } from "@/lib/answer-stream";
 import AudioReadiness from "@/components/audio-readiness";
 import Modal from "@/components/modal";
 import { useAccess } from "@/components/access-gate";
-import { captureSpeaker, mayAutoAnswer, createRecentUtterance, type InterviewInputMode } from "@/lib/interview-input";
+import { captureSpeaker, mayAutoAnswer, createRecentUtterance, friendlyCaptureError, type InterviewInputMode } from "@/lib/interview-input";
 import { firstTextTiming } from "@/lib/live-timing";
+import SessionStudio, { CreditsCounter, creditLabel } from "@/components/session-studio";
+import { apiRequest } from "@/lib/answer-preferences";
+import { loadCreditBalance, type CreditBalance } from "@/lib/session-tools";
 
 type SpeechResult = {
   isFinal: boolean;
@@ -109,7 +112,16 @@ function statusTone(status: CallSession["status"]) {
 }
 
 function sessionKind(session: CallSession) {
+  if (session.sessionType === "mock") return "Mock";
   return session.sessionType === "interview" ? "Interview" : "Regular";
+}
+
+function sessionSubLabel(session: CallSession, now: number) {
+  const kind = sessionKind(session);
+  if (session.status === "ended") {
+    return session.startedAt ? `${kind} · Ended · ${callLength(session, now)}` : `${kind} · Ended`;
+  }
+  return `${kind} · ${callLength(session, now)}`;
 }
 
 function sessionChoice(session: CallSession) {
@@ -124,7 +136,8 @@ export default function InterviewWorkspace() {
   const storageKey = `sonora:selected-session:${user?.id ?? "me"}`;
   const [sessions, setSessions] = useState<CallSession[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(() => { try { return localStorage.getItem(storageKey); } catch { return null; } });
-  const [filter, setFilter] = useState<"all" | "interview" | "call">("all");
+  const [filter, setFilter] = useState<"all" | "interview" | "call" | "mock">("all");
+  const [credits, setCredits] = useState<CreditBalance | null>(null);
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -235,6 +248,14 @@ export default function InterviewWorkspace() {
   useEffect(() => {
     void refreshSessions();
   }, [refreshSessions]);
+
+  useEffect(() => {
+    let mounted = true;
+    void loadCreditBalance(access.role, sessions.length).then((next) => {
+      if (mounted) setCredits(next);
+    }).catch(() => { if (mounted) setError("Credit balance could not be loaded. Reload to retry."); });
+    return () => { mounted = false; };
+  }, [access.role, sessions.length]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -510,19 +531,33 @@ export default function InterviewWorkspace() {
   const startSession = async () => {
     if (!selected) return;
     setLiveMode(true);
+    if (selected.status !== "ready") return;
+    try {
+      const updated = await api<CallSession>(`/sessions/${selected.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "active", roundNumber: selected.roundNumber }),
+      });
+      setSessions((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not start the session timer.");
+    }
   };
 
   const endSession = async () => {
     if (!selected) return;
+    phrasesRef.current?.flush();
     stopCapture();
     answerAbortRef.current?.abort();
     try {
+      await transcriptWritesRef.current;
       const updated = await api<CallSession>(`/sessions/${selected.id}`, {
         method: "PATCH",
         body: JSON.stringify({ status: "ended", roundNumber: selected.roundNumber }),
       });
       setSessions((items) => items.map((item) => (item.id === updated.id ? updated : item)));
-      setNotice("Session ended. Its transcript is saved if Save Transcript was enabled.");
+      await apiRequest("/billing/settle", { method: "POST", body: JSON.stringify({ sessionId: updated.id }) });
+      setCredits(await loadCreditBalance(access.role, sessions.length));
+      setNotice("Session ended. Notes will appear below. Its transcript is saved if Save Transcript was enabled.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not end the session.");
     }
@@ -598,7 +633,12 @@ export default function InterviewWorkspace() {
       return;
     }
     setLiveMode(true);
-    if (window.sonoraDesktop || inputMode === "phone" || audioSource === "system") {
+    const serverStt = window.sonoraDesktop ? true : await serverSttAvailable(selected.id);
+    if (!serverStt && audioSource !== "microphone" && !window.sonoraDesktop) {
+      setError("Meeting-tab audio is transcribed on the server, and that service is unavailable right now. You can type a question, or switch to the microphone to try browser speech recognition.");
+      return;
+    }
+    if (serverStt || window.sonoraDesktop || inputMode === "phone" || audioSource !== "microphone") {
       const captureToken = ++captureTokenRef.current;
       mySpeakerRef.current = "";
       recentAudioRef.current = { microphone: new Float32Array(0), system: new Float32Array(0) };
@@ -647,6 +687,7 @@ export default function InterviewWorkspace() {
             ? `Speaker ${metadata.speakerLabel}`
             : currentMode === "phone" ? "Mixed phone speech transcribed" : speaker === "interviewer" ? "Collecting interviewer question" : "Listening-only for this source");
           phrasesRef.current?.push(text, { source: metadata.source, speaker, capturedAt: metadata.capturedAt });
+          if (metadata.endOfTurn) phrasesRef.current?.flush();
         },
         onNotice: text => { if (captureToken === captureTokenRef.current) setNotice(text); },
         onTurnEnded: () => {
@@ -655,8 +696,15 @@ export default function InterviewWorkspace() {
         },
         onError: cause => {
           if (captureToken !== captureTokenRef.current) return;
+          const serverDown = cause instanceof Error && cause.name === "ServerSttUnavailable";
           stopCapture();
-          setError(cause.message);
+          if (serverDown && !window.sonoraDesktop && sources.every((item) => item === "microphone")) {
+            void startBrowserSpeech(captureTokenRef.current);
+            return;
+          }
+          setError(serverDown
+            ? "Server transcription is unavailable, so this audio cannot be transcribed here. Type a question, or try the microphone if browser speech recognition is available."
+            : friendlyCaptureError(cause, source === "system" ? "system" : "microphone"));
         },
       }));
       const group = createAudioGroup(captures);
@@ -675,16 +723,30 @@ export default function InterviewWorkspace() {
         setListening(true);
         setNotice(inputMode === "phone"
           ? "Phone-speaker capture is on. Both voices are mixed; use Answer recent, or explicitly enable mixed-audio automatic answers."
-          : `${audioSource === "both" ? "Separate microphone and call channels are" : audioSource === "system" ? "Call audio is" : "Microphone is"} on. ${audioSource === "microphone" ? "Your microphone never triggers auto-answer in computer-call mode." : remoteConfirmed ? "Confirmed remote questions can trigger Auto Answer." : "Speaker mapping unconfirmed: auto-answer is paused."}`);
+          : `${audioSource === "both" ? "Microphone and meeting tab are" : audioSource === "system" ? "Meeting tab is" : "Microphone is"} on. Server transcription is sending short audio clips to Gemini. ${audioSource === "microphone" ? "The microphone is you, so Auto Answer will not reply to it." : remoteConfirmed ? "Auto Answer can reply when the meeting tab asks a question." : "Confirm the meeting tab is the interviewer before Auto Answer will reply."}`);
       } catch (cause) {
         if (captureToken !== captureTokenRef.current) return;
         stopCapture();
-        setError(cause instanceof Error ? cause.message : "Could not start desktop audio.");
+        const serverDown = cause instanceof Error && cause.name === "ServerSttUnavailable";
+        if (serverDown && !window.sonoraDesktop && sources.every((item) => item === "microphone")) {
+          await startBrowserSpeech(captureTokenRef.current);
+          return;
+        }
+        setError(serverDown
+          ? "Server transcription is unavailable, so meeting-tab audio cannot be transcribed in this browser. Type a question, or try again when the speech service is up."
+          : friendlyCaptureError(cause, sources.includes("system") ? "system" : "microphone"));
       } finally {
         if (captureToken === captureTokenRef.current) setRequestingMic(false);
       }
       return;
     }
+    setNotice("Server transcription is unavailable. This browser’s speech recognition is a fallback and may fail outside Google Chrome.");
+    await startBrowserSpeech(captureTokenRef.current + 1);
+  };
+
+  const startBrowserSpeech = async (captureToken: number) => {
+    const session = selected;
+    if (!session) return;
     const speechWindow = window as WindowWithSpeechRecognition;
     const SpeechRecognition =
       speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
@@ -696,7 +758,7 @@ export default function InterviewWorkspace() {
       setError("This browser cannot request microphone access. Type a question below to test Gemini.");
       return;
     }
-    const captureToken = ++captureTokenRef.current;
+    captureTokenRef.current = captureToken;
     setRequestingMic(true);
     try {
       setError("");
@@ -709,7 +771,7 @@ export default function InterviewWorkspace() {
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
-      recognition.lang = browserLanguage(selected?.language);
+      recognition.lang = browserLanguage(session.language);
       recognition.onresult = (event) => {
         if (captureToken !== captureTokenRef.current) return;
         let interim = "";
@@ -731,11 +793,9 @@ export default function InterviewWorkspace() {
       recognition.onerror = (event) => {
         stream.getTracks().forEach((track) => track.stop());
         if (captureToken !== captureTokenRef.current) return;
-        setError(
-          event.error === "not-allowed"
-            ? "Microphone permission was denied. Allow microphone access in your browser settings and try again."
-            : `Speech recognition stopped (${event.error}). You can still type a question.`,
-        );
+        setError(event.error === "not-allowed" || event.error === "audio-capture"
+          ? friendlyCaptureError(Object.assign(new Error(event.error), { name: event.error === "not-allowed" ? "NotAllowedError" : "Error" }), "speech")
+          : `Browser speech recognition stopped (${event.error}). You can still type a question.`);
         setListening(false);
         streamRef.current = null;
       };
@@ -747,10 +807,10 @@ export default function InterviewWorkspace() {
         streamRef.current = null;
       };
       recognitionRef.current = recognition;
-      if (selected.status === "ready") {
-        const updated = await api<CallSession>(`/sessions/${selected.id}`, {
+      if (session.status === "ready") {
+        const updated = await api<CallSession>(`/sessions/${session.id}`, {
           method: "PATCH",
-          body: JSON.stringify({ status: "active", roundNumber: selected.roundNumber }),
+          body: JSON.stringify({ status: "active", roundNumber: session.roundNumber }),
         });
         if (captureToken !== captureTokenRef.current) {
           stream.getTracks().forEach((track) => track.stop());
@@ -773,13 +833,7 @@ export default function InterviewWorkspace() {
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
       setListening(false);
-      setError(
-        cause instanceof DOMException && cause.name === "NotAllowedError"
-          ? "Microphone permission was denied. Allow microphone access in your browser settings."
-          : cause instanceof Error
-            ? cause.message
-            : "Could not start microphone transcription.",
-      );
+      setError(friendlyCaptureError(cause, "speech"));
     } finally {
       if (captureToken === captureTokenRef.current) setRequestingMic(false);
     }
@@ -862,7 +916,7 @@ export default function InterviewWorkspace() {
   };
 
   return (
-    <main className={`${liveMode && selected ? "" : "min-h-screen"} text-[#e7e8eb]`}
+    <main className={`sonora-workspace ${liveMode && selected ? "" : "min-h-screen"} text-[#e7e8eb]`}
       style={{ background: window.sonoraDesktop ? "rgba(16,17,19,var(--sonora-background-opacity,0.4))" : "#101113" }}>
       {liveMode && selected && liveSession ? (
         <LiveSessionView
@@ -914,7 +968,7 @@ export default function InterviewWorkspace() {
           onReadiness={() => { stopCapture(); answerAbortRef.current?.abort(); setReadinessOpen(true); }}
         />
       ) : (<>
-      <header className={`${window.sonoraDesktop ? "desktop-drag sonora-glass" : ""} flex h-[60px] items-center justify-between border-b border-white/10 bg-[#17181b] px-4 sm:px-6`}>
+      <header className={`${window.sonoraDesktop ? "desktop-drag sonora-glass" : ""} flex min-h-[60px] flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-[#17181b] px-4 py-2 sm:px-6`}>
         <a href={import.meta.env.BASE_URL} className="flex items-center gap-2 text-lg font-bold tracking-tight text-white">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#75c853] text-[#19321d]"><Sparkles size={18} /></span>
           Sonora <span className="text-xs font-medium text-white/50">AI</span>
@@ -922,6 +976,13 @@ export default function InterviewWorkspace() {
         <div className="flex items-center gap-3 text-sm text-white/65">
           <span className="hidden sm:inline">{user?.primaryEmailAddress?.emailAddress}</span>
           {(access.role === "owner" || access.role === "approver") && <button data-testid="button-access" onClick={access.openAdmin} className="rounded-lg border border-white/10 px-3 py-2 text-xs hover:bg-white/5">{access.role === "owner" ? "Access" : "Approvals"}</button>}
+          <a href={`${import.meta.env.BASE_URL}settings`} className="rounded-lg border border-white/10 px-3 py-2 text-xs hover:bg-white/5">Settings</a>
+          <CreditsCounter label={creditLabel({
+            bypass: access.role === "owner" || access.role === "approver" || !!credits?.bypass,
+            balance: credits?.balance ?? 0,
+            freeRemaining: credits?.freeRemaining ?? Math.max(0, 10 - sessions.length),
+            unlimitedUntil: credits?.unlimitedUntil ?? null,
+          })} />
           {!window.sonoraDesktop && <a href={`${import.meta.env.BASE_URL}download`} className="rounded-lg border border-white/10 px-3 py-2 text-xs hover:bg-white/5">Desktop downloads</a>}
           <button
             className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 hover:bg-white/5"
@@ -937,7 +998,7 @@ export default function InterviewWorkspace() {
         {window.sonoraDesktop && <div className="mb-4 flex flex-wrap items-start gap-2">
           <div className="min-w-0 flex-1">
             <select aria-label="Current desktop session" value={selectedId ?? ""} onChange={event => { if (!event.target.value) { setSelectedId(null); setAnswer(""); setError(""); return; } openTranscript(event.target.value); }} className="w-full rounded-lg border border-white/10 bg-[#17181b] px-3 py-2 text-sm"><option value="">Choose a session</option>{sessions.map(item => <option key={item.id} value={item.id}>{sessionChoice(item)}</option>)}</select>
-            {compact && selected && <p className="mt-1 truncate text-xs text-white/70">{sessionKind(selected)} · {statusLabel(selected.status)} · {callLength(selected, now)}</p>}
+            {compact && selected && <p className="mt-1 truncate text-xs text-white/70">{sessionSubLabel(selected, now)}</p>}
           </div>
           <button onClick={() => setCompact(value => !value)} className="rounded-lg border border-white/10 px-3 py-2 text-xs">{compact ? "Show session browser" : "Compact assistant"}</button>
         </div>}
@@ -979,8 +1040,8 @@ export default function InterviewWorkspace() {
                   className="w-full rounded-lg border border-white/10 bg-[#101113] py-2.5 pl-9 pr-3 text-sm outline-none placeholder:text-white/35 focus:border-white/25"
                 />
               </div>
-              <div className="mt-3 grid grid-cols-3 gap-1 rounded-lg bg-[#101113] p-1 text-xs">
-                {([["all", "All"], ["interview", "Interview"], ["call", "Regular"]] as const).map(([item, label]) => (
+              <div className="mt-3 grid grid-cols-2 gap-1 rounded-lg bg-[#101113] p-1 text-xs sm:grid-cols-4">
+                {([["all", "All"], ["interview", "Interview"], ["call", "Regular"], ["mock", "Mock"]] as const).map(([item, label]) => (
                   <button key={item} className={`rounded-md px-2 py-1.5 ${filter === item ? "bg-[#2b2d31] text-white" : "text-white/45 hover:text-white/75"}`} onClick={() => setFilter(item)}>{label}</button>
                 ))}
               </div>
@@ -1003,7 +1064,7 @@ export default function InterviewWorkspace() {
                         <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium ${statusTone(session.status)}`}>{statusLabel(session.status)}</span>
                       </span>
                       {session.company?.trim() && <small className="mt-0.5 block truncate text-xs text-white/55">{session.title}</small>}
-                      <small className="mt-1 block truncate text-xs text-white/40">{sessionKind(session)} · {callLength(session, now)}</small>
+                      <small className="mt-1 block truncate text-xs text-white/40">{sessionSubLabel(session, now)}</small>
                     </span>
                   </button>
                 ))
@@ -1088,7 +1149,15 @@ export default function InterviewWorkspace() {
                           id="question-input"
                           value={answerInput}
                           onChange={(event) => setAnswerInput(event.target.value)}
-                          placeholder="e.g. Tell me about a challenging project you worked on…"
+                          onKeyDown={(event) => {
+                            if (event.key !== "Enter" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey || event.nativeEvent.isComposing) return;
+                            event.preventDefault();
+                            if (busy || !answerInput.trim()) return;
+                            const question = answerInput;
+                            setAnswerInput("");
+                            void askGemini(question);
+                          }}
+                          placeholder="Type a question. Enter to ask, Shift+Enter for a new line"
                           className="min-h-[80px] flex-1 resize-y rounded-lg border border-white/10 bg-[#17181b] px-3 py-2.5 text-sm outline-none placeholder:text-white/35 focus:border-white/25"
                         />
                         <button disabled={busy || !answerInput.trim()} aria-label="Ask Gemini" className="self-end rounded-lg bg-[#257c3c] p-3 text-white disabled:cursor-not-allowed disabled:opacity-40"><Send size={17} /></button>
@@ -1096,6 +1165,16 @@ export default function InterviewWorkspace() {
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-white/40"><Sparkles size={12} /> {selected.model} · {summarizePreferences(sessionPreferences(selected))} · {selected.language} <button type="button" data-testid="button-edit-preferences" onClick={() => setEditOpen(true)} className="ml-2 rounded-md border border-white/10 px-2 py-1 text-white/70 hover:bg-white/5">Edit preferences</button></div>
                       {currentEntries.some((entry) => entry.source === "microphone") && <button type="button" onClick={() => setAnswerInput([...currentEntries].reverse().find((entry) => entry.source === "microphone")?.text ?? "")} className="mt-3 text-xs font-medium text-emerald-300 hover:text-emerald-200">Use latest microphone transcript as the question</button>}
                     </form>
+                    <SessionStudio key={`${selected.id}:${selected.roundNumber}`}
+                      session={selected}
+                      now={now}
+                      onAsk={(question) => void askGemini(question)}
+                      onClear={() => { setAnswer(""); setAnswerInput(""); setLatestQuestion(""); }}
+                      onUseScreenshot={(image, question) => {
+                        screenshotRef.current = image;
+                        void askGemini(question);
+                      }}
+                    />
                   </div>
                   <div className="sonora-glass rounded-xl border border-white/10 bg-[#101113] p-4">
                     <div className="mb-3 flex items-center justify-between gap-3">

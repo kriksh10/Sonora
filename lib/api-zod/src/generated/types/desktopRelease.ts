@@ -10,6 +10,6 @@ import type { DesktopBuild } from './desktopBuild';
 export interface DesktopRelease {
   version: string;
   /** @nullable */
-  publishedAt: string | null;
+  publishedAt?: string | null;
   builds: DesktopBuild[];
 }

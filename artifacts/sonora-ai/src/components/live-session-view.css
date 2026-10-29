@@ -89,6 +89,7 @@
 .lsv-phone-live{flex:none;display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;margin:.4rem .6rem 0}
 .lsv-recent{width:100%;padding:.5rem .65rem;border-radius:.5rem;background:var(--lsv-solid);border:1px solid var(--lsv-line);font-size:.8rem;line-height:1.45;max-height:5rem;overflow:auto;overflow-wrap:anywhere}
 .lsv-note-bar{flex:none;margin:.35rem .75rem 0;font-size:.68rem;color:#f6d9a0;display:flex;flex-wrap:wrap;gap:.3rem .6rem;align-items:center}
+.lsv-note-bar.ok{color:#c9f0b8}
 .lsv-link{background:none;border:0;padding:0;color:var(--lsv-green);font-size:.68rem;text-decoration:underline;cursor:pointer}
 .lsv-answer-pane{background:var(--lsv-solid);border-color:rgba(255,255,255,.14)}
 .lsv-answer-pane .lsv-scroll{background:var(--lsv-solid)}

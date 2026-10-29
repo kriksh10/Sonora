@@ -6,7 +6,6 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface JobLinkInput {
-  /** @maxLength 2048 */
-  url: string;
-}
+export type RunPreparationTool200 = {
+  text: string;
+};

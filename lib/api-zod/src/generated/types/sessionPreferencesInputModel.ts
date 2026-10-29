@@ -11,5 +11,6 @@ export type SessionPreferencesInputModel = typeof SessionPreferencesInputModel[k
 
 export const SessionPreferencesInputModel = {
   'gemini-25-flash': 'gemini-2.5-flash',
+  'gemini-25-pro': 'gemini-2.5-pro',
   'gemini-3-flash-preview': 'gemini-3-flash-preview',
 } as const;

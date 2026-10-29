@@ -7,6 +7,8 @@
  */
 
 export interface AudioTranscription {
+  available: boolean;
+  error?: string;
   /** @maxLength 8000 */
-  text: string;
+  text?: string;
 }

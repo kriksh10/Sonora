@@ -8,6 +8,205 @@
 import * as zod from 'zod';
 
 
+export const GetDesktopReleaseResponse = zod.object({
+  "version": zod.string(),
+  "publishedAt": zod.string().nullish(),
+  "builds": zod.array(zod.object({
+  "platform": zod.enum(['mac', 'windows']),
+  "architecture": zod.string(),
+  "label": zod.string(),
+  "status": zod.enum(['unavailable', 'preview', 'verified']),
+  "url": zod.string().nullable(),
+  "signing": zod.string(),
+  "minimumOs": zod.string(),
+  "sizeBytes": zod.number().int().nullable(),
+  "sha256": zod.string().nullable()
+}))
+})
+
+
+export const GetCreditBalanceResponse = zod.object({
+  "balance": zod.number().int(),
+  "freeRemaining": zod.number().int(),
+  "unlimitedUntil": zod.string().nullable(),
+  "bypass": zod.boolean(),
+  "checkout": zod.boolean()
+})
+
+
+export const StartTestCheckoutBody = zod.object({
+  "sku": zod.string()
+})
+
+export const StartTestCheckoutResponse = zod.object({
+  "comingSoon": zod.boolean(),
+  "url": zod.string().optional()
+})
+
+
+export const SettleSessionCreditsBody = zod.object({
+  "sessionId": zod.string().uuid()
+})
+
+export const SettleSessionCreditsResponse = zod.unknown()
+
+
+export const GetSessionBillingParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const GetSessionBillingResponse = zod.object({
+  "sessionId": zod.string().uuid(),
+  "autoExtend": zod.boolean(),
+  "billedBlocks": zod.number().int()
+})
+
+
+export const SaveSessionBillingParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const SaveSessionBillingBody = zod.object({
+  "autoExtend": zod.boolean()
+})
+
+export const SaveSessionBillingResponse = zod.object({
+  "sessionId": zod.string().uuid(),
+  "autoExtend": zod.boolean(),
+  "billedBlocks": zod.number().int()
+})
+
+
+export const RunPreparationToolParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const runPreparationToolBodyPromptMax = 50000;
+
+
+
+export const RunPreparationToolBody = zod.object({
+  "prompt": zod.string().min(1).max(runPreparationToolBodyPromptMax)
+})
+
+export const RunPreparationToolResponse = zod.object({
+  "text": zod.string()
+})
+
+
+export const GetSessionNotesParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const getSessionNotesResponseOneSummaryMax = 40000;
+
+export const getSessionNotesResponseOneQuestionsAskedMax = 40000;
+
+export const getSessionNotesResponseOneNextStepsMax = 40000;
+
+export const getSessionNotesResponseOneScoreMin = 0;
+export const getSessionNotesResponseOneScoreMax = 100;
+
+
+
+export const GetSessionNotesResponse = zod.union([zod.object({
+  "summary": zod.string().max(getSessionNotesResponseOneSummaryMax),
+  "questionsAsked": zod.string().max(getSessionNotesResponseOneQuestionsAskedMax),
+  "nextSteps": zod.string().max(getSessionNotesResponseOneNextStepsMax),
+  "score": zod.number().int().min(getSessionNotesResponseOneScoreMin).max(getSessionNotesResponseOneScoreMax).nullable()
+}),zod.null()])
+
+
+export const SaveSessionNotesParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const saveSessionNotesBodySummaryMax = 40000;
+
+export const saveSessionNotesBodyQuestionsAskedMax = 40000;
+
+export const saveSessionNotesBodyNextStepsMax = 40000;
+
+export const saveSessionNotesBodyScoreMin = 0;
+export const saveSessionNotesBodyScoreMax = 100;
+
+
+
+export const SaveSessionNotesBody = zod.object({
+  "summary": zod.string().max(saveSessionNotesBodySummaryMax),
+  "questionsAsked": zod.string().max(saveSessionNotesBodyQuestionsAskedMax),
+  "nextSteps": zod.string().max(saveSessionNotesBodyNextStepsMax),
+  "score": zod.number().int().min(saveSessionNotesBodyScoreMin).max(saveSessionNotesBodyScoreMax).nullable()
+})
+
+export const saveSessionNotesResponseSummaryMax = 40000;
+
+export const saveSessionNotesResponseQuestionsAskedMax = 40000;
+
+export const saveSessionNotesResponseNextStepsMax = 40000;
+
+export const saveSessionNotesResponseScoreMin = 0;
+export const saveSessionNotesResponseScoreMax = 100;
+
+
+
+export const SaveSessionNotesResponse = zod.object({
+  "summary": zod.string().max(saveSessionNotesResponseSummaryMax),
+  "questionsAsked": zod.string().max(saveSessionNotesResponseQuestionsAskedMax),
+  "nextSteps": zod.string().max(saveSessionNotesResponseNextStepsMax),
+  "score": zod.number().int().min(saveSessionNotesResponseScoreMin).max(saveSessionNotesResponseScoreMax).nullable()
+})
+
+
+export const GetQuestionBankParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const getQuestionBankResponseQuestionMax = 4000;
+
+export const getQuestionBankResponseModelAnswerMax = 16000;
+
+
+
+export const GetQuestionBankResponseItem = zod.object({
+  "question": zod.string().min(1).max(getQuestionBankResponseQuestionMax),
+  "modelAnswer": zod.string().max(getQuestionBankResponseModelAnswerMax)
+})
+export const GetQuestionBankResponse = zod.array(GetQuestionBankResponseItem)
+
+
+export const SaveQuestionBankParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const saveQuestionBankBodyItemsItemQuestionMax = 4000;
+
+export const saveQuestionBankBodyItemsItemModelAnswerMax = 16000;
+
+export const saveQuestionBankBodyItemsMax = 50;
+
+
+
+export const SaveQuestionBankBody = zod.object({
+  "items": zod.array(zod.object({
+  "question": zod.string().min(1).max(saveQuestionBankBodyItemsItemQuestionMax),
+  "modelAnswer": zod.string().max(saveQuestionBankBodyItemsItemModelAnswerMax)
+})).max(saveQuestionBankBodyItemsMax)
+})
+
+export const saveQuestionBankResponseQuestionMax = 4000;
+
+export const saveQuestionBankResponseModelAnswerMax = 16000;
+
+
+
+export const SaveQuestionBankResponseItem = zod.object({
+  "question": zod.string().min(1).max(saveQuestionBankResponseQuestionMax),
+  "modelAnswer": zod.string().max(saveQuestionBankResponseModelAnswerMax)
+})
+export const SaveQuestionBankResponse = zod.array(SaveQuestionBankResponseItem)
+
+
 export const GetAccessStatusResponse = zod.object({
   "status": zod.enum(['pending', 'approved', 'denied', 'revoked']),
   "role": zod.enum(['owner', 'approver', 'user']),
@@ -96,7 +295,7 @@ export const RestartSessionResponse = zod.object({
   "endedAt": zod.coerce.date().nullable()
 })).optional(),
   "id": zod.string().uuid(),
-  "sessionType": zod.enum(['interview', 'call']),
+  "sessionType": zod.enum(['interview', 'call', 'mock']),
   "title": zod.string(),
   "company": zod.string().nullable(),
   "description": zod.string().nullable(),
@@ -249,8 +448,8 @@ export const UpdateSessionPreferencesBody = zod.object({
   "fillerWords": zod.boolean()
 }).optional(),
   "instructions": zod.string().max(updateSessionPreferencesBodyInstructionsMax).optional(),
-  "model": zod.enum(['gemini-2.5-flash', 'gemini-3-flash-preview']).optional(),
-  "language": zod.enum(['English', 'Spanish', 'French', 'German', 'Italian', 'Portuguese', 'Dutch', 'Polish', 'Russian', 'Ukrainian', 'Japanese', 'Korean', 'Mandarin', 'Arabic', 'Hindi', 'Turkish', 'Swedish', 'Danish', 'Norwegian', 'Finnish', 'Czech', 'Greek', 'Hebrew', 'Hungarian', 'Romanian', 'Indonesian', 'Malay', 'Vietnamese', 'Thai', 'Bulgarian', 'Catalan', 'Croatian', 'Slovak', 'Tamil', 'Urdu']).optional(),
+  "model": zod.enum(['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-3-flash-preview']).optional(),
+  "language": zod.enum(['English', 'Spanish', 'French', 'German', 'Italian', 'Portuguese', 'Dutch', 'Polish', 'Russian', 'Ukrainian', 'Japanese', 'Korean', 'Mandarin', 'Arabic', 'Hindi', 'Turkish', 'Swedish', 'Danish', 'Norwegian', 'Finnish', 'Czech', 'Greek', 'Hebrew', 'Hungarian', 'Romanian', 'Indonesian', 'Malay', 'Vietnamese', 'Thai', 'Bulgarian', 'Catalan', 'Croatian', 'Slovak', 'Tamil', 'Urdu', 'Bengali', 'Punjabi', 'Gujarati', 'Marathi', 'Telugu', 'Kannada', 'Malayalam', 'Nepali', 'Sinhala', 'Persian', 'Swahili', 'Afrikaans', 'Filipino', 'Lithuanian', 'Latvian', 'Estonian', 'Slovenian', 'Serbian', 'Icelandic', 'Welsh']).optional(),
   "autoAnswer": zod.boolean().optional(),
   "saveTranscript": zod.boolean().optional()
 })
@@ -268,7 +467,7 @@ export const UpdateSessionPreferencesResponse = zod.object({
   "endedAt": zod.coerce.date().nullable()
 })).optional(),
   "id": zod.string().uuid(),
-  "sessionType": zod.enum(['interview', 'call']),
+  "sessionType": zod.enum(['interview', 'call', 'mock']),
   "title": zod.string(),
   "company": zod.string().nullable(),
   "description": zod.string().nullable(),
@@ -331,7 +530,7 @@ export const ListSessionsResponseItem = zod.object({
   "endedAt": zod.coerce.date().nullable()
 })).optional(),
   "id": zod.string().uuid(),
-  "sessionType": zod.enum(['interview', 'call']),
+  "sessionType": zod.enum(['interview', 'call', 'mock']),
   "title": zod.string(),
   "company": zod.string().nullable(),
   "description": zod.string().nullable(),
@@ -385,7 +584,7 @@ export const createSessionBodyInstructionsMax = 8000;
 
 
 export const CreateSessionBody = zod.object({
-  "sessionType": zod.enum(['interview', 'call']),
+  "sessionType": zod.enum(['interview', 'call', 'mock']),
   "title": zod.string().max(createSessionBodyTitleMax).optional(),
   "company": zod.string().max(createSessionBodyCompanyMax).optional(),
   "description": zod.string().max(createSessionBodyDescriptionMax).optional(),
@@ -400,8 +599,8 @@ export const CreateSessionBody = zod.object({
   "starMethod": zod.boolean(),
   "fillerWords": zod.boolean()
 }).optional(),
-  "model": zod.enum(['gemini-2.5-flash', 'gemini-3-flash-preview']).optional(),
-  "language": zod.enum(['English', 'Spanish', 'French', 'German', 'Italian', 'Portuguese', 'Dutch', 'Polish', 'Russian', 'Ukrainian', 'Japanese', 'Korean', 'Mandarin', 'Arabic', 'Hindi', 'Turkish', 'Swedish', 'Danish', 'Norwegian', 'Finnish', 'Czech', 'Greek', 'Hebrew', 'Hungarian', 'Romanian', 'Indonesian', 'Malay', 'Vietnamese', 'Thai', 'Bulgarian', 'Catalan', 'Croatian', 'Slovak', 'Tamil', 'Urdu']).optional(),
+  "model": zod.enum(['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-3-flash-preview']).optional(),
+  "language": zod.enum(['English', 'Spanish', 'French', 'German', 'Italian', 'Portuguese', 'Dutch', 'Polish', 'Russian', 'Ukrainian', 'Japanese', 'Korean', 'Mandarin', 'Arabic', 'Hindi', 'Turkish', 'Swedish', 'Danish', 'Norwegian', 'Finnish', 'Czech', 'Greek', 'Hebrew', 'Hungarian', 'Romanian', 'Indonesian', 'Malay', 'Vietnamese', 'Thai', 'Bulgarian', 'Catalan', 'Croatian', 'Slovak', 'Tamil', 'Urdu', 'Bengali', 'Punjabi', 'Gujarati', 'Marathi', 'Telugu', 'Kannada', 'Malayalam', 'Nepali', 'Sinhala', 'Persian', 'Swahili', 'Afrikaans', 'Filipino', 'Lithuanian', 'Latvian', 'Estonian', 'Slovenian', 'Serbian', 'Icelandic', 'Welsh']).optional(),
   "autoAnswer": zod.boolean().optional(),
   "saveTranscript": zod.boolean().optional()
 })
@@ -419,7 +618,7 @@ export const CreateSessionResponse = zod.object({
   "endedAt": zod.coerce.date().nullable()
 })).optional(),
   "id": zod.string().uuid(),
-  "sessionType": zod.enum(['interview', 'call']),
+  "sessionType": zod.enum(['interview', 'call', 'mock']),
   "title": zod.string(),
   "company": zod.string().nullable(),
   "description": zod.string().nullable(),
@@ -481,7 +680,7 @@ export const GetSessionResponse = zod.object({
   "endedAt": zod.coerce.date().nullable()
 })).optional(),
   "id": zod.string().uuid(),
-  "sessionType": zod.enum(['interview', 'call']),
+  "sessionType": zod.enum(['interview', 'call', 'mock']),
   "title": zod.string(),
   "company": zod.string().nullable(),
   "description": zod.string().nullable(),
@@ -544,7 +743,7 @@ export const UpdateSessionResponse = zod.object({
   "endedAt": zod.coerce.date().nullable()
 })).optional(),
   "id": zod.string().uuid(),
-  "sessionType": zod.enum(['interview', 'call']),
+  "sessionType": zod.enum(['interview', 'call', 'mock']),
   "title": zod.string(),
   "company": zod.string().nullable(),
   "description": zod.string().nullable(),
@@ -613,7 +812,7 @@ export const AppendTranscriptResponse = zod.object({
   "endedAt": zod.coerce.date().nullable()
 })).optional(),
   "id": zod.string().uuid(),
-  "sessionType": zod.enum(['interview', 'call']),
+  "sessionType": zod.enum(['interview', 'call', 'mock']),
   "title": zod.string(),
   "company": zod.string().nullable(),
   "description": zod.string().nullable(),
@@ -691,9 +890,10 @@ export const transcribeSessionAudioBodyAudioMax = 400000;
 
 
 export const TranscribeSessionAudioBody = zod.object({
+  "probe": zod.boolean().optional().describe('Check availability without sending audio'),
   "roundNumber": zod.number().int().min(1).optional(),
-  "audio": zod.string().min(transcribeSessionAudioBodyAudioMin).max(transcribeSessionAudioBodyAudioMax).describe('Base64 PCM WAV, mono 16 kHz, at most eight seconds'),
-  "mimeType": zod.enum(['audio/wav']),
+  "audio": zod.string().min(transcribeSessionAudioBodyAudioMin).max(transcribeSessionAudioBodyAudioMax).optional().describe('Base64 PCM WAV, mono 16 kHz, at most eight seconds'),
+  "mimeType": zod.enum(['audio/wav']).optional(),
   "source": zod.enum(['microphone', 'system']).optional()
 })
 
@@ -702,7 +902,9 @@ export const transcribeSessionAudioResponseTextMax = 8000;
 
 
 export const TranscribeSessionAudioResponse = zod.object({
-  "text": zod.string().max(transcribeSessionAudioResponseTextMax)
+  "available": zod.boolean(),
+  "error": zod.string().optional(),
+  "text": zod.string().max(transcribeSessionAudioResponseTextMax).optional()
 })
 
 

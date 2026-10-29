@@ -36,6 +36,25 @@ function pcm16ToFloat(audio: string) {
   return samples;
 }
 
+/** Only a successful, authenticated availability probe enables server transcription. */
+export async function serverSttAvailable(sessionId: string) {
+  try {
+    const response = await fetch(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/api/sessions/${sessionId}/transcribe`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ probe: true }),
+      signal: AbortSignal.timeout(4000),
+    });
+    if (response.status === 404 || response.status === 503) return false;
+    if (!response.ok) return false;
+    const data = await response.json().catch(() => ({}));
+    return data.available !== false;
+  } catch {
+    return false;
+  }
+}
+
 export function createAudioGroup(captures: AudioCapture[]): AudioCapture {
   let stopped = false;
   const stop = () => { stopped = true; captures.forEach(capture => capture.stop()); };
@@ -119,12 +138,17 @@ export function createDesktopAudio(options: Options): AudioCapture {
         options.onPhase?.("Transcribing");
         pacing.mark(options.source);
         const startedAt = Date.now();
-        const response = await fetch(`/api/sessions/${options.sessionId}/transcribe`, {
+        const response = await fetch(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/api/sessions/${options.sessionId}/transcribe`, {
           method: "POST", credentials: "include", signal: AbortSignal.any([abort.signal, AbortSignal.timeout(30_000)]),
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ audio, mimeType: "audio/wav", source: options.source, ...(options.roundNumber ? { roundNumber: options.roundNumber } : {}) }),
         });
         const result = await response.json().catch(() => ({}));
+        if (response.status === 404 || response.status === 503) {
+          const unavailable = new Error("Server transcription is unavailable.");
+          unavailable.name = "ServerSttUnavailable";
+          throw unavailable;
+        }
         if (!response.ok) throw new Error(result.error || `Transcription failed (${response.status}).`);
         if (!stopped) {
           options.onTiming?.(Date.now() - startedAt);

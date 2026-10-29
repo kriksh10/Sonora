@@ -9,6 +9,8 @@ import type { SessionAudioChunkMimeType } from './sessionAudioChunkMimeType';
 import type { SessionAudioChunkSource } from './sessionAudioChunkSource';
 
 export interface SessionAudioChunk {
+  /** Check availability without sending audio */
+  probe?: boolean;
   /** @minimum 1 */
   roundNumber?: number;
   /**
@@ -16,7 +18,7 @@ export interface SessionAudioChunk {
      * @minLength 60
      * @maxLength 400000
      */
-  audio: string;
-  mimeType: SessionAudioChunkMimeType;
+  audio?: string;
+  mimeType?: SessionAudioChunkMimeType;
   source?: SessionAudioChunkSource;
 }

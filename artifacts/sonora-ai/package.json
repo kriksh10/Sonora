@@ -87,6 +87,7 @@
     "zod": "catalog:"
   },
   "dependencies": {
+    "@workspace/pricing": "workspace:*",
     "@clerk/react": "^6.17.8",
     "@clerk/themes": "^2.4.57",
     "pdfjs-dist": "^6.4.299"

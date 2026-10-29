@@ -5,3 +5,5 @@
 - [Sonora access policy](access-policy.md) — The owner chose approval-gated access for website and desktop users, not automatic access after signup.
 - [Private installer delivery](private-downloads.md) — Metadata and approval success do not prove a large download works; verify actual full-size transport and checksum.
 - [Answers without resume coverage](missing-resume-answers.md) — Missing resume topics still need experienced, practical answers at the selected length; do not invent personal experience.
+- [External copy merges](external-copy-merges.md) — Preserve workspace-only capabilities when integrating changes from external Sonora copies.
+- [Recoverable SDK errors](recoverable-sdk-errors.md) — Recovery UI can render behind a blocking dev overlay; verify controls remain usable during third-party outages.

@@ -12,4 +12,5 @@ export type NewCallSessionSessionType = typeof NewCallSessionSessionType[keyof t
 export const NewCallSessionSessionType = {
   interview: 'interview',
   call: 'call',
+  mock: 'mock',
 } as const;

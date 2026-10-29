@@ -5,6 +5,115 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export type DesktopBuildPlatform = typeof DesktopBuildPlatform[keyof typeof DesktopBuildPlatform];
+
+
+export const DesktopBuildPlatform = {
+  mac: 'mac',
+  windows: 'windows',
+} as const;
+
+export type DesktopBuildStatus = typeof DesktopBuildStatus[keyof typeof DesktopBuildStatus];
+
+
+export const DesktopBuildStatus = {
+  unavailable: 'unavailable',
+  preview: 'preview',
+  verified: 'verified',
+} as const;
+
+export interface DesktopBuild {
+  platform: DesktopBuildPlatform;
+  architecture: string;
+  label: string;
+  status: DesktopBuildStatus;
+  /** @nullable */
+  url: string | null;
+  signing: string;
+  minimumOs: string;
+  /** @nullable */
+  sizeBytes: number | null;
+  /** @nullable */
+  sha256: string | null;
+}
+
+export interface DesktopRelease {
+  version: string;
+  /** @nullable */
+  publishedAt?: string | null;
+  builds: DesktopBuild[];
+}
+
+export interface CreditBalance {
+  balance: number;
+  freeRemaining: number;
+  /** @nullable */
+  unlimitedUntil: string | null;
+  bypass: boolean;
+  checkout: boolean;
+}
+
+export interface CheckoutInput {
+  sku: string;
+}
+
+export interface CheckoutResult {
+  comingSoon: boolean;
+  url?: string;
+}
+
+export interface SettlementInput {
+  sessionId: string;
+}
+
+export interface BillingSettingsInput {
+  autoExtend: boolean;
+}
+
+export interface SessionBillingSettings {
+  sessionId: string;
+  autoExtend: boolean;
+  billedBlocks: number;
+}
+
+export interface PreparationInput {
+  /**
+     * @minLength 1
+     * @maxLength 50000
+     */
+  prompt: string;
+}
+
+export interface SessionNotes {
+  /** @maxLength 40000 */
+  summary: string;
+  /** @maxLength 40000 */
+  questionsAsked: string;
+  /** @maxLength 40000 */
+  nextSteps: string;
+  /**
+     * @minimum 0
+     * @maximum 100
+     * @nullable
+     */
+  score: number | null;
+}
+
+export interface BankItem {
+  /**
+     * @minLength 1
+     * @maxLength 4000
+     */
+  question: string;
+  /** @maxLength 16000 */
+  modelAnswer: string;
+}
+
+export interface QuestionBankInput {
+  /** @maxItems 50 */
+  items: BankItem[];
+}
+
 export type AccessStatusStatus = typeof AccessStatusStatus[keyof typeof AccessStatusStatus];
 
 
@@ -158,6 +267,7 @@ export type SessionPreferencesInputModel = typeof SessionPreferencesInputModel[k
 
 export const SessionPreferencesInputModel = {
   'gemini-25-flash': 'gemini-2.5-flash',
+  'gemini-25-pro': 'gemini-2.5-pro',
   'gemini-3-flash-preview': 'gemini-3-flash-preview',
 } as const;
 
@@ -165,13 +275,61 @@ export type SessionPreferencesInputLanguage = typeof SessionPreferencesInputLang
 
 
 export const SessionPreferencesInputLanguage = {
-  English: 'English', Spanish: 'Spanish', French: 'French', German: 'German', Italian: 'Italian',
-  Portuguese: 'Portuguese', Dutch: 'Dutch', Polish: 'Polish', Russian: 'Russian', Ukrainian: 'Ukrainian',
-  Japanese: 'Japanese', Korean: 'Korean', Mandarin: 'Mandarin', Arabic: 'Arabic', Hindi: 'Hindi',
-  Turkish: 'Turkish', Swedish: 'Swedish', Danish: 'Danish', Norwegian: 'Norwegian', Finnish: 'Finnish',
-  Czech: 'Czech', Greek: 'Greek', Hebrew: 'Hebrew', Hungarian: 'Hungarian', Romanian: 'Romanian',
-  Indonesian: 'Indonesian', Malay: 'Malay', Vietnamese: 'Vietnamese', Thai: 'Thai', Bulgarian: 'Bulgarian',
-  Catalan: 'Catalan', Croatian: 'Croatian', Slovak: 'Slovak', Tamil: 'Tamil', Urdu: 'Urdu',
+  English: 'English',
+  Spanish: 'Spanish',
+  French: 'French',
+  German: 'German',
+  Italian: 'Italian',
+  Portuguese: 'Portuguese',
+  Dutch: 'Dutch',
+  Polish: 'Polish',
+  Russian: 'Russian',
+  Ukrainian: 'Ukrainian',
+  Japanese: 'Japanese',
+  Korean: 'Korean',
+  Mandarin: 'Mandarin',
+  Arabic: 'Arabic',
+  Hindi: 'Hindi',
+  Turkish: 'Turkish',
+  Swedish: 'Swedish',
+  Danish: 'Danish',
+  Norwegian: 'Norwegian',
+  Finnish: 'Finnish',
+  Czech: 'Czech',
+  Greek: 'Greek',
+  Hebrew: 'Hebrew',
+  Hungarian: 'Hungarian',
+  Romanian: 'Romanian',
+  Indonesian: 'Indonesian',
+  Malay: 'Malay',
+  Vietnamese: 'Vietnamese',
+  Thai: 'Thai',
+  Bulgarian: 'Bulgarian',
+  Catalan: 'Catalan',
+  Croatian: 'Croatian',
+  Slovak: 'Slovak',
+  Tamil: 'Tamil',
+  Urdu: 'Urdu',
+  Bengali: 'Bengali',
+  Punjabi: 'Punjabi',
+  Gujarati: 'Gujarati',
+  Marathi: 'Marathi',
+  Telugu: 'Telugu',
+  Kannada: 'Kannada',
+  Malayalam: 'Malayalam',
+  Nepali: 'Nepali',
+  Sinhala: 'Sinhala',
+  Persian: 'Persian',
+  Swahili: 'Swahili',
+  Afrikaans: 'Afrikaans',
+  Filipino: 'Filipino',
+  Lithuanian: 'Lithuanian',
+  Latvian: 'Latvian',
+  Estonian: 'Estonian',
+  Slovenian: 'Slovenian',
+  Serbian: 'Serbian',
+  Icelandic: 'Icelandic',
+  Welsh: 'Welsh',
 } as const;
 
 export interface SessionPreferencesInput {
@@ -200,6 +358,8 @@ export const SessionAudioChunkSource = {
 } as const;
 
 export interface SessionAudioChunk {
+  /** Check availability without sending audio */
+  probe?: boolean;
   /** @minimum 1 */
   roundNumber?: number;
   /**
@@ -207,14 +367,16 @@ export interface SessionAudioChunk {
      * @minLength 60
      * @maxLength 400000
      */
-  audio: string;
-  mimeType: SessionAudioChunkMimeType;
+  audio?: string;
+  mimeType?: SessionAudioChunkMimeType;
   source?: SessionAudioChunkSource;
 }
 
 export interface AudioTranscription {
+  available: boolean;
+  error?: string;
   /** @maxLength 8000 */
-  text: string;
+  text?: string;
 }
 
 export type UpdateCallSessionRequestStatus = typeof UpdateCallSessionRequestStatus[keyof typeof UpdateCallSessionRequestStatus];
@@ -304,6 +466,7 @@ export type NewCallSessionSessionType = typeof NewCallSessionSessionType[keyof t
 export const NewCallSessionSessionType = {
   interview: 'interview',
   call: 'call',
+  mock: 'mock',
 } as const;
 
 export type NewCallSessionAnswerPreference = typeof NewCallSessionAnswerPreference[keyof typeof NewCallSessionAnswerPreference];
@@ -320,6 +483,7 @@ export type NewCallSessionModel = typeof NewCallSessionModel[keyof typeof NewCal
 
 export const NewCallSessionModel = {
   'gemini-25-flash': 'gemini-2.5-flash',
+  'gemini-25-pro': 'gemini-2.5-pro',
   'gemini-3-flash-preview': 'gemini-3-flash-preview',
 } as const;
 
@@ -327,13 +491,61 @@ export type NewCallSessionLanguage = typeof NewCallSessionLanguage[keyof typeof 
 
 
 export const NewCallSessionLanguage = {
-  English: 'English', Spanish: 'Spanish', French: 'French', German: 'German', Italian: 'Italian',
-  Portuguese: 'Portuguese', Dutch: 'Dutch', Polish: 'Polish', Russian: 'Russian', Ukrainian: 'Ukrainian',
-  Japanese: 'Japanese', Korean: 'Korean', Mandarin: 'Mandarin', Arabic: 'Arabic', Hindi: 'Hindi',
-  Turkish: 'Turkish', Swedish: 'Swedish', Danish: 'Danish', Norwegian: 'Norwegian', Finnish: 'Finnish',
-  Czech: 'Czech', Greek: 'Greek', Hebrew: 'Hebrew', Hungarian: 'Hungarian', Romanian: 'Romanian',
-  Indonesian: 'Indonesian', Malay: 'Malay', Vietnamese: 'Vietnamese', Thai: 'Thai', Bulgarian: 'Bulgarian',
-  Catalan: 'Catalan', Croatian: 'Croatian', Slovak: 'Slovak', Tamil: 'Tamil', Urdu: 'Urdu',
+  English: 'English',
+  Spanish: 'Spanish',
+  French: 'French',
+  German: 'German',
+  Italian: 'Italian',
+  Portuguese: 'Portuguese',
+  Dutch: 'Dutch',
+  Polish: 'Polish',
+  Russian: 'Russian',
+  Ukrainian: 'Ukrainian',
+  Japanese: 'Japanese',
+  Korean: 'Korean',
+  Mandarin: 'Mandarin',
+  Arabic: 'Arabic',
+  Hindi: 'Hindi',
+  Turkish: 'Turkish',
+  Swedish: 'Swedish',
+  Danish: 'Danish',
+  Norwegian: 'Norwegian',
+  Finnish: 'Finnish',
+  Czech: 'Czech',
+  Greek: 'Greek',
+  Hebrew: 'Hebrew',
+  Hungarian: 'Hungarian',
+  Romanian: 'Romanian',
+  Indonesian: 'Indonesian',
+  Malay: 'Malay',
+  Vietnamese: 'Vietnamese',
+  Thai: 'Thai',
+  Bulgarian: 'Bulgarian',
+  Catalan: 'Catalan',
+  Croatian: 'Croatian',
+  Slovak: 'Slovak',
+  Tamil: 'Tamil',
+  Urdu: 'Urdu',
+  Bengali: 'Bengali',
+  Punjabi: 'Punjabi',
+  Gujarati: 'Gujarati',
+  Marathi: 'Marathi',
+  Telugu: 'Telugu',
+  Kannada: 'Kannada',
+  Malayalam: 'Malayalam',
+  Nepali: 'Nepali',
+  Sinhala: 'Sinhala',
+  Persian: 'Persian',
+  Swahili: 'Swahili',
+  Afrikaans: 'Afrikaans',
+  Filipino: 'Filipino',
+  Lithuanian: 'Lithuanian',
+  Latvian: 'Latvian',
+  Estonian: 'Estonian',
+  Slovenian: 'Slovenian',
+  Serbian: 'Serbian',
+  Icelandic: 'Icelandic',
+  Welsh: 'Welsh',
 } as const;
 
 export interface NewCallSession {
@@ -402,6 +614,7 @@ export type CallSessionSessionType = typeof CallSessionSessionType[keyof typeof 
 export const CallSessionSessionType = {
   interview: 'interview',
   call: 'call',
+  mock: 'mock',
 } as const;
 
 export type CallSessionStatus = typeof CallSessionStatus[keyof typeof CallSessionStatus];
@@ -477,5 +690,9 @@ export interface HealthStatus {
 
 export type SessionErrorResponse = {
   error: string;
+};
+
+export type RunPreparationTool200 = {
+  text: string;
 };
 

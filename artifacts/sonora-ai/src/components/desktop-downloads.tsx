@@ -84,7 +84,15 @@ export default function DesktopDownloads() {
       </p>
 
       <div className="mt-5 space-y-3" aria-live="polite">
-        {loading && [0, 1].map((i) => <div key={i} className="h-24 animate-pulse rounded-xl border border-white/10 bg-[#17181b]" />)}
+        {loading && (
+          <div role="status" aria-busy="true" data-testid="status-downloads-loading" className="flex items-center gap-3 rounded-xl border border-white/10 bg-[#17181b] p-4">
+            <span className="auth-spinner" aria-hidden="true" />
+            <div>
+              <p className="text-sm font-medium text-white">Loading desktop installers</p>
+              <p className="mt-1 text-xs text-white/50">Checking which builds are available.</p>
+            </div>
+          </div>
+        )}
         {!loading && error && (
           <div role="alert" className="rounded-xl border border-red-400/25 bg-red-500/10 p-4 text-sm text-red-200">
             {error}

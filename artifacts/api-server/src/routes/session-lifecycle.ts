@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { getAuth } from "@clerk/express";
 import { and, eq } from "drizzle-orm";
-import { db, callSessionsTable } from "@workspace/db";
+import { db, callSessionsTable, sessionBilling, sessionNotes, questionBanks } from "@workspace/db";
 import { GetSessionParams, RestartSessionBody } from "@workspace/api-zod";
 import { withAnswerPreferences } from "../lib/answer-preferences";
 import { stopSessionOperations } from "../lib/session-lifecycle";
@@ -43,7 +43,15 @@ router.post("/sessions/:id/restart", async (req, res) => {
 router.delete("/sessions/:id", async (req, res) => {
   const userId = getAuth(req).userId!;
   const condition = and(eq(callSessionsTable.id, req.params.id), eq(callSessionsTable.userId, userId));
-  const deleted = await db.delete(callSessionsTable).where(and(condition, eq(callSessionsTable.status, "ended"))).returning({ id: callSessionsTable.id });
+  const deleted = await db.transaction(async tx => {
+    const rows = await tx.delete(callSessionsTable).where(and(condition, eq(callSessionsTable.status, "ended"))).returning({ id: callSessionsTable.id });
+    if (rows.length) {
+      await tx.delete(sessionBilling).where(eq(sessionBilling.sessionId, req.params.id));
+      await tx.delete(sessionNotes).where(eq(sessionNotes.sessionId, req.params.id));
+      await tx.delete(questionBanks).where(eq(questionBanks.sessionId, req.params.id));
+    }
+    return rows;
+  });
   if (!deleted.length) {
     const [existing] = await db.select({ id: callSessionsTable.id }).from(callSessionsTable).where(condition).limit(1);
     res.status(existing ? 409 : 404).json({ error: existing ? "End this interview before deleting it." : "Interview not found." }); return;

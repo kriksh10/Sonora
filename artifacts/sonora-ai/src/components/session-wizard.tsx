@@ -6,17 +6,26 @@ import AnswerPreferencesEditor from "@/components/answer-preferences-editor";
 import { apiRequest, fetchDefaultPreferences, summarizePreferences } from "@/lib/answer-preferences";
 import { extractFileText } from "@/lib/extract-file-text";
 import { CALL_LANGUAGES, type CallLanguage } from "@/lib/call-languages";
+import { GEMINI_MODELS, type GeminiModelId } from "@/lib/pricing";
+import { saveAutoExtend } from "@/lib/session-tools";
 
 type Draft = {
-  sessionType: "interview" | "call"; company: string; description: string; title: string;
+  sessionType: "interview" | "call" | "mock"; company: string; role: string; description: string; title: string;
   resumeText: string; documentsText: string; instructions: string;
-  model: "gemini-2.5-flash" | "gemini-3-flash-preview"; language: CallLanguage;
-  autoAnswer: boolean; saveTranscript: boolean;
+  model: GeminiModelId; language: CallLanguage;
+  autoAnswer: boolean; saveTranscript: boolean; autoExtend: boolean;
 };
 const emptyDraft: Draft = {
-  sessionType: "interview", company: "", description: "", title: "", resumeText: "", documentsText: "",
-  instructions: "", model: "gemini-2.5-flash", language: "English", autoAnswer: false, saveTranscript: true,
+  sessionType: "interview", company: "", role: "", description: "", title: "", resumeText: "", documentsText: "",
+  instructions: "", model: "gemini-2.5-flash", language: "English", autoAnswer: false, saveTranscript: true, autoExtend: false,
 };
+
+function interviewTitle(role: string, company: string) {
+  const job = role.trim();
+  const org = company.trim();
+  if (job && org) return `${job} – ${org}`.slice(0, 200);
+  return job.slice(0, 200);
+}
 const LIMIT = 40_000;
 const field = "mt-1.5 w-full rounded-lg border border-white/10 bg-[#191a1d] px-3 py-2.5 text-sm text-white outline-none placeholder:text-white/35 focus:border-white/25";
 
@@ -60,7 +69,7 @@ export default function SessionWizard({ onClose, onCreated }: { onClose: () => v
   }, []);
   useEffect(() => { void loadDefaults(); }, [loadDefaults]);
 
-  const interview = draft.sessionType === "interview";
+  const interview = draft.sessionType === "interview" || draft.sessionType === "mock";
   const validate = () => {
     const next: Record<string, string> = {};
     if (interview && !draft.company.trim() && !draft.description.trim()) next.company = "Add a company or paste the job description.";
@@ -133,10 +142,11 @@ export default function SessionWizard({ onClose, onCreated }: { onClose: () => v
     if (creating || uploading || !prefs) return;
     if (!validate()) { setStep("details"); return; }
     setCreating(true); setFormError("");
+    const company = interview ? draft.company.trim() : "";
     const body: NewCallSession = {
       sessionType: draft.sessionType,
-      title: draft.title.trim(),
-      company: interview ? draft.company.trim() : "",
+      title: interview ? interviewTitle(draft.role, company) : draft.title.trim(),
+      company,
       description: draft.description.trim(),
       documentsText: draft.documentsText,
       instructions: draft.instructions,
@@ -147,6 +157,7 @@ export default function SessionWizard({ onClose, onCreated }: { onClose: () => v
     };
     try {
       const created = await apiRequest<CallSession>("/sessions", { method: "POST", body: JSON.stringify(body) });
+      await saveAutoExtend(created.id, draft.autoExtend);
       onCreated(created);
     } catch (cause) { setFormError(cause instanceof Error ? cause.message : "Could not create session."); setCreating(false); }
   };
@@ -199,12 +210,12 @@ export default function SessionWizard({ onClose, onCreated }: { onClose: () => v
 
           {step === "details" ? <>
             <div className="mb-2 text-sm font-semibold">Session type</div>
-            <div role="radiogroup" aria-label="Session type" className="mb-5 grid grid-cols-2 rounded-xl bg-[#242528] p-1">
-              {(["interview", "call"] as const).map((type) => (
+            <div role="radiogroup" aria-label="Session type" className="mb-5 grid grid-cols-1 gap-1 rounded-xl bg-[#242528] p-1 sm:grid-cols-3">
+              {(["interview", "call", "mock"] as const).map((type) => (
                 <button type="button" role="radio" aria-checked={draft.sessionType === type} key={type} data-testid={`button-type-${type}`}
                   onClick={() => { if (type !== draft.sessionType) cancelResume(); set("sessionType", type); setErrors({}); }}
                   className={`rounded-lg py-2.5 text-sm font-medium ${draft.sessionType === type ? "bg-[#3a3c41] text-white" : "text-white/50 hover:text-white"}`}>
-                  {type === "interview" ? "Interview" : "Regular call"}
+                  {type === "interview" ? "Interview" : type === "mock" ? "Mock interview" : "Regular call"}
                 </button>
               ))}
             </div>
@@ -213,6 +224,9 @@ export default function SessionWizard({ onClose, onCreated }: { onClose: () => v
                 <label className="text-sm font-semibold" htmlFor="wiz-company">Company</label>
                 <input id="wiz-company" data-autofocus value={draft.company} maxLength={200} onChange={(e) => set("company", e.target.value)} aria-invalid={!!errors.company} className={field} placeholder="Company you are interviewing with" />
                 {errors.company && <p role="alert" className="mt-1 text-xs text-red-300">{errors.company}</p>}
+                <label className="mt-4 block text-sm font-semibold" htmlFor="wiz-role">Job role <span className="font-normal text-white/40">(Optional)</span></label>
+                <input id="wiz-role" data-testid="input-job-role" value={draft.role} maxLength={120} onChange={(e) => set("role", e.target.value)} className={field} placeholder="Software engineer" />
+                <p className="mt-1 text-xs text-white/40">When you add a role, the session title becomes Role – Company.</p>
               </div>
             ) : (
               <div className="mb-4">
@@ -256,7 +270,7 @@ export default function SessionWizard({ onClose, onCreated }: { onClose: () => v
                 </select></label>
               <label className="text-xs text-white/45">Gemini model
                 <select value={draft.model} onChange={(e) => set("model", e.target.value as Draft["model"])} className={field}>
-                  <option value="gemini-2.5-flash">Gemini 2.5 Flash</option><option value="gemini-3-flash-preview">Gemini 3 Flash Preview</option>
+                  {GEMINI_MODELS.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
                 </select></label>
             </div>
             <div className="mb-4 rounded-xl border border-white/10 bg-[#191a1d] p-3">
@@ -276,6 +290,7 @@ export default function SessionWizard({ onClose, onCreated }: { onClose: () => v
             <div className="mb-5 grid gap-2">
               <SwitchRow label="Auto-generate answers (Beta)" hint="Answer detected questions automatically." checked={draft.autoAnswer} onChange={(v) => set("autoAnswer", v)} />
               <SwitchRow label="Save transcript" hint="Only record transcripts where everyone has consented." checked={draft.saveTranscript} onChange={(v) => set("saveTranscript", v)} />
+              <SwitchRow label="Auto-extend" hint="When a 30-minute block ends, use another credit and keep going." checked={draft.autoExtend} onChange={(v) => set("autoExtend", v)} />
             </div>
             {formError && <p role="alert" className="mb-4 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-200">{formError}</p>}
             <div className="grid grid-cols-3 gap-3">

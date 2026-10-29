@@ -10,6 +10,6 @@ export type DesktopBuildPlatform = typeof DesktopBuildPlatform[keyof typeof Desk
 
 
 export const DesktopBuildPlatform = {
-  windows: 'windows',
   mac: 'mac',
+  windows: 'windows',
 } as const;

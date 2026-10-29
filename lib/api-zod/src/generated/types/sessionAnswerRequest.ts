@@ -20,9 +20,4 @@ export interface SessionAnswerRequest {
   /** @maxLength 24000 */
   previousAnswer?: string;
   test?: boolean;
-  /**
-     * Optional explicitly consented JPEG screenshot encoded as base64
-     * @maxLength 700000
-     */
-  screenshot?: string;
 }

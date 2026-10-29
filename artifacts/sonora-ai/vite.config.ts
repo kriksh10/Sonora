@@ -1,9 +1,11 @@
 import path from 'path';
+import type { Connect } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin, type PreviewServer, type ViteDevServer } from 'vite';
 
 import runtimeErrorOverlay from '@replit/vite-plugin-runtime-error-modal';
+import { isClerkLoadFailure } from './src/lib/auth-load-error';
 
 const rawPort = process.env.PORT;
 
@@ -27,12 +29,52 @@ if (!basePath) {
   );
 }
 
+const KNOWN_PAGE = new RegExp(
+  `^(?:${basePath.replace(/\/$/, '')})?(?:/|/sign-in(?:/.*)?|/sign-up(?:/.*)?|/pricing|/privacy|/terms|/dashboard|/settings|/download|/desktop-connect(?:/.*)?)$`,
+);
+
+function unknownRouteStatus(): Plugin {
+  const apply = (server: ViteDevServer | PreviewServer) => {
+    server.middlewares.use(((req, res, next) => {
+      const pathname = (req.url || '/').split('?')[0];
+      const accept = req.headers.accept || '';
+      const wantsHtml = accept.length === 0 || accept.includes('text/html') || accept.includes('*/*');
+      const destination = req.headers['sec-fetch-dest'];
+      const isDocument = (req.method === 'GET' || req.method === 'HEAD') &&
+        (destination === 'document' || destination === 'iframe' || (!destination && wantsHtml));
+      const isViteInternal = /^\/(?:@|__vite|__replit)/.test(pathname);
+      const isFile = pathname.includes('.');
+      if (!isDocument || isFile || isViteInternal || pathname.startsWith('/api') || KNOWN_PAGE.test(pathname)) {
+        next();
+        return;
+      }
+      const writeHead = res.writeHead.bind(res);
+      res.writeHead = ((statusCode: number, ...args: unknown[]) => {
+        const status = statusCode === 200 ? 404 : statusCode;
+        return writeHead(status, ...(args as []));
+      }) as typeof res.writeHead;
+      const end = res.end.bind(res);
+      res.end = ((...args: unknown[]) => {
+        if (res.statusCode === 200) res.statusCode = 404;
+        return end(...(args as []));
+      }) as typeof res.end;
+      next();
+    }) as Connect.NextHandleFunction);
+  };
+  return {
+    name: 'sonora-unknown-route-status',
+    configureServer: apply,
+    configurePreviewServer: apply,
+  };
+}
+
 export default defineConfig({
   base: basePath,
   plugins: [
     react(),
     tailwindcss({ optimize: false }),
-    runtimeErrorOverlay(),
+    runtimeErrorOverlay({ filter: (error) => !isClerkLoadFailure(error) }),
+    unknownRouteStatus(),
     ...(process.env.NODE_ENV !== 'production' &&
     process.env.REPL_ID !== undefined
       ? [

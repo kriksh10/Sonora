@@ -1,4 +1,4 @@
-import { type ChangeEvent, type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ChangeEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowRight, ArrowUpRight, Activity, Calendar, Check, ChevronDown, CircleStop, Clock3, Command, Download, FileAudio, Headphones, LockKeyhole, Menu, Mic, Pause, Play, Search, ShieldCheck, Sparkles, Upload, Wand2, X, Zap } from 'lucide-react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { ClerkProvider, SignIn, SignUp, useAuth, useClerk } from '@clerk/react';
@@ -15,6 +15,9 @@ import DesktopVisibilityControls from '@/components/desktop-visibility-controls'
 import DesktopBrowserSignIn from '@/components/desktop-browser-sign-in';
 import DesktopConnect from '@/pages/desktop-connect';
 import AccessGate from '@/components/access-gate';
+import SettingsPage from '@/pages/settings';
+import PricingCatalog from '@/components/pricing-catalog';
+import AuthServiceBoundary from '@/components/auth-service-boundary';
 
 const queryClient = new QueryClient();
 const clerkPubKey = publishableKeyFromHost(
@@ -29,6 +32,29 @@ function stripBase(path: string): string {
     ? path.slice(basePath.length) || '/'
     : path;
 }
+
+function toAppPath(to: string): string {
+  let pathname = to;
+  let search = '';
+  let hash = '';
+  try {
+    const url = new URL(to, window.location.origin);
+    pathname = url.pathname;
+    search = url.search;
+    hash = url.hash;
+  } catch {
+    pathname = to.split(/[?#]/)[0] || '/';
+  }
+  let path = stripBase(pathname);
+  if (path.length > 1 && path.endsWith('/')) path = path.slice(0, -1);
+  return `${path || '/'}${search}${hash}`;
+}
+
+const signUpHref = `${basePath}/sign-up`;
+const signInHref = `${basePath}/sign-in`;
+const homeHref = basePath || '/';
+
+const CLERK_LOAD_TIMEOUT_MS = 8000;
 
 const clerkAppearance = {
   theme: shadcn,
@@ -65,8 +91,8 @@ const clerkAppearance = {
     identityPreviewEditButton: 'text-emerald-300',
     formFieldSuccessText: 'text-emerald-300',
     alertText: 'text-red-200',
-    logoBox: 'rounded-lg',
-    logoImage: 'rounded-lg',
+    logoBox: 'hidden',
+    logoImage: 'hidden',
     socialButtonsBlockButton: 'bg-[#101113] border border-white/10 hover:bg-white/5',
     formButtonPrimary: 'bg-[#257c3c] text-white hover:bg-[#2c9147]',
     formFieldInput: 'bg-[#101113] text-white border border-white/10',
@@ -148,7 +174,7 @@ const useCases = [
 
 function Logo({ light = false }: { light?: boolean }) {
   return (
-    <a href="#top" className={`flex items-center gap-2.5 ${light ? 'text-[#fffdf7]' : 'text-[#19373a]'}`} data-testid="link-logo">
+    <a href="#top" aria-label="Sonora AI" className={`flex items-center gap-2.5 ${light ? 'text-[#fffdf7]' : 'text-[#19373a]'}`} data-testid="link-logo">
       <span className="relative flex h-8 w-8 items-center justify-center rounded-[10px] bg-[#f0c76c] text-[#19373a]">
         <span className="absolute h-3.5 w-1 rounded-full bg-[#19373a]" />
         <span className="absolute -ml-[9px] h-2.5 w-1 rounded-full bg-[#19373a]/70" />
@@ -181,13 +207,31 @@ function App() {
   return (
     <WouterRouter base={basePath}>
       <DesktopVisibilityControls />
-      <ClerkProviderWithRoutes />
+      <AuthServiceBoundary><ClerkProviderWithRoutes /></AuthServiceBoundary>
     </WouterRouter>
   );
 }
 
 function ClerkProviderWithRoutes() {
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
+  const locationRef = useRef(location);
+  locationRef.current = location;
+  const setLocationRef = useRef(setLocation);
+  setLocationRef.current = setLocation;
+  const navBudget = useRef({ at: 0, count: 0 });
+  const navigate = useCallback((to: string, replace: boolean) => {
+    const next = toAppPath(to);
+    const current = toAppPath(`${window.location.pathname}${window.location.search}${window.location.hash}`);
+    if (next === current || next === toAppPath(locationRef.current)) return;
+    const now = Date.now();
+    if (now - navBudget.current.at > 2000) navBudget.current = { at: now, count: 0 };
+    navBudget.current.count += 1;
+    if (navBudget.current.count > 6) {
+      console.error('Stopped a repeated sign-in navigation');
+      return;
+    }
+    setLocationRef.current(next, replace ? { replace: true } : undefined);
+  }, []);
   return (
     <ClerkProvider
       publishableKey={clerkPubKey}
@@ -199,8 +243,8 @@ function ClerkProviderWithRoutes() {
         signIn: { start: { title: 'Welcome back', subtitle: 'Sign in to access your interview sessions' } },
         signUp: { start: { title: 'Create your account', subtitle: 'Set up your private interview assistant' } },
       }}
-      routerPush={(to) => setLocation(stripBase(to))}
-      routerReplace={(to) => setLocation(stripBase(to), { replace: true })}
+      routerPush={(to) => navigate(to, false)}
+      routerReplace={(to) => navigate(to, true)}
     >
       <QueryClientProvider client={queryClient}>
         <ClerkQueryClientCacheInvalidator />
@@ -211,6 +255,11 @@ function ClerkProviderWithRoutes() {
               <Route path="/desktop-connect/:id">{(params) => <GatedDesktopConnect key={params.id} params={params} />}</Route>
               <Route path="/sign-in/*?" component={SignInPage} />
               <Route path="/sign-up/*?" component={SignUpPage} />
+              <Route path="/pricing" component={PricingPage} />
+              <Route path="/privacy" component={PrivacyPage} />
+              <Route path="/terms" component={TermsPage} />
+              <Route path="/dashboard" component={DashboardPage} />
+              <Route path="/settings" component={SettingsPage} />
               <Route path="/" component={HomeRedirect} />
               <Route component={NotFound} />
             </Switch>
@@ -240,33 +289,87 @@ function ClerkQueryClientCacheInvalidator() {
 }
 
 function SignInPage() {
-  const { isLoaded, isSignedIn } = useAuth();
-  const [, setLocation] = useLocation();
-  useEffect(() => {
-    if (isLoaded && isSignedIn) setLocation('/', { replace: true });
-  }, [isLoaded, isSignedIn, setLocation]);
-  if (isLoaded && isSignedIn) return null;
-  return (
-    <div className="flex min-h-[100dvh] items-center justify-center bg-[#101113] px-4 py-8">
-      <div>
-        {window.sonoraDesktop ? <DesktopBrowserSignIn /> : <SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`}
-          forceRedirectUrl={`${basePath}/`} signUpForceRedirectUrl={`${basePath}/`} />}
-      </div>
-    </div>
-  );
+  return <AuthPage mode="sign-in" />;
 }
 
 function SignUpPage() {
+  return <AuthPage mode="sign-up" />;
+}
+
+function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
   const { isLoaded, isSignedIn } = useAuth();
   const [, setLocation] = useLocation();
+  const [clerkFailed, setClerkFailed] = useState(false);
   useEffect(() => {
     if (isLoaded && isSignedIn) setLocation('/', { replace: true });
   }, [isLoaded, isSignedIn, setLocation]);
+
+  useEffect(() => {
+    if (window.sonoraDesktop || isLoaded) {
+      setClerkFailed(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setClerkFailed(true), CLERK_LOAD_TIMEOUT_MS);
+    const onError = (event: ErrorEvent) => {
+      const detail = `${event.filename || ''} ${event.message || ''}`;
+      if (/clerk/i.test(detail)) setClerkFailed(true);
+    };
+    window.addEventListener('error', onError);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('error', onError);
+    };
+  }, [isLoaded]);
+
+  useEffect(() => {
+    if (window.sonoraDesktop || !isLoaded || clerkFailed) return;
+    const timer = window.setTimeout(() => {
+      if (!document.querySelector('.cl-rootBox, .cl-card, .cl-signIn-root, .cl-signUp-root')) {
+        setClerkFailed(true);
+      }
+    }, CLERK_LOAD_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [isLoaded, clerkFailed]);
+
   if (isLoaded && isSignedIn) return null;
+  if (window.sonoraDesktop) {
+    return (
+      <div className={`flex min-h-[100dvh] items-center justify-center bg-[#101113] px-4 py-8 ${mode === 'sign-up' ? 'flex-col gap-6' : ''}`}>
+        <DesktopBrowserSignIn />
+      </div>
+    );
+  }
+
+  const retry = () => {
+    setClerkFailed(false);
+    window.location.reload();
+  };
+
   return (
-    <div className="flex min-h-[100dvh] flex-col items-center justify-center gap-6 bg-[#101113] px-4 py-8">
-      {window.sonoraDesktop ? <DesktopBrowserSignIn /> : <SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`}
-        forceRedirectUrl={`${basePath}/`} signInForceRedirectUrl={`${basePath}/`} />}
+    <div className="auth-screen">
+      <a className="auth-brand" href={homeHref}>
+        <img src={`${window.location.origin}${basePath}/logo.svg`} alt="Sonora AI" width={40} height={40} />
+        <span>Sonora AI</span>
+      </a>
+      {clerkFailed ? (
+        <div className="auth-fallback" role="alert">
+          <h1>{mode === 'sign-in' ? 'Sign-in didn’t load' : 'Sign-up didn’t load'}</h1>
+          <p>Sonora AI couldn’t reach the account service. Retry, or go back home and try again.</p>
+          <button type="button" onClick={retry}>Try again</button>
+          <a href={homeHref}>Back to home</a>
+        </div>
+      ) : !isLoaded ? (
+        <div className="auth-loading" role="status" aria-live="polite">
+          <span className="auth-spinner" aria-hidden="true" />
+          <p>{mode === 'sign-in' ? 'Loading Sonora AI sign-in…' : 'Loading Sonora AI sign-up…'}</p>
+        </div>
+      ) : mode === 'sign-in' ? (
+        <SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`}
+          forceRedirectUrl={`${basePath}/`} signUpForceRedirectUrl={`${basePath}/`} />
+      ) : (
+        <SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`}
+          forceRedirectUrl={`${basePath}/`} signInForceRedirectUrl={`${basePath}/`} />
+      )}
     </div>
   );
 }
@@ -290,8 +393,135 @@ function GatedDesktopConnect({ params }: { params: { id: string } }) {
 
 function HomeRedirect() {
   const { isLoaded, isSignedIn, userId } = useAuth();
-  if (!isLoaded) return <div className="min-h-screen bg-[#101113]" />;
+  if (!isLoaded) return window.sonoraDesktop ? <SignInPage /> : <LandingHome />;
   return isSignedIn ? <AccessGate key={userId}><InterviewWorkspace key={userId} /></AccessGate> : window.sonoraDesktop ? <SignInPage /> : <LandingHome />;
+}
+
+function DashboardPage() {
+  const { isLoaded, isSignedIn, userId } = useAuth();
+  const [, setLocation] = useLocation();
+  useEffect(() => {
+    if (isLoaded && !isSignedIn) setLocation('/sign-in', { replace: true });
+  }, [isLoaded, isSignedIn, setLocation]);
+  if (!isLoaded) {
+    return (
+      <div className="auth-screen" role="status">
+        <p>Loading Sonora AI…</p>
+      </div>
+    );
+  }
+  if (!isSignedIn) {
+    return (
+      <div className="auth-screen" role="status">
+        <p>Taking you to sign in…</p>
+      </div>
+    );
+  }
+  return <AccessGate key={userId}><InterviewWorkspace key={userId} /></AccessGate>;
+}
+
+function PricingOffers() {
+  return (
+    <div>
+      <div className="reference-pricing-grid">
+        <article className="reference-plan reference-plan-free">
+          <div className="reference-plan-top">
+            <div>
+              <div className="reference-plan-kicker">Free tier</div>
+              <h3>Free</h3>
+            </div>
+            <span>10 FREE SESSIONS</span>
+          </div>
+          <p className="reference-plan-price">$0 <small>/ to start</small></p>
+          <ul>
+            <li><Check size={15} /> 10 sessions, up to 10 minutes each</li>
+            <li><Check size={15} /> Longer sessions bill in 30-minute credit blocks</li>
+          </ul>
+          <a className="reference-plan-action" href={signUpHref}>Get 10 Free Sessions <ArrowRight size={15} /></a>
+        </article>
+      </div>
+      <PricingCatalog />
+    </div>
+  );
+}
+
+function MarketingHeader({ current }: { current?: 'pricing' | 'privacy' | 'terms' }) {
+  return (
+    <header className="reference-nav-bar">
+      <nav className="reference-nav reference-nav-simple" aria-label="Sonora AI">
+        <a className="marketing-wordmark" href={homeHref} aria-label="Sonora AI">
+          <img src={`${basePath}/logo.svg`} alt="" width={31} height={31} />
+          <span>sonora</span>
+        </a>
+        <div className="reference-nav-links">
+          <a href={`${homeHref}#features`}>Features</a>
+          <a href={`${homeHref}#reviews`}>Reviews</a>
+          <a href="/privacy" aria-current={current === 'privacy' ? 'page' : undefined}>Privacy</a>
+          <a href="/pricing" aria-current={current === 'pricing' ? 'page' : undefined}>Pricing</a>
+        </div>
+        <div className="reference-nav-actions">
+          <a className="reference-signin-link" href={signInHref}>Sign in</a>
+          <a className="reference-dark-button" href={signUpHref}>Try for Free <ArrowRight size={14} /></a>
+        </div>
+      </nav>
+    </header>
+  );
+}
+
+function PricingPage() {
+  return (
+    <main className="marketing-page">
+      <MarketingHeader current="pricing" />
+      <section className="reference-pricing-section">
+        <div className="reference-section-kicker">PRICING</div>
+        <h2>Start with 10 free sessions.</h2>
+        <p>Use Sonora AI on the free tier, then move to Signal when you want the room described below.</p>
+        <PricingOffers />
+      </section>
+    </main>
+  );
+}
+
+function LegalPage({ title, current, children }: { title: string; current: 'privacy' | 'terms'; children: ReactNode }) {
+  return (
+    <main className="marketing-page">
+      <MarketingHeader current={current} />
+      <article className="legal-page">
+        <p className="legal-review-banner">Placeholder for review. This is generic draft text, not a final policy, and it has not been approved by counsel.</p>
+        <h1>{title}</h1>
+        {children}
+        <p><a href={homeHref}>Back to Sonora AI</a></p>
+      </article>
+    </main>
+  );
+}
+
+function PrivacyPage() {
+  return (
+    <LegalPage title="Privacy notice" current="privacy">
+      <p>Sonora AI is an interview assistant. This draft describes the privacy practices we expect to publish after review. It is not the live policy.</p>
+      <h2>What this draft covers</h2>
+      <p>Account details you submit at sign-up, session text you choose to save, and technical logs needed to run the service. Original audio files are not the product’s stored record in the current app; live listening depends on the browser permission you grant.</p>
+      <h2>How this draft says information is used</h2>
+      <p>To sign you in, to show your own sessions, and to generate answers during a session you start. This draft does not authorize selling personal information.</p>
+      <h2>Your choices</h2>
+      <p>You can stop a session, leave sign-in, or contact the team to ask for a review of this notice. Replace this page with counsel-approved language before relying on it.</p>
+    </LegalPage>
+  );
+}
+
+function TermsPage() {
+  return (
+    <LegalPage title="Terms of use" current="terms">
+      <p>These terms are a placeholder so the page exists. They are not an offer, a contract, or a billing agreement.</p>
+      <h2>Using Sonora AI</h2>
+      <p>You may create an account and try the product, including the 10 free sessions described on the pricing page. Don’t misuse the service, attempt to break access controls, or upload material you don’t have rights to use.</p>
+      <h2>Accounts and sessions</h2>
+      <p>You’re responsible for the activity on your account. Sessions and generated notes are provided as a study aid. You decide what to say in a real conversation.</p>
+      <h2>Paid plans</h2>
+      <p>Any paid price shown in the product is carried over from an earlier Sonora landing page and is not a checkout. Do not treat it as a confirmed charge until a reviewed billing flow exists.</p>
+    </LegalPage>
+  );
 }
 
 function DesktopOverlay() {
@@ -701,7 +931,6 @@ function LandingHome() {
   const visibleSessions = sessions.filter((session) => `${session.company} ${session.role}`.toLowerCase().includes(searchTerm.toLowerCase()));
 
   const startSession = () => setLocation('/sign-up');
-  const goToSignIn = () => setLocation('/sign-in');
   const goToDownloads = () => setLocation('/download');
   const openCreateSession = () => setLocation('/sign-up');
   const closeCreateSession = () => setCreateSessionOpen(false);
@@ -709,28 +938,31 @@ function LandingHome() {
 
   return (
     <main id="top" className="sonora-reference-page">
+      <header className="reference-nav-bar">
+        <nav className="reference-nav">
+          <Logo />
+          <div className="reference-nav-links">
+            <a href="#features" data-testid="link-features">Features</a>
+            <a href="#reviews" data-testid="link-reviews">Reviews</a>
+            <a href="#privacy" data-testid="link-privacy">Privacy</a>
+            <a href="#pricing" data-testid="link-pricing">Pricing</a>
+          </div>
+          <div className="reference-nav-actions">
+            <a className="reference-signin-link" href={signInHref} data-testid="button-sign-in">Sign in</a>
+            <a className="reference-dark-button" href={signUpHref} data-testid="button-nav-start">Try for Free <ArrowRight size={14} /></a>
+          </div>
+          <button className="reference-menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label={menuOpen ? 'Close menu' : 'Open menu'} data-testid="button-mobile-menu">
+            {menuOpen ? <X size={20} /> : <Menu size={20} />}
+          </button>
+          {menuOpen && <div className="reference-mobile-menu">
+            {['features', 'reviews', 'privacy', 'pricing'].map((section) => <a key={section} href={`#${section}`} onClick={() => setMenuOpen(false)}>{section[0].toUpperCase() + section.slice(1)}</a>)}
+            <a className="reference-dark-button" href={signUpHref}>Try for Free <ArrowRight size={14} /></a>
+          </div>}
+        </nav>
+      </header>
+      <div className="reference-page-frame">
       <div className="reference-ambient reference-ambient-one" />
       <div className="reference-ambient reference-ambient-two" />
-      <nav className="reference-nav">
-        <Logo />
-        <div className="reference-nav-links">
-          <a href="#features" data-testid="link-features">Features</a>
-          <a href="#reviews" data-testid="link-reviews">Reviews</a>
-          <a href="#privacy" data-testid="link-privacy">Privacy</a>
-          <a href="#pricing" data-testid="link-pricing">Pricing</a>
-        </div>
-        <div className="reference-nav-actions">
-          <button onClick={goToSignIn} data-testid="button-sign-in">Sign in</button>
-          <button className="reference-dark-button" onClick={startSession} data-testid="button-nav-start">Try for Free <ArrowRight size={14} /></button>
-        </div>
-        <button className="reference-menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label={menuOpen ? 'Close menu' : 'Open menu'} data-testid="button-mobile-menu">
-          {menuOpen ? <X size={20} /> : <Menu size={20} />}
-        </button>
-        {menuOpen && <div className="reference-mobile-menu">
-          {['features', 'reviews', 'privacy', 'pricing'].map((section) => <a key={section} href={`#${section}`} onClick={() => setMenuOpen(false)}>{section[0].toUpperCase() + section.slice(1)}</a>)}
-          <button className="reference-dark-button" onClick={startSession}>Try for Free <ArrowRight size={14} /></button>
-        </div>}
-      </nav>
 
       <section className="reference-hero">
         <div className="reference-proof-row" aria-label="Sonora highlights">
@@ -743,7 +975,7 @@ function LandingHome() {
           <h1>Your <span>Real-Time</span><br />AI Interview Assistant</h1>
           <p>Get the right answer while you're still talking, through interviews, sales calls, client meetings, or any conversation where freezing up isn't an option.</p>
           <div className="reference-hero-actions">
-            <button className="reference-green-button" onClick={startSession} data-testid="button-hero-start">Get 10 Free Sessions <ArrowRight size={16} /></button>
+            <a className="reference-green-button" href={signUpHref} data-testid="button-hero-start">Get 10 Free Sessions <ArrowRight size={16} /></a>
             <button className="reference-video-button" onClick={startSession} data-testid="button-demo-video"><Play size={14} fill="currentColor" /> Demo Video</button>
           </div>
         </div>
@@ -800,7 +1032,7 @@ function LandingHome() {
         </div>
       </section>
 
-      <section id="features" className="reference-lower-section">
+      <section id="features" className="reference-lower-section reference-anchor">
         <div className="reference-section-kicker">THE SONORA ADVANTAGE</div>
         <h2>Stay sharp when<br /><span>the stakes are high.</span></h2>
         <p>Sonora quietly follows the conversation, so you can focus on being present, prepared, and yourself.</p>
@@ -813,15 +1045,22 @@ function LandingHome() {
         </div>
       </section>
 
-      <section id="reviews" className="reference-quote-section">
+      <section id="reviews" className="reference-quote-section reference-anchor">
         <div><div className="reference-section-kicker">WHAT CANDIDATES SAY</div><h2>Confidence,<br /><span>on demand.</span></h2></div>
         <blockquote>“I stopped worrying about forgetting the perfect answer and started having a real conversation.”<cite>— Maya R., Product Designer</cite></blockquote>
       </section>
 
-      <section id="privacy" className="reference-privacy-section"><ShieldCheck size={25} /><div><div className="reference-section-kicker">BUILT WITH CARE</div><h2>The assistant that never takes over.</h2><p>Sonora is visible when it is active, silent when you want it to be, and always under your control.</p></div></section>
+      <section id="privacy" className="reference-privacy-section reference-anchor"><ShieldCheck size={25} /><div><div className="reference-section-kicker">BUILT WITH CARE</div><h2>The assistant that never takes over.</h2><p>Sonora is visible when it is active, silent when you want it to be, and always under your control. <a href="/privacy">Read the privacy notice</a></p></div></section>
 
-      <section id="pricing" className="reference-cta-section"><div className="reference-section-kicker">READY WHEN YOU ARE</div><h2>Walk into your<br /><span>next interview ready.</span></h2><button className="reference-green-button" onClick={startSession}>Try Sonora free <ArrowRight size={16} /></button></section>
-      <footer className="reference-footer"><Logo light /><span>© 2026 Sonora AI</span><span>Made for conversations worth winning.</span></footer>
+      <section id="pricing" className="reference-pricing-section reference-anchor">
+        <div className="reference-section-kicker">PRICING</div>
+        <h2>Start with<br /><span>10 free sessions.</span></h2>
+        <p>The free tier is 10 sessions. Signal is the paid plan already described in Sonora’s earlier landing.</p>
+        <PricingOffers />
+      </section>
+      <section className="reference-cta-section"><div className="reference-section-kicker">READY WHEN YOU ARE</div><h2>Walk into your<br /><span>next interview ready.</span></h2><a className="reference-green-button" href={signUpHref}>Try Sonora free <ArrowRight size={16} /></a></section>
+      <footer className="reference-footer"><Logo light /><nav className="reference-footer-links" aria-label="Site"><a href="/pricing">Pricing</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav><span>© 2026 Sonora AI</span><span>Made for conversations worth winning.</span></footer>
+      </div>
       {createSessionOpen && <div className="reference-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeCreateSession(); }}>
         <section className="reference-create-modal" role="dialog" aria-modal="true" aria-labelledby="create-session-title">
           <div className="reference-modal-header"><h2 id="create-session-title">Create Session</h2><button onClick={closeCreateSession} aria-label="Close create session"><X size={21} /></button></div>

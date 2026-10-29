@@ -13,6 +13,136 @@ tags:
   - name: sessions
     description: Private interview and regular-call sessions
 paths:
+  /desktop/releases:
+    get:
+      operationId: getDesktopRelease
+      responses:
+        "200":
+          description: Public installer metadata
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DesktopRelease" }
+  /billing/balance:
+    get:
+      operationId: getCreditBalance
+      responses:
+        "200":
+          description: Approved user's balance
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreditBalance" }
+  /billing/checkout:
+    post:
+      operationId: startTestCheckout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CheckoutInput" }
+      responses:
+        "200":
+          description: Test checkout or Coming soon
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckoutResult" }
+  /billing/settle:
+    post:
+      operationId: settleSessionCredits
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SettlementInput" }
+      responses:
+        "200": { description: Idempotent round settlement }
+  /sessions/{id}/billing:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getSessionBilling
+      responses:
+        "200":
+          description: Session billing settings
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionBillingSettings" }
+    put:
+      operationId: saveSessionBilling
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BillingSettingsInput" }
+      responses:
+        "200":
+          description: Saved settings
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionBillingSettings" }
+  /sessions/{id}/tools:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: runPreparationTool
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PreparationInput" }
+      responses:
+        "200":
+          description: Preparation output
+          content:
+            application/json:
+              schema: { type: object, required: [text], properties: { text: { type: string } } }
+  /sessions/{id}/notes:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getSessionNotes
+      responses:
+        "200":
+          description: Saved notes or null
+          content:
+            application/json:
+              schema: { oneOf: [{ $ref: "#/components/schemas/SessionNotes" }, { type: "null" }] }
+    put:
+      operationId: saveSessionNotes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SessionNotes" }
+      responses:
+        "200":
+          description: Persisted notes
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionNotes" }
+  /sessions/{id}/question-bank:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getQuestionBank
+      responses:
+        "200":
+          description: Saved questions
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/BankItem" } }
+    put:
+      operationId: saveQuestionBank
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/QuestionBankInput" }
+      responses:
+        "200":
+          description: Persisted questions
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/BankItem" } }
   /access/status:
     get:
       operationId: getAccessStatus
@@ -444,6 +574,87 @@ components:
               error:
                 type: string
   schemas:
+    DesktopBuild:
+      type: object
+      required: [platform, architecture, label, status, url, signing, minimumOs, sizeBytes, sha256]
+      properties:
+        platform: { type: string, enum: [mac, windows] }
+        architecture: { type: string }
+        label: { type: string }
+        status: { type: string, enum: [unavailable, preview, verified] }
+        url: { type: [string, "null"] }
+        signing: { type: string }
+        minimumOs: { type: string }
+        sizeBytes: { type: [integer, "null"] }
+        sha256: { type: [string, "null"] }
+    DesktopRelease:
+      type: object
+      required: [version, builds]
+      properties:
+        version: { type: string }
+        publishedAt: { type: [string, "null"] }
+        builds: { type: array, items: { $ref: "#/components/schemas/DesktopBuild" } }
+    CreditBalance:
+      type: object
+      required: [balance, freeRemaining, unlimitedUntil, bypass, checkout]
+      properties:
+        balance: { type: integer }
+        freeRemaining: { type: integer }
+        unlimitedUntil: { type: [string, "null"] }
+        bypass: { type: boolean }
+        checkout: { type: boolean }
+    CheckoutInput:
+      type: object
+      required: [sku]
+      properties:
+        sku: { type: string }
+    CheckoutResult:
+      type: object
+      required: [comingSoon]
+      properties:
+        comingSoon: { type: boolean }
+        url: { type: string }
+    SettlementInput:
+      type: object
+      required: [sessionId]
+      properties:
+        sessionId: { type: string, format: uuid }
+    BillingSettingsInput:
+      type: object
+      required: [autoExtend]
+      properties:
+        autoExtend: { type: boolean }
+    SessionBillingSettings:
+      type: object
+      required: [sessionId, autoExtend, billedBlocks]
+      properties:
+        sessionId: { type: string, format: uuid }
+        autoExtend: { type: boolean }
+        billedBlocks: { type: integer }
+    PreparationInput:
+      type: object
+      required: [prompt]
+      properties:
+        prompt: { type: string, minLength: 1, maxLength: 50000 }
+    SessionNotes:
+      type: object
+      required: [summary, questionsAsked, nextSteps, score]
+      properties:
+        summary: { type: string, maxLength: 40000 }
+        questionsAsked: { type: string, maxLength: 40000 }
+        nextSteps: { type: string, maxLength: 40000 }
+        score: { type: [integer, "null"], minimum: 0, maximum: 100 }
+    BankItem:
+      type: object
+      required: [question, modelAnswer]
+      properties:
+        question: { type: string, minLength: 1, maxLength: 4000 }
+        modelAnswer: { type: string, maxLength: 16000 }
+    QuestionBankInput:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, maxItems: 50, items: { $ref: "#/components/schemas/BankItem" } }
     AccessStatus:
       type: object
       required: [status, role, email, requested]
@@ -568,18 +779,18 @@ components:
           maxLength: 8000
         model:
           type: string
-          enum: [gemini-2.5-flash, gemini-3-flash-preview]
+          enum: [gemini-2.5-flash, gemini-2.5-pro, gemini-3-flash-preview]
         language:
           type: string
-          enum: [English, Spanish, French, German, Italian, Portuguese, Dutch, Polish, Russian, Ukrainian, Japanese, Korean, Mandarin, Arabic, Hindi, Turkish, Swedish, Danish, Norwegian, Finnish, Czech, Greek, Hebrew, Hungarian, Romanian, Indonesian, Malay, Vietnamese, Thai, Bulgarian, Catalan, Croatian, Slovak, Tamil, Urdu]
+          enum: [English, Spanish, French, German, Italian, Portuguese, Dutch, Polish, Russian, Ukrainian, Japanese, Korean, Mandarin, Arabic, Hindi, Turkish, Swedish, Danish, Norwegian, Finnish, Czech, Greek, Hebrew, Hungarian, Romanian, Indonesian, Malay, Vietnamese, Thai, Bulgarian, Catalan, Croatian, Slovak, Tamil, Urdu, Bengali, Punjabi, Gujarati, Marathi, Telugu, Kannada, Malayalam, Nepali, Sinhala, Persian, Swahili, Afrikaans, Filipino, Lithuanian, Latvian, Estonian, Slovenian, Serbian, Icelandic, Welsh]
         autoAnswer:
           type: boolean
         saveTranscript:
           type: boolean
     SessionAudioChunk:
       type: object
-      required: [audio, mimeType]
       properties:
+        probe: { type: boolean, description: Check availability without sending audio }
         roundNumber: { type: integer, minimum: 1 }
         audio:
           type: string
@@ -594,8 +805,10 @@ components:
           enum: [microphone, system]
     AudioTranscription:
       type: object
-      required: [text]
+      required: [available]
       properties:
+        available: { type: boolean }
+        error: { type: string }
         text:
           type: string
           maxLength: 8000
@@ -653,7 +866,7 @@ components:
       properties:
         sessionType:
           type: string
-          enum: [interview, call]
+          enum: [interview, call, mock]
         title:
           type: string
           maxLength: 200
@@ -679,10 +892,10 @@ components:
           $ref: "#/components/schemas/AnswerPreferences"
         model:
           type: string
-          enum: [gemini-2.5-flash, gemini-3-flash-preview]
+          enum: [gemini-2.5-flash, gemini-2.5-pro, gemini-3-flash-preview]
         language:
           type: string
-          enum: [English, Spanish, French, German, Italian, Portuguese, Dutch, Polish, Russian, Ukrainian, Japanese, Korean, Mandarin, Arabic, Hindi, Turkish, Swedish, Danish, Norwegian, Finnish, Czech, Greek, Hebrew, Hungarian, Romanian, Indonesian, Malay, Vietnamese, Thai, Bulgarian, Catalan, Croatian, Slovak, Tamil, Urdu]
+          enum: [English, Spanish, French, German, Italian, Portuguese, Dutch, Polish, Russian, Ukrainian, Japanese, Korean, Mandarin, Arabic, Hindi, Turkish, Swedish, Danish, Norwegian, Finnish, Czech, Greek, Hebrew, Hungarian, Romanian, Indonesian, Malay, Vietnamese, Thai, Bulgarian, Catalan, Croatian, Slovak, Tamil, Urdu, Bengali, Punjabi, Gujarati, Marathi, Telugu, Kannada, Malayalam, Nepali, Sinhala, Persian, Swahili, Afrikaans, Filipino, Lithuanian, Latvian, Estonian, Slovenian, Serbian, Icelandic, Welsh]
         autoAnswer:
           type: boolean
         saveTranscript:
@@ -723,7 +936,7 @@ components:
           format: uuid
         sessionType:
           type: string
-          enum: [interview, call]
+          enum: [interview, call, mock]
         title:
           type: string
         company:
