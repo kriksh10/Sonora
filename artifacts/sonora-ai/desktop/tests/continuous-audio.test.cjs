@@ -66,6 +66,8 @@ test('unfinished transcript fragments join across clips, ending on punctuation o
   assert.equal(sentences.push('Tell me about', false), '');
   assert.equal(sentences.push('your experience', true), 'Tell me about your experience');
   assert.equal(sentences.push('A complete sentence.', false), 'A complete sentence.');
+  sentences.seed('Explain the difference between');
+  assert.equal(sentences.push('a process and a thread?', true), 'Explain the difference between a process and a thread?');
 });
 
 test('joined transcript removes only boundary suffix/prefix words, keeping punctuation and later repetitions', () => {

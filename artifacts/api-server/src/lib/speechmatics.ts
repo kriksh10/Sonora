@@ -30,16 +30,19 @@ export function speechmaticsTerms(parts: Array<string | null | undefined>) {
 type SpeechResult = { alternatives?: Array<{ speaker?: string }> };
 type SpeechMessage = {
   message?: string;
-  metadata?: { transcript?: string };
+  metadata?: { transcript?: string; end_time?: number };
   results?: SpeechResult[];
   seq_no?: number;
 };
 
 export type SpeechFinal = { text: string; speaker: string };
+export type SpeechUpdate = { text?: string; partial?: string; speaker?: string; final?: boolean; endOfTurn?: boolean; error?: string; endTime?: number };
 export type SpeechStream = {
   send: (audio: Buffer) => void;
   takeFinal: () => SpeechFinal | undefined;
   partial: () => string;
+  subscribe: (listener: (update: SpeechUpdate) => void) => () => void;
+  endTurn: () => void;
   close: () => void;
 };
 
@@ -84,6 +87,9 @@ export async function openSpeechStream(language: string, terms: string[]): Promi
   let started = false;
   let lastSeq = 0;
   let failed = false;
+  let closing = false;
+  const listeners = new Set<(update: SpeechUpdate) => void>();
+  const publish = (update: SpeechUpdate) => { for (const listener of listeners) listener(update); };
 
   const sendQueued = () => {
     if (!started || socket.readyState !== WebSocket.OPEN) return;
@@ -91,8 +97,8 @@ export async function openSpeechStream(language: string, terms: string[]): Promi
   };
 
   await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("Live transcription timed out.")), 12_000);
-    const fail = () => { clearTimeout(timer); reject(new Error("Live transcription could not start.")); };
+    const timer = setTimeout(() => { socket.close(); reject(new Error("Live transcription timed out.")); }, 12_000);
+    const fail = () => { clearTimeout(timer); socket.close(); reject(new Error("Live transcription could not start.")); };
     socket.addEventListener("error", fail);
     socket.addEventListener("close", () => { if (!started) fail(); });
     socket.addEventListener("open", () => {
@@ -101,13 +107,14 @@ export async function openSpeechStream(language: string, terms: string[]): Promi
         audio_format: { type: "raw", encoding: "pcm_s16le", sample_rate: 16000 },
         transcription_config: {
           language: speechmaticsLanguage(language),
-          model: "enhanced",
+          model: "standard",
           enable_partials: true,
-          max_delay: 2,
-          max_delay_mode: "flexible",
+          max_delay: 0.7,
+          max_delay_mode: "fixed",
           diarization: "speaker",
           speaker_diarization_config: { max_speakers: 2 },
-          ...(terms.length ? { additional_vocab: terms } : {}),
+          conversation_config: { end_of_utterance_silence_trigger: 0.6 },
+          ...(terms.length ? { additional_vocab: terms.map(content => ({ content })) } : {}),
         },
       }));
     });
@@ -124,29 +131,44 @@ export async function openSpeechStream(language: string, terms: string[]): Promi
         resolve();
       } else if (message.message === "AddPartialTranscript") {
         partial = message.metadata?.transcript?.trim().slice(0, 4_000) ?? "";
+        publish({ partial });
       } else if (message.message === "AddTranscript") {
         const text = message.metadata?.transcript?.trim().slice(0, 4_000) ?? "";
-        if (text) finals.push({ text, speaker: dominantSpeaker(message.results) });
+        if (text) {
+          const final = { text, speaker: dominantSpeaker(message.results) };
+          finals.push(final);
+          if (finals.length > 100) finals.shift();
+          publish({ ...final, final: true, partial: "", endTime: message.metadata?.end_time });
+        }
         partial = "";
+      } else if (message.message === "EndOfUtterance") {
+        publish({ endOfTurn: true });
       } else if (message.message === "AudioAdded" && typeof message.seq_no === "number") {
         lastSeq = message.seq_no;
       } else if (message.message === "Error") {
         failed = true;
+        publish({ error: "Speechmatics rejected the live stream." });
         if (!started) fail();
       }
     });
   });
+  socket.addEventListener("close", () => { if (!closing) publish({ error: "Speechmatics stream closed." }); });
+  socket.addEventListener("error", () => publish({ error: "Speechmatics stream failed." }));
 
   return {
     send(audio) {
       if (failed || socket.readyState !== WebSocket.OPEN) throw new Error("Live transcription stopped.");
+      if (socket.bufferedAmount > 640_000) throw new Error("Live provider cannot keep up with capture.");
       queued.push(audio);
-      if (queued.length > 50) queued.shift();
       sendQueued();
     },
     takeFinal: () => finals.shift(),
     partial: () => partial,
+    subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    endTurn() { if (!failed && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ message: "ForceEndOfUtterance" })); },
     close() {
+      closing = true;
+      listeners.clear();
       if (socket.readyState !== WebSocket.OPEN) return;
       if (started) socket.send(JSON.stringify({ message: "EndOfStream", last_seq_no: lastSeq }));
       socket.close();

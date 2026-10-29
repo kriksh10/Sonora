@@ -63,7 +63,12 @@ behavior were not established by these Linux/provider checks.
 
 Nothing was published. No installer or production database was changed.
 
-## Installed Windows capture continuity
+## Installed Windows capture continuity (historical Gemini-primary revision)
+
+The later primary live-streaming implementation supersedes provider selection
+in this section. See `LIVE-TRANSCRIPTION.md` for current Speechmatics primary /
+Gemini automatic fallback behavior. The continuity/overlap work remains in
+the fallback path; the browser pass described below predates that live change.
 
 The actual `/download` installer (`Sonora-0.3.5-win-x64.exe`) was unpacked,
 including its own `resources/app.asar` and native helper. Its preload and main

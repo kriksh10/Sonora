@@ -12,6 +12,8 @@ class SonoraPcm extends AudioWorkletProcessor {
     this.meterFrames = 0;
     this.meterPeak = 0;
     this.trailingQuiet = 0;
+    this.raw = new Float32Array(320);
+    this.rawUsed = 0;
   }
   process(inputs) {
     const channel = inputs[0]?.[0];
@@ -29,6 +31,11 @@ class SonoraPcm extends AudioWorkletProcessor {
       if (this.phase >= sampleRate) {
         this.phase -= sampleRate;
         const sample = this.sum / this.count;
+        this.raw[this.rawUsed++] = sample;
+        if (this.rawUsed === this.raw.length) {
+          this.port.postMessage({ pcm: this.raw }, [this.raw.buffer]);
+          this.raw = new Float32Array(320); this.rawUsed = 0;
+        }
         this.samples[this.used++] = sample;
         this.trailingQuiet = Math.abs(sample) < 0.003 ? this.trailingQuiet + 1 : 0;
         this.sum = 0;

@@ -84,7 +84,7 @@ function captureHarness(overrides = {}) {
   }
   const context = vm.createContext({
     Uint8Array, Float32Array, ArrayBuffer, DataView, btoa, atob, AbortController, AbortSignal,
-    setTimeout, clearTimeout, Date,
+    setTimeout, clearTimeout, setInterval, clearInterval, performance, Date,
     window: { sonoraDesktop: { setCaptureActive: async value => { bridgeStates.push(value); } } },
     navigator: { mediaDevices: { getUserMedia: async () => stream, getDisplayMedia: async () => stream } },
     AudioContext: Context, AudioWorkletNode: Worklet, MediaStream: class { constructor() {} },
@@ -149,7 +149,7 @@ test('worklet failure uses compatibility capture, sends WAV and never plays back
     onError: error => errors.push(error.message), onNotice: text => notices.push(text), onText: text => texts.push(text) });
   await capture.start();
   const output = new Float32Array(4096).fill(.5);
-  processor.onaudioprocess({ inputBuffer: { getChannelData: () => new Float32Array(96000).fill(.1) },
+  processor.onaudioprocess({ inputBuffer: { getChannelData: () => new Float32Array(128000).fill(.1) },
     outputBuffer: { getChannelData: () => output } });
   await new Promise(setImmediate);
   assert.deepEqual(texts, ["What is a closure?"]);
@@ -208,7 +208,7 @@ test('stop aborts in-flight request and prevents late transcript callbacks', asy
   assert.equal(harness.track.stopped, true);
 });
 
-function nativeHarness({ start, fetch } = {}) {
+function nativeHarness({ start, fetch, ...overrides } = {}) {
   let listener;
   let captureId;
   const stops = [];
@@ -222,6 +222,7 @@ function nativeHarness({ start, fetch } = {}) {
     crypto, window: { sonoraDesktop: native },
     navigator: { mediaDevices: { getUserMedia() { throw new Error('Unexpected browser fallback'); } } },
     ...(fetch ? { fetch } : {}),
+    ...overrides,
   });
   return { harness, stops, emit: event => listener?.({ captureId, ...event }) };
 }
@@ -274,6 +275,7 @@ test('native start cancellation stops a late-starting helper and unsubscribes', 
   const f = nativeHarness({ start: () => new Promise(resolve => { resolveStart = resolve; }) });
   const capture = f.harness.context.subject.createDesktopAudio({ source: 'system', onNotice() {} });
   const starting = capture.start();
+  await new Promise(setImmediate);
   capture.stop();
   resolveStart();
   await starting;
@@ -311,7 +313,7 @@ test('native PCM uses 5-8s Gemini WAVs, closes on pause, joins sentence fragment
   assert.ok(requests.every(request => request.url.endsWith('/transcribe') && request.body.mimeType === 'audio/wav'));
   assert.deepEqual(requests.map(request => Buffer.from(request.body.audio, 'base64').length), [256044, 160044]);
   assert.ok(diagnostics.some(event => event.event === 'captured' && event.detail.includes('speaker pause')));
-  assert.ok(diagnostics.some(event => event.event === 'path' && event.detail.includes('Live-audio/Speechmatics bypassed')));
+  assert.ok(diagnostics.some(event => event.event === 'path' && event.detail.includes('Gemini clip fallback')));
   f.emit({ type: 'pcm', audio: frame.toString('base64') });
   capture.stop();
   assert.ok(diagnostics.some(event => event.event === 'dropped' && /unfinished new audio/.test(event.detail)));
@@ -329,4 +331,45 @@ test('Gemini transcription failure stops native capture with a visible error', a
   await new Promise(setImmediate);
   assert.deepEqual(errors, ['Gemini unavailable']);
   assert.equal(f.stops.length, 1);
+});
+
+test('Speechmatics primary streams native PCM, pushes partials without polling and falls back on disconnect', async () => {
+  const requests = [], partials = [], texts = [], diagnostics = [];
+  let ws;
+  class Socket {
+    static OPEN = 1;
+    readyState = 1; bufferedAmount = 0; frames = [];
+    constructor() { ws = this; setImmediate(() => this.onmessage?.({ data: '{"ready":true}' })); }
+    send(data) { this.frames.push(data); }
+    close() { this.readyState = 3; this.onclose?.(); }
+  }
+  const f = nativeHarness({
+    WebSocket: Socket, URL,
+    fetch: async (url, options) => {
+      requests.push({ url, body: JSON.parse(options.body) });
+      return { ok: true, status: 200, json: async () => url.endsWith('/live-audio') ? { ticket: 'test' } : { text: 'Explain SQL joins.' } };
+    },
+  });
+  f.harness.context.window.location = { href: 'http://test/' };
+  const capture = f.harness.context.subject.createDesktopAudio({ source: 'microphone', sessionId: 'test',
+    onText: text => texts.push(text), onPartial: text => partials.push(text),
+    onDiagnostic: event => diagnostics.push(event), onNotice() {}, onError(error) { throw error; } });
+  await capture.start();
+  const frame = Buffer.alloc(640);
+  for (let i = 0; i < 320; i++) frame.writeInt16LE(3200, i * 2);
+  for (let i = 0; i < 50; i++) f.emit({ type: 'pcm', audio: frame.toString('base64') });
+  assert.equal(ws.frames.length, 50);
+  ws.onmessage({ data: JSON.stringify({ partial: 'Explain SQL' }) });
+  assert.equal(partials.at(-1), 'Explain SQL');
+  ws.onmessage({ data: JSON.stringify({ final: true, text: 'Explain SQL joins.', endTime: 1 }) });
+  ws.onmessage({ data: '{"endOfTurn":true}' });
+  assert.deepEqual(texts, ['Explain SQL joins.']);
+  assert.equal(requests.filter(r => r.url.endsWith('/transcribe')).length, 0);
+  ws.close();
+  for (let i = 0; i < 400; i++) f.emit({ type: 'pcm', audio: frame.toString('base64') });
+  for (let i = 0; i < 10; i++) await new Promise(setImmediate);
+  assert.equal(requests.filter(r => r.url.endsWith('/transcribe')).length, 1);
+  assert.ok(diagnostics.some(e => e.detail.includes('Speechmatics real-time WebSocket primary')));
+  assert.ok(diagnostics.some(e => e.detail.includes('Gemini clip fallback')));
+  capture.stop();
 });

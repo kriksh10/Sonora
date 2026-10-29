@@ -435,6 +435,7 @@ export default function LiveSessionView(p: LiveSessionViewProps) {
           </form>
         </section>
 
+        {!txOpen && p.interimTranscript && <div className="rounded-lg border border-white/10 px-3 py-2 text-sm" aria-live="polite" data-testid="live-partial"><span className="text-xs text-zinc-400">Hearing live · </span>{p.interimTranscript}</div>}
         {txOpen && <TranscriptPane sessionId={p.session.id} spoken={spoken} interim={p.interimTranscript} live={live} phone={phone} onUse={p.onUseTranscript} />}
       </div>
     </section>

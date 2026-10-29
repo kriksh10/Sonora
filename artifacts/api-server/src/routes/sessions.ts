@@ -300,7 +300,8 @@ router.post("/sessions/:id/answer", async (req, res, next) => {
       httpOptions: { apiVersion: "", baseUrl },
     });
     const answerStyle = answerPreferenceInstructions(withAnswerPreferences(session).answerPreferences);
-    const systemInstruction = [interviewAnswerPolicy, answerStyle].join("\n");
+    const systemInstruction = [interviewAnswerPolicy, answerStyle,
+      "Start immediately with a short, direct first sentence (at most 20 words). No preamble, greeting, or restatement of the question. Then supply the requested depth."].join("\n");
     const action = parsedAnswer.data.action ?? "answer";
     if (["shorten", "explain"].includes(action) && !parsedAnswer.data.previousAnswer?.trim()) {
       return res.status(400).json({ error: "Generate an answer before modifying it." });
@@ -342,7 +343,8 @@ router.post("/sessions/:id/answer", async (req, res, next) => {
             { text: `${prompt}\n\nUse the attached screenshot only as reference for this question.` },
             { inlineData: { mimeType: "image/jpeg", data: screenshot } },
           ] }] : prompt,
-          config: { systemInstruction, abortSignal: controller.signal },
+          config: { systemInstruction, abortSignal: controller.signal,
+            ...(session.model === "gemini-2.5-flash" ? { thinkingConfig: { thinkingBudget: 0 } } : {}) },
         };
         if (wantsStream) {
           const stream = await ai.models.generateContentStream(request);

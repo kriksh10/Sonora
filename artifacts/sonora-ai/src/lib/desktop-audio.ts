@@ -2,6 +2,7 @@ import { wavBase64 } from "./pcm-wav";
 import { createTranscriptionPacing, waitForTranscription } from "./transcription-pacing";
 import { createCompatPcm, type PcmEvent } from "./compat-pcm";
 import { createContinuousWindows, createTranscriptSentences, createWavOverlap, removeOverlapText, type CaptureDiagnostic } from "./continuous-audio";
+import { createLiveTranscription } from "./live-transcription";
 
 // Both channels share one provider lane; server concurrency limits remain enforced.
 let transcriptionLane: Promise<void> = Promise.resolve();
@@ -15,6 +16,8 @@ type Options = {
   sessionId: string;
   roundNumber?: number;
   onText: (text: string, metadata: { source: "microphone" | "system"; capturedAt: string; endOfTurn?: boolean; speakerLabel?: string }) => void;
+  onPartial?: (text: string) => void;
+  onQuestionEnd?: (at: number) => void;
   onNotice: (text: string) => void;
   onTurnEnded?: () => void;
   onError: (error: Error) => void;
@@ -91,12 +94,103 @@ export function createDesktopAudio(options: Options): AudioCapture {
   let sequence = 0, lastSequence = 0, nativePcmSeen = false;
   let speakerPaused = false;
   let lastText = "";
+  let fallback = false, rawPcmSeen = false;
+  const ring = new Float32Array(128000);
+  let ringUsed = 0, ringCursor = 0, totalSamples = 0, finalizedSamples = 0;
+  let liveText = "", liveSpeaker = "", firstWordAt = 0, questionEndAt = 0;
+  let speechSeen = false, quietSamples = 0, energy = 0, analyzed = 0, lastVoiceAt = 0;
+  let sendBuffer = new Float32Array(320), sendUsed = 0;
+  let turnTimer: ReturnType<typeof setTimeout> | undefined;
   const sentences = createTranscriptSentences();
   const diagnose = (event: string, detail: string, clip?: Clip) => options.onDiagnostic?.({
     at: new Date().toISOString(), source: options.source, event, detail, queueDepth: pending.length,
     ...(clip ? { clip: clip.sequence, durationMs: clip.durationMs } : {}),
   });
   const overlapWav = createWavOverlap();
+  const finishLiveTurn = () => {
+    if (stopped || fallback || !liveText.trim()) return;
+    clearTimeout(turnTimer);
+    const ended = questionEndAt || lastVoiceAt || performance.now();
+    options.onQuestionEnd?.(ended);
+    diagnose("latency", `Speechmatics · question end → first transcript word: ${Math.round(firstWordAt - ended)}ms (negative means live words arrived before question end).`);
+    options.onText(liveText.trim(), { source: options.source, capturedAt: new Date().toISOString(), endOfTurn: true, ...(liveSpeaker ? { speakerLabel: liveSpeaker } : {}) });
+    liveText = ""; liveSpeaker = ""; firstWordAt = 0;
+    options.onPartial?.("");
+  };
+  const live = createLiveTranscription({
+    sessionId: options.sessionId, source: options.source, roundNumber: options.roundNumber,
+    onUpdate(update) {
+      if (stopped || fallback) return;
+      if ((update.partial || update.text) && !firstWordAt) firstWordAt = performance.now();
+      if (update.final && update.text) {
+        liveText = `${liveText} ${update.text}`.trim();
+        liveSpeaker = update.speaker || liveSpeaker;
+        if (typeof update.endTime === "number") finalizedSamples = Math.max(finalizedSamples, Math.round(update.endTime * 16000));
+        if (questionEndAt && !speechSeen) {
+          clearTimeout(turnTimer); turnTimer = setTimeout(finishLiveTurn, 100);
+        }
+      }
+      if (update.partial !== undefined || update.text) options.onPartial?.(`${liveText} ${update.partial ?? ""}`.trim());
+      if (update.endOfTurn) finishLiveTurn();
+    },
+    onFallback(reason) {
+      if (stopped || fallback) return;
+      fallback = true;
+      options.onQuestionEnd?.(Number.NaN);
+      clearTimeout(turnTimer);
+      diagnose("path", `Gemini clip fallback · ${reason}. Continuous capture retained.`);
+      options.onNotice("Live transcription unavailable; using overlapping Gemini clips. Answers may take longer.");
+      options.onPartial?.("");
+      if (liveText) {
+        // Preserve already-finalized prefix words without treating a provider
+        // failure as a real question boundary.
+        sentences.seed(liveText);
+        liveText = "";
+      }
+      const buffered = new Float32Array(ringUsed);
+      const oldest = (ringCursor - ringUsed + ring.length) % ring.length;
+      const first = Math.min(ringUsed, ring.length - oldest);
+      buffered.set(ring.subarray(oldest, oldest + first));
+      buffered.set(ring.subarray(0, ringUsed - first), first);
+      const start = Math.max(0, finalizedSamples - (totalSamples - ringUsed));
+      if (totalSamples - finalizedSamples > ringUsed) diagnose("dropped", "Live failure exceeded eight-second recovery buffer; older unfinalized audio cannot be replayed.");
+      if (buffered.length > start) continuous.push(buffered.subarray(start));
+    },
+  });
+  const receivePcm = (samples: Float32Array) => {
+    options.onPcm?.(samples, 16000);
+    if (options.transcribe === false) return;
+    totalSamples += samples.length;
+    for (let offset = 0; offset < samples.length;) {
+      const count = Math.min(ring.length - ringCursor, samples.length - offset);
+      ring.set(samples.subarray(offset, offset + count), ringCursor);
+      ringCursor = (ringCursor + count) % ring.length;
+      ringUsed = Math.min(ring.length, ringUsed + count); offset += count;
+    }
+    if (fallback) { continuous.push(samples); return; }
+    for (const sample of samples) {
+      sendBuffer[sendUsed++] = sample;
+      energy += sample * sample; analyzed++;
+      if (analyzed === 160) {
+        if (Math.sqrt(energy / analyzed) >= .003) { speechSeen = true; quietSamples = 0; questionEndAt = 0; lastVoiceAt = performance.now(); clearTimeout(turnTimer); }
+        else if (speechSeen) {
+          quietSamples += analyzed;
+          if (quietSamples >= 9600) {
+            speechSeen = false; questionEndAt = performance.now() - 600;
+            options.onQuestionEnd?.(questionEndAt);
+            diagnose("question-end", "600ms of quiet; requesting a finalized Speechmatics utterance.");
+            live.endTurn();
+          }
+        }
+        analyzed = 0; energy = 0;
+      }
+      if (sendUsed === sendBuffer.length) {
+        const bytes = new Uint8Array(sendUsed * 2), view = new DataView(bytes.buffer);
+        for (let i = 0; i < sendUsed; i++) view.setInt16(i * 2, Math.round(Math.max(-1, Math.min(1, sendBuffer[i])) * 32767), true);
+        live.send(bytes); sendUsed = 0;
+      }
+    }
+  };
   const notePause = () => {
     if (active || pending.length) speakerPaused = true;
     else options.onTurnEnded?.();
@@ -111,6 +205,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
     if (continuous.pendingMs()) diagnose("dropped", `Capture stopped with ${continuous.pendingMs()}ms of unfinished new audio.`);
     if (sentences.pendingWords()) diagnose("dropped", `Capture stopped with ${sentences.pendingWords()} words awaiting sentence completion.`);
     stopped = true;
+    live.stop(); clearTimeout(turnTimer);
     abort.abort();
     pending = [];
     unsubscribeNative?.();
@@ -229,7 +324,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
     finally { active = false; }
   };
   const enqueue = (audio: string, capturedAt = new Date().toISOString(), endOfTurn?: boolean, provided?: { overlap: boolean; durationMs: number }) => {
-    if (stopped) return;
+    if (stopped || !fallback) return;
     if (options.transcribe === false) return;
     let window: { audio: string; overlap: boolean; durationMs: number };
     try { window = provided ? { audio, ...provided } : overlapWav(audio); }
@@ -253,6 +348,11 @@ export function createDesktopAudio(options: Options): AudioCapture {
       try {
         const desktop = window.sonoraDesktop;
         if (desktop?.startNativeCapture && desktop.onNativeAudio && desktop.stopNativeCapture) {
+          if (options.transcribe !== false) {
+            await live.start();
+            if (stopped) return;
+            if (!fallback) diagnose("path", "Speechmatics real-time WebSocket primary · continuous mono 16kHz PCM · Gemini answers.");
+          }
           nativeId = crypto.randomUUID();
           unsubscribeNative = desktop.onNativeAudio(event => {
             if (stopped || event.captureId !== nativeId) return;
@@ -260,15 +360,18 @@ export function createDesktopAudio(options: Options): AudioCapture {
             else if (event.type === "pcm" && event.audio) {
               if (!nativePcmSeen) {
                 nativePcmSeen = true;
-                diagnose("path", "Native helper → Electron IPC → continuous PCM windows → server Gemini. Live-audio/Speechmatics bypassed.");
+                diagnose("capture", "Native helper → Electron IPC → continuous PCM; transcription provider shown in path diagnostics.");
               }
               const samples = pcm16ToFloat(event.audio);
-              options.onPcm?.(samples, 16000);
-              if (options.transcribe !== false) continuous.push(samples);
+              receivePcm(samples);
             }
             else if (event.type === "audio" && event.audio) {
               if (event.source && event.source !== options.source) { fail(new Error("Native audio source mismatch.")); return; }
-              if (!nativePcmSeen) enqueue(event.audio, event.capturedAt, event.endOfTurn);
+              if (!nativePcmSeen) {
+                live.stop();
+                if (!fallback) { fallback = true; diagnose("path", "Gemini fallback · legacy shell supplies WAV clips only."); }
+                enqueue(event.audio, event.capturedAt, event.endOfTurn);
+              }
             }
             else if (event.type === "silence") {
               if (!nativePcmSeen) notePause();
@@ -281,15 +384,20 @@ export function createDesktopAudio(options: Options): AudioCapture {
             }
           });
           await desktop.startNativeCapture(nativeId, options.source, options.deviceName, options.referenceDevice);
-          diagnose("started", "Native capture bridge active; PCM streaming to Gemini selected.");
+          diagnose("started", fallback ? "Native bridge active · Gemini clip fallback." : "Native bridge active · Speechmatics PCM streaming.");
           if (stopped) { void desktop.stopNativeCapture(nativeId); return; }
-          options.onNotice("Native audio capture is active. Short audio chunks are sent to Gemini for transcription.");
+          options.onNotice(fallback ? "Native capture active · Gemini clip fallback." : "Native capture active · Speechmatics real-time transcription.");
           return;
         }
         stream = options.source === "system"
           ? await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true })
           : await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true }, video: false });
-        diagnose("path", options.source === "system" ? "Browser/Electron display media → overlapping WAV → server Gemini." : "Browser microphone → overlapping WAV → server Gemini.");
+        // getDisplayMedia requires the original user gesture: obtain the
+        // capture stream before waiting for remote transcription startup.
+        if (options.transcribe !== false && !stopped) {
+          await live.start();
+          if (!fallback) diagnose("path", "Speechmatics real-time WebSocket primary · WebAudio mono 16kHz PCM · Gemini answers.");
+        }
         if (stopped) { stream.getTracks().forEach(track => track.stop()); return; }
         if (!stream.getAudioTracks().length) throw new Error("No audio source was shared. Allow system audio, or choose microphone input.");
         stream.getTracks().forEach(track => track.addEventListener("ended", () => fail(new Error("The shared audio source ended. Capture stopped.")), { once: true }));
@@ -297,10 +405,11 @@ export function createDesktopAudio(options: Options): AudioCapture {
         const source = context.createMediaStreamSource(new MediaStream(stream.getAudioTracks()));
         const receive = (data: PcmEvent) => {
           if (stopped) return;
+          if (data.pcm) { rawPcmSeen = true; receivePcm(data.pcm); }
           if (typeof data.peak === "number") options.onLevel?.(data.peak, data.peak > 0.003 ? "Audio activity" : "Silent samples");
-          if (data.silent) notePause();
+          if (data.silent && !rawPcmSeen) notePause();
           if (data.prolonged) options.onNotice("No audible speech for 18 seconds. Check your selected source, volume, and OS audio permission.");
-          if (!data.samples) return;
+          if (!data.samples || rawPcmSeen) return;
           options.onPcm?.(data.samples, 16000);
           enqueue(wavBase64(data.samples), undefined, data.endOfTurn);
         };

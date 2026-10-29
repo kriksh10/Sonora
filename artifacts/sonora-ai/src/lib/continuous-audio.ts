@@ -52,6 +52,7 @@ export function createContinuousWindows(emit: (samples: Float32Array, overlap: b
 export function createTranscriptSentences() {
   let pending = "";
   return {
+    seed(text: string) { pending = `${pending} ${text}`.replace(/\s+/g, " ").trim(); },
     push(text: string, endOfTurn: boolean) {
       pending = `${pending} ${text}`.replace(/\s+/g, " ").trim();
       if (!pending || (!endOfTurn && !/[.!?]["')\]]?$/.test(pending) && pending.length < 700)) return "";

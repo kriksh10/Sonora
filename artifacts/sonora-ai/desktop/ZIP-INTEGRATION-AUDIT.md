@@ -21,7 +21,7 @@ These counts describe file coverage, not proof that every native feature works.
 ## Included functionality
 
 - Native microphone/system capture, PCM streaming, phrase encoding, and echo-reference source.
-- Optional Speechmatics live transcription with Gemini phrase fallback.
+- Speechmatics primary real-time transcription, with automatic Gemini clip fallback in the current hosted client (the original upload treated live transcription as optional).
 - Gemini streamed answers, question-context selection, and explicit screenshot questions.
 - Speaker-label selection for mixed phone audio, reset for each capture.
 - Expanded call languages and session preferences.

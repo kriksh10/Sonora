@@ -185,6 +185,8 @@ export default function InterviewWorkspace() {
   const [answerState, setAnswerState] = useState<"idle" | "generating" | "streaming" | "complete" | "interrupted">("idle");
   const [pipelineStatus, setPipelineStatus] = useState("");
   const [captureDiagnostics, setCaptureDiagnostics] = useState<CaptureDiagnostic[]>([]);
+  const questionEndsRef = useRef<Record<string, number>>({});
+  const measuredEndsRef = useRef<number[]>([]);
   const [levels, setLevels] = useState({ microphone: 0, system: 0 });
   const [channelStatus, setChannelStatus] = useState({ microphone: "Audio off", system: "Audio off" });
   const [online, setOnline] = useState(navigator.onLine);
@@ -375,7 +377,16 @@ export default function InterviewWorkspace() {
             if (stale()) return;
             if (!firstText && text.trim()) {
               firstText = true;
-              setTimingSummary(firstTextTiming(requestedAt, receivedAt));
+              const measuredEnd = receivedAt !== undefined && measuredEndsRef.current.includes(receivedAt);
+              setTimingSummary(measuredEnd ? `First answer text ${((performance.now() - receivedAt!) / 1000).toFixed(1)}s after estimated question end` : firstTextTiming(requestedAt, receivedAt));
+              if (receivedAt !== undefined) setCaptureDiagnostics(previous => {
+                const event: CaptureDiagnostic = { at: new Date().toISOString(),
+                  source: source === "typed" ? "microphone" : source, event: "latency",
+                  detail: `${measuredEnd ? "Estimated question end" : "Transcript ready (acoustic end not measured)"} → first answer text: ${Math.round(performance.now() - receivedAt)}ms; request → first answer text: ${Math.round(performance.now() - requestedAt)}ms. Measures first nonempty streamed text, not an internal model token.` };
+                const next = [...previous, event].slice(-120);
+                try { sessionStorage.setItem(`sonora-capture:${selected.id}:${askRound}`, JSON.stringify(next)); } catch { /* visible in current log */ }
+                return next;
+              });
             }
             setAnswer(text); setAnswerState("streaming");
           },
@@ -425,14 +436,15 @@ export default function InterviewWorkspace() {
     if (!session || session.status === "ended") return;
     const token = captureTokenRef.current;
     const revision = inputRevisionRef.current;
+    const endedAt = questionEndsRef.current[phrase.source];
     void saveTranscript(session, "user", phrase.text, phrase.source === "typed" ? "microphone" : phrase.source, phrase.speaker, phrase.capturedAt).then(() => {
       if (token !== captureTokenRef.current || revision !== inputRevisionRef.current) return;
       const mode = inputRef.current.mode;
       const optedIn = inputRef.current.phoneAuto;
       const heard = phrase.source === "system" ? "system" : "microphone";
       if (!mayAutoAnswer(mode, heard, remoteConfirmed, optedIn, !!selectedSessionRef.current?.autoAnswer, microphoneAutoRef.current)) return;
-      if (mode === "phone" || heard === "microphone") questionsRef.current?.pushMixed(phrase.text, mode === "phone" ? optedIn : microphoneAutoRef.current, true);
-      else questionsRef.current?.push(phrase.text, phrase.speaker, true);
+      if (mode === "phone" || heard === "microphone") questionsRef.current?.pushMixed(phrase.text, mode === "phone" ? optedIn : microphoneAutoRef.current, true, endedAt);
+      else questionsRef.current?.push(phrase.text, phrase.speaker, true, endedAt);
     }).catch(cause => {
       if (token !== captureTokenRef.current) return;
       stopCapture();
@@ -667,7 +679,9 @@ export default function InterviewWorkspace() {
     const startToken = ++captureTokenRef.current;
     setRequestingMic(true);
     setError("");
-    const serverStt = window.sonoraDesktop ? true : await serverSttAvailable(selected.id);
+    // The adapter negotiates Speechmatics first, then Gemini. Do not gate
+    // a working live provider on a separate Gemini availability probe.
+    const serverStt = true;
     if (startToken !== captureTokenRef.current) return;
     if (!serverStt && preparedAudioContextRef.current) {
       void preparedAudioContextRef.current.close().catch(() => {});
@@ -685,7 +699,7 @@ export default function InterviewWorkspace() {
       setRequestingMic(true);
       setError("");
       const sources: ("microphone" | "system")[] = inputMode === "phone" ? ["microphone"] : audioSource === "both" ? ["microphone", "system"] : [audioSource];
-      if (sources.length === 2 && !supportsDualAudio) {
+      if (sources.length === 2 && !supportsDualAudio && window.sonoraDesktop) {
         setRequestingMic(false);
         setError("Rebuild and install the updated desktop app to capture both channels separately.");
         return;
@@ -697,6 +711,13 @@ export default function InterviewWorkspace() {
         ...(source === "microphone" && audioSource === "both" && systemDevice ? { referenceDevice: systemDevice } : {}),
         sessionId: selected.id,
         roundNumber: selected.roundNumber,
+        onPartial: text => { if (captureToken === captureTokenRef.current) setInterimTranscript(text); },
+        onQuestionEnd: at => {
+          if (captureToken !== captureTokenRef.current) return;
+          if (!Number.isFinite(at)) { delete questionEndsRef.current[source]; return; }
+          questionEndsRef.current[source] = at;
+          measuredEndsRef.current = [...measuredEndsRef.current, at].slice(-40);
+        },
         onLevel: (level, status) => {
           if (captureToken !== captureTokenRef.current) return;
           setLevels(current => ({ ...current, [source]: level }));
@@ -748,12 +769,8 @@ export default function InterviewWorkspace() {
           if (captureToken !== captureTokenRef.current) return;
           const serverDown = cause instanceof Error && cause.name === "ServerSttUnavailable";
           stopCapture();
-          if (serverDown && !window.sonoraDesktop && sources.every((item) => item === "microphone")) {
-            void startBrowserSpeech(captureTokenRef.current);
-            return;
-          }
           setError(serverDown
-            ? "Server transcription is unavailable, so this audio cannot be transcribed here. Type a question, or try the microphone if browser speech recognition is available."
+            ? "Live transcription and Gemini fallback are unavailable. Type a question, or retry listening when the services are available."
             : friendlyCaptureError(cause, source === "system" ? "system" : "microphone"));
         },
       }));
@@ -773,7 +790,7 @@ export default function InterviewWorkspace() {
         setListening(true);
         setNotice(inputMode === "phone"
           ? "Phone-speaker capture is on. Both voices are mixed; use Answer recent, or explicitly enable mixed-audio automatic answers."
-          : `${audioSource === "both" ? "Microphone and meeting tab are" : audioSource === "system" ? "Meeting tab is" : "Microphone is"} on. Gemini receives independent 5–6 second WAV clips. Meeting questions can be auto-answered; microphone questions require explicit opt-in.`);
+          : `${audioSource === "both" ? "Microphone and meeting audio are" : audioSource === "system" ? "Meeting audio is" : "Microphone is"} on. Diagnostics show Speechmatics live or Gemini fallback. Meeting questions can be auto-answered; microphone questions require explicit opt-in.`);
       } catch (cause) {
         if (captureToken !== captureTokenRef.current) return;
         stopCapture();
@@ -991,7 +1008,7 @@ export default function InterviewWorkspace() {
           onPreferences={() => setEditOpen(true)}
           question={answerInput} onQuestionChange={setAnswerInput}
           onAsk={() => void askGemini(answerInput)} onUseTranscript={setAnswerInput}
-          latestQuestion={latestQuestion} answerState={answerState}
+          latestQuestion={latestQuestion} answerState={answerState === "idle" && visibleAnswer ? "complete" : answerState}
           pipelineStatus={!online ? "Offline · recording will not restart automatically. Reconnect, then retry." :
             settingsBusy ? "Saving settings…" : pipelineStatus}
           captureDiagnostics={captureDiagnostics}

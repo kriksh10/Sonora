@@ -30,3 +30,17 @@ estimate pauses without restarting capture, and carry unfinished text across
 forced boundaries. Distinguish local energy-based pause estimates from actual
 speaker recognition, and do not present earlier fixed-window QA as verification
 of a later pause-aware revision.
+
+Prefer Speechmatics real-time streaming as the primary mic/meeting transcription
+path, with the Gemini clip path retained for automatic failure recovery.
+
+**Why:** The owner explicitly prioritized live partial words and roughly2–4s
+question-end-to-first-answer latency; making contextual Gemini WAV clips primary
+introduced several seconds of avoidable batching delay.
+
+**How to apply:** Keep provider selection observable, preserve finalized prefix
+text and bounded unfinalized PCM on failover, and measure acoustic-end-to-visible
+answer separately from request timing. Never present direct service fixtures or
+simulated bridges as physical-device verification. Speechmatics conversation
+configuration belongs inside its transcription configuration; verify against
+the actual service, not just a locally accepted mock.

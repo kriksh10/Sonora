@@ -92,10 +92,10 @@ export function createInterviewerQuestions({
     if (running) notice("Interviewer question queued while the current answer finishes.");
     void pump();
   };
-  const collect = (text: string, endOfTurn = false) => {
+  const collect = (text: string, endOfTurn = false, endedAt?: number) => {
       if (!text.trim()) return;
       const token = generation;
-      if (!fragments) receivedAt = typeof performance === "undefined" ? clock() : performance.now();
+      if (!fragments) receivedAt = endedAt ?? (typeof performance === "undefined" ? clock() : performance.now());
       fragments = `${fragments} ${text}`.trim();
       turnEnded = endOfTurn;
       // Chunk delivery is not silence: a bounded turn deadline must survive
@@ -113,22 +113,22 @@ export function createInterviewerQuestions({
       // A pause or a punctuated question can be used quickly. Speech that is
       // still arriving gets one more chunk interval to collect its continuation.
       timer = setTimer(() => { if (generation === token) flush(); },
-        endOfTurn ? 350 : /[?]\s*$/.test(fragments) ? 1500 : 8500);
+        endOfTurn ? 0 : /[?]\s*$/.test(fragments) ? 1500 : 8500);
   };
   const pause = () => {
     if (!fragments.trim()) return;
     turnEnded = true;
     const token = generation;
     clearTimer(timer);
-    timer = setTimer(() => { if (generation === token) flush(); }, 350);
+    timer = setTimer(() => { if (generation === token) flush(); }, 0);
   };
   return {
-    push(text: string, speaker: "candidate" | "interviewer" | "unknown", endOfTurn = false) {
-      if (speaker === "interviewer") collect(text, endOfTurn);
+    push(text: string, speaker: "candidate" | "interviewer" | "unknown", endOfTurn = false, endedAt?: number) {
+      if (speaker === "interviewer") collect(text, endOfTurn, endedAt);
     },
     /** Explicit mixed-audio opt-in, not a claim that the speaker is the interviewer. */
-    pushMixed(text: string, optedIn: boolean, endOfTurn = false) {
-      if (optedIn) collect(text, endOfTurn);
+    pushMixed(text: string, optedIn: boolean, endOfTurn = false, endedAt?: number) {
+      if (optedIn) collect(text, endOfTurn, endedAt);
     },
     pause,
     reset() {

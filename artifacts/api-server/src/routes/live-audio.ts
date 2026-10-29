@@ -17,7 +17,7 @@ function validFrame(audio: string) {
   return bytes >= 320 && bytes <= 3_200 && bytes % 320 === 0;
 }
 
-const tickets = new Map<string, { id: string; expires: number }>();
+const tickets = new Map<string, { id: string; expires: number; roundNumber: number }>();
 
 export function bindLiveSocket(ticket: string, socket: {
   on: (event: "message" | "close", listener: (data: Buffer) => void) => void;
@@ -29,20 +29,32 @@ export function bindLiveSocket(ticket: string, socket: {
   const pending = entry && entry.expires > Date.now() ? streams.get(entry.id) : undefined;
   if (!pending) { socket.close(); return; }
   let closed = false;
-  socket.on("close", () => { closed = true; if (entry) void closeStream(entry.id); });
+  let unsubscribe: (() => void) | undefined;
+  let received = 0;
+  const authorization = setInterval(() => {
+    if (!entry) return;
+    const [userId, sessionId] = entry.id.split(":");
+    void sessionStillUsable(sessionId, userId, entry.roundNumber).then(allowed => {
+      if (!allowed) socket.close();
+    }).catch(() => socket.close());
+  }, 30_000);
+  socket.on("close", () => { closed = true; clearInterval(authorization); unsubscribe?.(); if (entry) void closeStream(entry.id); });
+  void pending.then(stream => {
+    if (closed) return;
+    unsubscribe = stream.subscribe(update => { if (!closed) socket.send(JSON.stringify(update)); });
+    socket.send(JSON.stringify({ ready: true, provider: "speechmatics" }));
+  }).catch(() => { if (!closed) socket.close(); });
   socket.on("message", data => {
     if (closed) return;
     const bytes = Buffer.isBuffer(data) ? data : Buffer.from(data);
+    if (bytes.toString() === '{"endTurn":true}') {
+      void pending.then(stream => stream.endTurn()).catch(() => socket.close());
+      return;
+    }
     if (bytes.length < 320 || bytes.length > 3_200 || bytes.length % 320 !== 0) return;
     void pending.then(stream => {
       stream.send(bytes);
-      const finished = stream.takeFinal();
-      const partial = stream.partial();
-      if (!finished?.text && !partial) return;
-      socket.send(JSON.stringify({
-        accepted: true, text: finished?.text ?? "", final: Boolean(finished?.text),
-        partial, speaker: finished?.speaker ?? "",
-      }));
+      if (++received % 10 === 0) socket.send(JSON.stringify({ acknowledged: true }));
     }).catch(() => { if (!closed) socket.close(); });
   });
 }
@@ -82,12 +94,18 @@ router.post("/sessions/:id/live-audio", async (req, res): Promise<void> => {
       res.status(503).json({ error: "Live transcription is not configured. Phrase transcription will continue." }); return;
     }
     const ticket = randomBytes(24).toString("hex");
-    if (!streams.has(id)) {
-      streams.set(id, openSpeechStream(session.language, speechmaticsTerms([
+    try {
+      if (!streams.has(id)) streams.set(id, openSpeechStream(session.language, speechmaticsTerms([
         session.company, session.title, session.description, session.resumeText,
       ])));
+      await streams.get(id);
+    } catch {
+      await closeStream(id);
+      res.status(503).json({ error: "Speechmatics could not start. Gemini fallback is available." }); return;
     }
-    tickets.set(ticket, { id, expires: Date.now() + 30_000 });
+    for (const [key, value] of tickets) if (value.expires < Date.now()) tickets.delete(key);
+    tickets.set(ticket, { id, expires: Date.now() + 30_000, roundNumber: session.roundNumber ?? 1 });
+    setTimeout(() => { if (tickets.delete(ticket)) void closeStream(id); }, 30_000).unref();
     res.json({ ticket });
     return;
   }

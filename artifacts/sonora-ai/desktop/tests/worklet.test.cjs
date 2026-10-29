@@ -54,3 +54,14 @@ test('quiet speech is lifted and near-silence is still skipped', () => {
   assert.equal(silent.messages.some(m => m.samples), false);
   assert.equal(silent.messages.some(m => m.silent), true);
 });
+test('browser worklet continuously emits 20ms raw frames, including silence, before any WAV-sized clip', () => {
+  const { node, messages } = processor();
+  node.process([[new Float32Array(48000).fill(.1)]]);
+  const frames = messages.filter(m => m.pcm);
+  assert.equal(frames.length, 50);
+  assert.ok(frames.every(m => m.pcm.length === 320 && Math.abs(m.pcm[0] - .1) < .00001));
+  assert.equal(messages.some(m => m.samples), false);
+  node.process([[new Float32Array(48000)]]);
+  assert.equal(messages.filter(m => m.pcm).length, 100);
+  assert.ok(messages.filter(m => m.pcm).at(-1).pcm.every(value => value === 0));
+});

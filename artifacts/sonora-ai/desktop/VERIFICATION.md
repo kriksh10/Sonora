@@ -29,7 +29,7 @@ Existing approval gates, private storage, protected downloads, and checksum
 assembly were deliberately retained rather than replaced by the snapshot's
 public download links or local credential-file loader.
 
-Speechmatics is optional and is configured through the project secret. A live
+Historical uploaded-release check (superseded by the current hosted primary-live path below): Speechmatics was optional and configured through the project secret. A live
 provider connection returned `RecognitionStarted` and accepted one second of
 silent 16 kHz mono PCM frames with the app's vocabulary settings. This confirms
 authentication and streaming configuration, not recognition of real speech or
@@ -46,6 +46,19 @@ checksum after publishing the hosted changes. Publishing the site does not updat
 an installed Electron executable. No Mac installer was included in this upload.
 
 # Sonora desktop verification
+
+## Current hosted live transcription
+
+Speechmatics streaming is now primary for native desktop PCM and browser
+mic/meeting audio. Server-only credentials are unchanged. Partials, finalized
+text and end-of-utterance events are pushed over the authenticated WebSocket,
+not polled on subsequent audio frames. Failed/unconfigured live service falls
+back to overlapping Gemini WAVs without restarting device capture.
+The existing0.3.5 installer already supplies continuous PCM. No executable was
+rebuilt or replaced. The permission dialog's source wording is updated for
+future packages; an already installed executable retains its existing wording.
+The new transcription behavior is hosted and takes effect after publishing
+and reloading the app. Physical Windows hardware remains unverified here.
 
 ## Uploaded Windows candidate and private downloads
 
