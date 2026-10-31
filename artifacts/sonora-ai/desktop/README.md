@@ -77,7 +77,7 @@ Installed Windows builds check GitHub Releases with electron-updater on launch a
 
 ## Build locally on the target OS
 
-Install Node 22+, pnpm 10.26.1, and Rust 1.88 with the target OS's native compiler/SDK. macOS cross-architecture builds also require that Rust target. From the repository root:
+Install Node 22+, pnpm 10.26.1, and Rust 1.91 with the target OS's native compiler/SDK. macOS cross-architecture builds also require that Rust target. From the repository root:
 
 ```sh
 pnpm install --frozen-lockfile

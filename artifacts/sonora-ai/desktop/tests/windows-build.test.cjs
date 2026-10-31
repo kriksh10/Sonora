@@ -5,7 +5,7 @@ const { checkHostedService } = require('../prepare-release.cjs');
 const { prepareInstall } = require('../../../../scripts/preinstall.cjs');
 
 const ready = { platform: 'win32', arch: 'x64', machine: 'x86_64', nodeVersion: '22.20.0',
-  pnpmVersion: '10.26.1', rustVersion: 'rustc 1.88.0\nhost: x86_64-pc-windows-msvc',
+  pnpmVersion: '10.26.1', rustVersion: 'rustc 1.91.0\nhost: x86_64-pc-windows-msvc',
   hasGit: true, hasCpp: true, hasSdk: true };
 
 test('Windows prerequisite gate accepts supported tools and reports missing requirements together', () => {
@@ -13,7 +13,7 @@ test('Windows prerequisite gate accepts supported tools and reports missing requ
   assert.equal(prerequisiteProblems({ ...ready, pnpmVersion: '', rustVersion: '', hasGit: false, hasCpp: false, hasSdk: false }).length, 5);
   assert.match(prerequisiteProblems({ ...ready, platform: 'linux' })[0], /Windows x64/);
   assert.match(prerequisiteProblems({ ...ready, machine: 'ARM64' })[0], /Windows ARM/);
-  assert.match(prerequisiteProblems({ ...ready, rustVersion: 'rustc 1.87.0\nhost: x86_64-pc-windows-msvc' })[0], /Rust/);
+  assert.match(prerequisiteProblems({ ...ready, rustVersion: 'rustc 1.90.0\nhost: x86_64-pc-windows-msvc' })[0], /Rust/);
 });
 
 test('portable preinstall enforces pnpm without a Unix shell', () => {

@@ -20,9 +20,9 @@ function prerequisiteProblems(state) {
     problems.push('Install pnpm 10.26.1: npm install --global pnpm@10.26.1');
   }
   const rust = /rustc (\d+)\.(\d+)\.\d+/.exec(state.rustVersion || '');
-  if (!rust || Number(rust[1]) < 1 || (Number(rust[1]) === 1 && Number(rust[2]) < 88) ||
+  if (!rust || Number(rust[1]) < 1 || (Number(rust[1]) === 1 && Number(rust[2]) < 91) ||
       !state.rustVersion?.includes(target)) {
-    problems.push('Install stable Rust 1.88+ with the x86_64-pc-windows-msvc toolchain: https://rustup.rs/');
+    problems.push('Install stable Rust 1.91+ with the x86_64-pc-windows-msvc toolchain: https://rustup.rs/');
   }
   if (!state.hasGit) problems.push('Install Git for Windows: https://git-scm.com/downloads/win (no GitHub account or login needed).');
   if (!state.hasCpp) problems.push('Install Visual Studio Build Tools 2022 with Desktop development with C++ and a Windows 10/11 SDK: https://visualstudio.microsoft.com/visual-cpp-build-tools/');

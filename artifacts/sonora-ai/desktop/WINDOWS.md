@@ -24,7 +24,7 @@ This page is a local build guide. A local `BUILD-WINDOWS.cmd` run does not sign 
 - Node.js 22+ from https://nodejs.org/
 - pnpm 10.26.1: after installing Node, run `npm install --global pnpm@10.26.1`.
 - Git for Windows from https://git-scm.com/downloads/win — needed by the source dependency tooling, **not** for GitHub authentication. Dependencies may be downloaded from public source hosts.
-- Stable Rust 1.88+ from https://rustup.rs/ using the default Windows MSVC toolchain.
+- Stable Rust 1.91+ from https://rustup.rs/ using the default Windows MSVC toolchain.
 - Visual Studio Build Tools 2022 from https://visualstudio.microsoft.com/visual-cpp-build-tools/ with **Desktop development with C++**, the **MSVC x64/x86 build tools**, and a **Windows 10 or 11 SDK** selected.
 
 These are developer tools for the computer creating the installer. People installing the finished app do not need Node, Rust, pnpm, or Visual Studio.
