@@ -118,6 +118,12 @@ type DesktopState = {
   preferencesError?: string;
   version?: string;
   nativeAudioProtocol?: number;
+  fontScale?: number;
+  transcriptOpen?: boolean;
+  clickThrough?: boolean;
+  openAtLogin?: boolean;
+  hotkeys?: { id: string; label: string; accelerator: string; registered: boolean }[];
+  update?: { phase: string; version: string | null; percent: number | null; message: string };
 };
 
 type SonoraDesktopBridge = {
@@ -141,8 +147,19 @@ type SonoraDesktopBridge = {
   captureScreen?: () => Promise<string | null>;
   stopNativeCapture?: (captureId: string) => Promise<boolean>;
   stopAllCapture?: () => Promise<void>;
-  checkForUpdates?: () => Promise<{ available: boolean; version: string; url?: string; signing?: string; sha256?: string }>;
-  openUpdate?: () => Promise<void>;
+  checkForUpdates?: () => Promise<{ phase: string; version: string | null; percent: number | null; message: string; available?: boolean; url?: string; signing?: string; sha256?: string }>;
+  updateStatus?: () => Promise<{ phase: string; version: string | null; percent: number | null; message: string }>;
+  installUpdate?: () => Promise<boolean>;
+  retryConnection?: () => Promise<boolean>;
+  setFontScale?: (value: number) => Promise<DesktopState>;
+  setTranscriptOpen?: (value: boolean) => Promise<DesktopState>;
+  setClickThrough?: (value: boolean) => Promise<DesktopState>;
+  setControlsHover?: (value: boolean) => Promise<DesktopState>;
+  setOpenAtLogin?: (value: boolean) => Promise<DesktopState>;
+  setHotkeys?: (value: Record<string, string>) => Promise<DesktopState>;
+  resetHotkeys?: () => Promise<DesktopState>;
+  onCommand?: (listener: (action: string) => void) => () => void;
+  onUpdate?: (listener: (status: NonNullable<DesktopState["update"]>) => void) => () => void;
   getDiagnostics?: () => Promise<Record<string, string | number | boolean>>;
   exportDiagnostics?: () => Promise<boolean>;
   onNativeAudio?: (listener: (event: {

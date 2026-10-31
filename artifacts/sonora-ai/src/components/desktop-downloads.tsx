@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, Download, Info, RefreshCw } from "lucide-react";
-import { getDesktopRelease, type DesktopRelease, type DesktopBuild } from "@workspace/api-client-react";
+import { getDesktopRelease, type DesktopRelease } from "@workspace/api-client-react";
 import { installerDownloadPath } from "@/lib/installer-download";
-import { fetchInstaller } from "@/lib/installer-transfer";
 
 const statusText = { unavailable: "Unavailable", preview: "Preview, untested", verified: "Tested release" } as const;
 
@@ -10,13 +9,6 @@ export default function DesktopDownloads() {
   const [release, setRelease] = useState<DesktopRelease | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [downloading, setDownloading] = useState(false);
-  const [downloadError, setDownloadError] = useState("");
-  const [progress, setProgress] = useState<number | null>(null);
-  const [saved, setSaved] = useState(false);
-  const transfer = useRef<AbortController | null>(null);
-  useEffect(() => () => transfer.current?.abort(), []);
-
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -35,39 +27,6 @@ export default function DesktopDownloads() {
   useEffect(() => {
     void load();
   }, [load]);
-
-  const download = async (build: DesktopBuild) => {
-    const url = installerDownloadPath(build.url, import.meta.env.BASE_URL);
-    if (!url || transfer.current) return;
-    const controller = new AbortController();
-    transfer.current = controller;
-    setDownloading(true);
-    setDownloadError("");
-    setSaved(false);
-    setProgress(0);
-    try {
-      if (!build.sizeBytes || !build.sha256) {
-        throw new Error("Installer verification details are missing. Refresh the page.");
-      }
-      const blob = await fetchInstaller(url, { sizeBytes: build.sizeBytes, sha256: build.sha256 }, {
-        signal: controller.signal,
-        onProgress: (received, total) => setProgress(Math.floor(received / total * 100)),
-      });
-      const objectUrl = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = objectUrl;
-      anchor.download = `Sonora-${release?.version}-win-x64.exe`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      // Give the browser time to accept the save, including inside the preview iframe.
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
-      setSaved(true);
-    } catch (cause) {
-      setDownloadError(controller.signal.aborted ? "Download cancelled." :
-        cause instanceof Error ? cause.message : "Could not download the installer. Please retry.");
-    } finally { transfer.current = null; setDownloading(false); setProgress(null); }
-  };
 
   const isPublicRoute = typeof window !== "undefined" && window.location.pathname.replace(import.meta.env.BASE_URL.replace(/\/$/, ""), "").startsWith("/download");
 
@@ -126,9 +85,9 @@ export default function DesktopDownloads() {
                   {b.sha256 && <p className="mt-1 break-all font-mono text-[10px] text-white/35">SHA-256 {b.sha256}</p>}
                   <div className="mt-3">
                     {live ? (
-                      <button type="button" disabled={downloading} onClick={() => void download(b)} data-testid={`link-download-${key}`} className="inline-flex min-h-[40px] items-center gap-2 rounded-lg bg-[#257c3c] px-4 text-sm font-semibold text-white hover:bg-[#2c9147] disabled:opacity-50">
-                        <Download size={15} /> {downloading ? progress === 100 ? "Verifying installer…" : `Downloading ${progress ?? 0}%` : `Download ${b.status === "preview" ? "preview" : ""}`}
-                      </button>
+                      <a href={installerDownloadPath(b.url, import.meta.env.BASE_URL) ?? undefined} data-testid={`link-download-${key}`} className="inline-flex min-h-[40px] items-center gap-2 rounded-lg bg-[#257c3c] px-4 text-sm font-semibold text-white hover:bg-[#2c9147]">
+                        <Download size={15} /> Download {b.status === "preview" ? "preview" : ""}
+                      </a>
                     ) : (
                       <span data-testid={`status-pending-${key}`} className="inline-flex min-h-[40px] items-center rounded-lg border border-dashed border-white/15 px-4 text-sm text-white/45">
                         {b.status === "unavailable" ? "Unavailable" : "Download link pending"}
@@ -141,21 +100,11 @@ export default function DesktopDownloads() {
           </>
         )}
       </div>
-      {downloading && <div className="mt-4 text-sm text-white/65" role="status">
-        <progress className="w-full accent-[#257c3c]" value={progress ?? 0} max={100} aria-label="Installer download progress" />
-        <div className="mt-2 flex items-center justify-between gap-3">
-          <span>Keep this page open. The installer will be verified before saving.</span>
-          <button type="button" onClick={() => transfer.current?.abort()} className="rounded-lg border border-white/20 px-3 py-1">Cancel</button>
-        </div>
-      </div>}
-      {saved && <p role="status" className="mt-4 text-sm text-emerald-300">Installer downloaded and checksum verified. Check your browser’s downloads; if saving was blocked, allow downloads for this site and retry.</p>}
-      {downloadError && <p role="alert" className="mt-4 rounded-lg bg-red-500/10 p-3 text-sm text-red-200">{downloadError}</p>}
-
       <div className="mt-6 flex gap-3 rounded-xl border border-white/10 bg-[#101113] p-4 text-xs leading-5 text-white/50">
         <Info size={15} className="mt-0.5 shrink-0 text-white/40" />
         <ul className="space-y-1.5">
           <li>Preview builds have not been through full testing; only a tested release has been verified on its listed OS.</li>
-          <li>Installing may need administrator rights, and unsigned builds trigger OS security warnings. Check the SHA-256 when one is shown.</li>
+          <li>The download link redirects to the published GitHub release, so the installer is not streamed through this site. Compare the SHA-256 above with the file you save. Unsigned builds can trigger a Windows SmartScreen warning.</li>
             <li>Allow microphone or system-audio access when prompted. System audio can include other apps, not just the call. Native Mac system audio requires macOS 14.4 or newer.</li>
           <li>The Windows package contents have been inspected, but Windows launch and real-device audio have not been verified here. This is a preview, not a fully tested release.</li>
           <li>Audio is transcribed in short Gemini-processed chunks, not word by word. Desktop sign-in uses your regular browser and an explicit app connection.</li>

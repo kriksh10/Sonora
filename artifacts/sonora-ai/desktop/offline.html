@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Sonora is offline</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #101113; color: #e7e8eb;
+      font: 15px/1.5 "Segoe UI", sans-serif; }
+    main { width: min(420px, calc(100% - 32px)); padding: 24px; border: 1px solid #ffffff22; border-radius: 16px; background: #17181b; }
+    h1 { margin: 0 0 8px; font-size: 20px; }
+    p { margin: 0; color: #ffffffa8; }
+    .actions { display: flex; gap: 8px; margin-top: 18px; }
+    button { min-height: 36px; border-radius: 8px; border: 1px solid #ffffff22; background: #101113; color: inherit; padding: 0 14px; cursor: pointer; }
+    button.primary { background: #257c3c; border-color: #257c3c; font-weight: 650; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Sonora could not connect</h1>
+    <p>Check the internet connection and that the hosted Sonora service is available. Your session stays on this computer until you retry or quit.</p>
+    <div class="actions">
+      <button class="primary" id="retry" type="button">Retry</button>
+      <button id="quit" type="button">Quit Sonora</button>
+    </div>
+  </main>
+  <script>
+    const desktop = window.sonoraDesktop;
+    document.getElementById('retry').addEventListener('click', () => {
+      if (desktop && desktop.retryConnection) void desktop.retryConnection();
+      else location.reload();
+    });
+    document.getElementById('quit').addEventListener('click', () => {
+      if (desktop && desktop.quit) void desktop.quit();
+    });
+  </script>
+</body>
+</html>

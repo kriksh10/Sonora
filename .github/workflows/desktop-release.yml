@@ -1,0 +1,72 @@
+name: Publish Windows desktop
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: NSIS x64
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require the tag to match the app version
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(node -p "require('./artifacts/sonora-ai/package.json').version")"
+          if [ "$tag" != "$version" ]; then
+            echo "Tag v$tag does not match package version $version."
+            exit 1
+          fi
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.26.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Test native audio processing
+        run: cargo test --locked --manifest-path artifacts/sonora-ai/desktop/native-audio/Cargo.toml --target x86_64-pc-windows-msvc
+        env:
+          CARGO_TARGET_DIR: generated-artifacts/native-target
+      - name: Build native audio helper
+        run: pnpm --filter @workspace/sonora-ai run desktop:build-native x64
+      - run: pnpm --filter @workspace/sonora-ai run desktop:test
+      - name: Package, sign when Azure secrets exist, and publish
+        shell: bash
+        run: pnpm --filter @workspace/sonora-ai run desktop:package win x64
+        env:
+          SONORA_RELEASE_URL: https://ai-transcription-product.replit.app
+          SONORA_DESKTOP_PUBLISH: always
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          AZURE_TRUSTED_SIGNING_ACCOUNT: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT }}
+          AZURE_TRUSTED_SIGNING_PROFILE: ${{ secrets.AZURE_TRUSTED_SIGNING_PROFILE }}
+          AZURE_TRUSTED_SIGNING_PUBLISHER: ${{ secrets.AZURE_TRUSTED_SIGNING_PUBLISHER }}
+      - name: Publish installer checksum metadata
+        shell: bash
+        run: |
+          node artifacts/sonora-ai/desktop/write-release-metadata.cjs
+          gh release upload "$GITHUB_REF_NAME" generated-artifacts/installers/sonora-desktop-release.json --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          AZURE_TRUSTED_SIGNING_ACCOUNT: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT }}
+          AZURE_TRUSTED_SIGNING_PROFILE: ${{ secrets.AZURE_TRUSTED_SIGNING_PROFILE }}
+          AZURE_TRUSTED_SIGNING_PUBLISHER: ${{ secrets.AZURE_TRUSTED_SIGNING_PUBLISHER }}

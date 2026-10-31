@@ -12,7 +12,8 @@
 .desktop-drag button, .desktop-drag a, .desktop-drag input, .desktop-drag select { -webkit-app-region: no-drag; }
 .desktop-drag textarea, .desktop-drag label, .desktop-drag details, .desktop-no-drag { -webkit-app-region: no-drag; }
 .sonora-desktop, .sonora-desktop body, .sonora-desktop #root { background: transparent !important; }
-.sonora-desktop { --sonora-background-opacity: 0.4; }
+.sonora-desktop { --sonora-background-opacity: 0.4; --sonora-font-scale: 1; }
+.sonora-desktop .lsv-answer, .sonora-desktop .lsv-q, .sonora-desktop .lsv-scroll { font-size: calc(0.95rem * var(--sonora-font-scale, 1)); }
 .sonora-desktop .lsv-root {
   height: calc(100dvh - var(--sonora-titlebar-height, 44px));
   --lsv-solid: rgba(20, 23, 26, var(--sonora-background-opacity, 0.4));

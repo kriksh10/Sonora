@@ -15,7 +15,7 @@ const { prepare } = require('./prepare-release.cjs');
     require.resolve('electron-builder/out/cli/cli.js'),
     '--projectDir', path.resolve(__dirname, '../../../generated-artifacts/desktop-app'),
     '--config', path.join(__dirname, 'electron-builder.cjs'),
-    `--${platform}`, `--${arch}`, '--publish', 'never',
+    `--${platform}`, `--${arch}`, '--publish', process.env.SONORA_DESKTOP_PUBLISH === 'always' ? 'always' : 'never',
   ], { stdio: 'inherit', env: process.env });
   if (result.error) throw result.error;
   process.exitCode = result.status ?? 1;
