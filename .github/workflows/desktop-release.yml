@@ -41,6 +41,14 @@ jobs:
       - name: Build native audio helper
         run: pnpm --filter @workspace/sonora-ai run desktop:build-native x64
       - run: pnpm --filter @workspace/sonora-ai run desktop:test
+      - name: Create the GitHub release before parallel uploads
+        shell: bash
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --title "${GITHUB_REF_NAME#v}" --notes "Sonora ${GITHUB_REF_NAME#v} for Windows."
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Package, sign when Azure secrets exist, and publish
         shell: bash
         run: pnpm --filter @workspace/sonora-ai run desktop:package win x64
