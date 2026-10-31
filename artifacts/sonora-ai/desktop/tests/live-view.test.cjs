@@ -49,19 +49,18 @@ test('paused automatic answers expose setup actions without starting capture or 
   let source, consent;
   f.props.onAudioSourceChange = value => { source = value; };
   f.props.onRemoteConfirmedChange = value => { consent = value; };
+  f.props.onAutoAnswerChange = enabled => { f.props.session.autoAnswer = enabled; };
   let tree = f.render();
   assert.ok(f.find(tree, 'auto-answer-setup'));
+  assert.equal(f.find(tree, 'button-use-call-audio'), undefined);
+  f.find(tree, 'button-enable-auto-answer').props.onClick();
+  assert.equal(f.props.session.autoAnswer, true);
+  tree = f.render();
   f.find(tree, 'button-use-call-audio').props.onClick();
   assert.equal(source, 'system'); assert.equal(consent, undefined);
   f.props.audioSource = source; tree = f.render();
   f.find(tree, 'checkbox-confirm-interviewer').props.onChange({ target: { checked: true } });
   assert.equal(consent, true);
-  f.props.remoteConfirmed = true;
-  f.props.onAutoAnswerChange = enabled => { f.props.session.autoAnswer = enabled; };
-  tree = f.render(); f.find(tree, 'button-enable-auto-answer').props.onClick();
-  assert.equal(f.props.session.autoAnswer, true);
-  tree = f.render();
-  assert.equal(f.find(tree, 'auto-answer-setup'), undefined);
   assert.equal(f.props.listening, false);
 });
 

@@ -1,10 +1,10 @@
 const STOP = new Set("the a an and or to for of in on with your you our this that from into about what how why when where which who tell describe explain walk give would could should please just are was were have has can will not".split(" "));
 
-type Heard = { role?: string; speaker?: string; text?: string };
+type Heard = { role?: string; speaker?: string; source?: string; text?: string };
 
 /** Keeps the document passages that share words with the question. Short documents stay whole. */
-export function relevantDocuments(documents: string, question: string, limit = 6_000) {
-  const text = documents.trim();
+export function relevantDocuments(documents: string | null | undefined, question: string, limit = 6_000) {
+  const text = (documents ?? "").trim();
   if (!text) return "not provided";
   if (text.length <= limit) return text;
   const terms = new Set(
@@ -46,6 +46,7 @@ export function transcriptForAnswer(entries: Heard[]) {
         : entry.speaker === "candidate"
           ? "Candidate already said"
           : "Unknown speaker";
-    return `${who}: ${entry.text!.trim()}`;
+    const channel = entry.source === "microphone" || entry.source === "system" ? ` [${entry.source}]` : "";
+    return `${who}${channel}: ${entry.text!.trim()}`;
   }).join("\n");
 }

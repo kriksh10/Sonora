@@ -8,7 +8,10 @@ const { opacity, initialOpacity, safeBounds } = require('../window-preferences.c
 const { createNativeAudioManager } = require('../native-audio-host.cjs');
 
 function load(file, globals = {}, external = []) {
-  const context = vm.createContext({ console, setTimeout, clearTimeout, Date, ...globals });
+  const context = vm.createContext({
+    console, setTimeout, clearTimeout, setInterval, clearInterval, Date, performance,
+    atob, btoa, Uint8Array, Float32Array, DataView, ArrayBuffer, ...globals,
+  });
   const code = buildSync({
     entryPoints: [path.resolve(__dirname, file)], bundle: true, write: false,
     format: 'iife', globalName: 'subject', platform: 'node', external, jsx: 'automatic',
@@ -115,8 +118,9 @@ test('separate capture clients share the provider lane and retain source/time me
   try {
     await one.start(); await two.start();
     const capturedAt = '2026-10-19T12:00:00.000Z';
+    const audio = legacyWav();
     for (const source of ['microphone', 'system']) {
-      for (const listener of listeners) listener({ type: 'audio', audio: 'fixed-wav', captureId: ids.get(source), source, capturedAt });
+      for (const listener of listeners) listener({ type: 'audio', audio, captureId: ids.get(source), source, capturedAt });
     }
     await new Promise(setImmediate);
     assert.equal(requests.length, 1);
@@ -158,6 +162,25 @@ test('readiness capture exposes levels locally, sends no audio to Gemini, and un
   capture.stop(); await new Promise(setImmediate);
   assert.equal(stopped, true); assert.equal(listener, null);
 });
+
+function legacyWav() {
+  const samples = 160;
+  const bytes = Buffer.alloc(44 + samples * 2);
+  bytes.write('RIFF', 0);
+  bytes.writeUInt32LE(36 + samples * 2, 4);
+  bytes.write('WAVE', 8);
+  bytes.write('fmt ', 12);
+  bytes.writeUInt32LE(16, 16);
+  bytes.writeUInt16LE(1, 20);
+  bytes.writeUInt16LE(1, 22);
+  bytes.writeUInt32LE(16000, 24);
+  bytes.writeUInt32LE(32000, 28);
+  bytes.writeUInt16LE(2, 32);
+  bytes.writeUInt16LE(16, 34);
+  bytes.write('data', 36);
+  bytes.writeUInt32LE(samples * 2, 40);
+  return bytes.toString('base64');
+}
 
 function questions(answer = async () => {}) {
   let nextId = 0;

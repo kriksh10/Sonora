@@ -126,6 +126,14 @@ function fixture(options = {}) {
       sessionStillUsable: async (sessionId, userId, round) => rows.some(row => row.id === sessionId && row.userId === userId && row.status !== 'ended' && (row.roundNumber ?? 1) === round),
     };
     if (name === '../lib/logger') return { logger: { error() {} } };
+    if (name === './session-create-title') {
+      return loadTs(path.join(serverRoot, 'routes/session-create-title.ts'), dependency => {
+        if (dependency === '../lib/interview-session-title') {
+          return loadTs(path.join(serverRoot, 'lib/interview-session-title.ts'), require);
+        }
+        throw new Error(`Unexpected import: ${dependency}`);
+      });
+    }
     if (name === 'drizzle-orm') return {
       and: (...and) => ({ and }), or: (...or) => ({ or }), eq: (key, value) => ({ key, value }), desc: value => value,
       sql: (strings, ...values) => ({ sql: strings.join(''), values }),

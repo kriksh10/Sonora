@@ -7,7 +7,7 @@ const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 
 function load(file, globals = {}) {
-  const context = vm.createContext({ console, setTimeout, clearTimeout, Date, require, ...globals });
+  const context = vm.createContext({ console, setTimeout, clearTimeout, setInterval, clearInterval, Date, require, ...globals });
   vm.runInContext(buildSync({
     entryPoints: [path.resolve(__dirname, file)], bundle: true, write: false, format: 'iife',
     platform: 'node', globalName: 'subject', jsx: 'automatic', external: ['react', 'react/jsx-runtime'],

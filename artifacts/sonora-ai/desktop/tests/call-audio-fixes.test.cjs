@@ -8,7 +8,7 @@ const { createNativeAudioHost } = require('../native-audio-host.cjs');
 const { EventEmitter } = require('node:events');
 
 function load(relative) {
-  const context = vm.createContext({ console, setTimeout, clearTimeout, Date });
+  const context = vm.createContext({ console, setTimeout, clearTimeout, setInterval, clearInterval, Date });
   vm.runInContext(buildSync({
     entryPoints: [path.resolve(__dirname, relative)], bundle: true, write: false,
     platform: 'node', format: 'iife', globalName: 'subject',
