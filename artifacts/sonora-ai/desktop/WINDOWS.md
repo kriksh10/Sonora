@@ -14,7 +14,7 @@ If Meeting output selection is unavailable, the installed shell is older: it cap
 Windows default output only. Rebuild/reinstall to obtain device selection; republishing
 the website alone cannot add this native capability.
 
-**No GitHub login, repository, Actions, or upload is required.** This is a local build guide, not a downloadable installer or a verified release.
+This page is a local build guide. A local `BUILD-WINDOWS.cmd` run does not sign the installer or upload it. The published download is the GitHub Release described in [README.md](README.md).
 
 ## What you need
 

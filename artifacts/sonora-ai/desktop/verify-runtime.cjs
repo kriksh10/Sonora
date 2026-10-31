@@ -7,8 +7,8 @@ function verifyRuntimeFiles(entries, readFile) {
   for (const name of [...runtimeFiles, 'runtime-config.json', 'package.json']) {
     if (!files.has(name)) throw new Error(`Desktop archive is incomplete: missing ${name}. No installer may be released.`);
   }
-  for (const name of files) {
-    if (!name.endsWith('.cjs')) continue;
+  // Audit the shell modules only. The updater bundle is generated and is not a hand-written import graph.
+  for (const name of runtimeFiles) {
     const source = readFile(name).toString('utf8');
     for (const match of source.matchAll(/\brequire\s*\(\s*(['"])(\.[^'"]+)\1\s*\)/g)) {
       const dependency = path.posix.normalize(path.posix.join(path.posix.dirname(name), match[2]));

@@ -15,4 +15,22 @@ function isTrustedFrame(event, contents, target) {
   return Boolean(contents && event.sender === contents && event.senderFrame === contents.mainFrame &&
     isAllowedNavigation(event.senderFrame.url, target));
 }
-module.exports = { validateServiceUrl, isAllowedNavigation, isTrustedFrame };
+function isBundledOfflineNavigation(url, offlineFileUrl) {
+  try {
+    const parsed = new URL(url);
+    const expected = new URL(offlineFileUrl);
+    return parsed.protocol === 'file:' && expected.protocol === 'file:' &&
+      parsed.pathname === expected.pathname && !parsed.search && !parsed.hash &&
+      !parsed.username && !parsed.password;
+  } catch { return false; }
+}
+const OFFLINE_CHANNELS = new Set(['desktop:retry-connection', 'overlay:quit']);
+function desktopRequestAllowed(event, contents, target, channel, offlineFileUrl) {
+  if (!contents || event.sender !== contents || event.senderFrame !== contents.mainFrame) return false;
+  const url = event.senderFrame.url;
+  if (offlineFileUrl && isBundledOfflineNavigation(url, offlineFileUrl)) return OFFLINE_CHANNELS.has(channel);
+  return isAllowedNavigation(url, target);
+}
+module.exports = {
+  validateServiceUrl, isAllowedNavigation, isTrustedFrame, isBundledOfflineNavigation, desktopRequestAllowed, OFFLINE_CHANNELS,
+};

@@ -85,7 +85,7 @@ test('invalid values never reach native code; hung IPC recovers with an honest e
 test('dragging is confined to handle and range has keyboard semantics and compatibility guidance', () => {
   const ui = fs.readFileSync(path.resolve(__dirname, '../../src/components/desktop-visibility-controls.tsx'), 'utf8');
   const css = fs.readFileSync(path.resolve(__dirname, '../../src/index.css'), 'utf8');
-  assert.match(ui, /className="sonora-window-bar"/);
+  assert.match(ui, /className="sonora-window-bar sonora-overlay-controls"/);
   assert.match(ui, /sonora-window-drag-handle desktop-drag/);
   assert.match(ui, /type="range" min=\{minimumOpacity\} max="100" step="5"/);
   assert.match(ui, /onChange=\{event => opacityControl.current\?\.set/);

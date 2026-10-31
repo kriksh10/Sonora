@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { EyeOff, GripHorizontal, Pin, Settings2, ShieldCheck, Square } from "lucide-react";
 import DesktopMaintenance from "@/components/desktop-maintenance";
+import DesktopHotkeysSheet from "@/components/desktop-hotkeys-sheet";
 import { createBackgroundOpacity } from "@/lib/background-opacity";
 
 type DesktopState = Awaited<ReturnType<NonNullable<Window["sonoraDesktop"]>["getState"]>>;
@@ -13,6 +14,7 @@ export default function DesktopVisibilityControls() {
   const [pending, setPending] = useState(false);
   const [backgroundOpacity, setBackgroundOpacity] = useState(0.4);
   const [opacityError, setOpacityError] = useState("");
+  const [shortcutError, setShortcutError] = useState("");
   const opacityControl = useRef<ReturnType<typeof createBackgroundOpacity> | null>(null);
 
   useEffect(() => {
@@ -37,17 +39,40 @@ export default function DesktopVisibilityControls() {
     let received = false;
     const off = bridge.onStateChange(next => {
       received = true;
-      if (mounted) { setState(next); control.sync(next.backgroundOpacity ?? 0.4); }
+      if (mounted) {
+        setState(next);
+        control.sync(next.backgroundOpacity ?? 0.4);
+        document.documentElement.style.setProperty("--sonora-font-scale", String(next.fontScale ?? 1));
+      }
     });
     void bridge.getState().then(next => {
-      if (mounted && !received) { setState(next); control.sync(next.backgroundOpacity ?? 0.4); }
+      if (mounted && !received) {
+        setState(next);
+        control.sync(next.backgroundOpacity ?? 0.4);
+        document.documentElement.style.setProperty("--sonora-font-scale", String(next.fontScale ?? 1));
+      }
     }).catch(() => { if (mounted) setError("Desktop controls unavailable. Use the Sonora tray menu."); });
     return () => {
       mounted = false; off(); control.dispose(); opacityControl.current = null;
       document.documentElement.classList.remove("sonora-desktop");
       document.documentElement.style.removeProperty("--sonora-background-opacity");
       document.documentElement.style.removeProperty("--sonora-titlebar-height");
+      document.documentElement.style.removeProperty("--sonora-font-scale");
     };
+  }, [bridge]);
+
+  useEffect(() => {
+    if (!bridge?.setControlsHover) return;
+    let hover = false;
+    const onMove = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const next = Boolean(target?.closest(".sonora-overlay-controls, button, a, input, textarea, select, summary, label"));
+      if (next === hover) return;
+      hover = next;
+      void bridge.setControlsHover?.(next);
+    };
+    window.addEventListener("mousemove", onMove);
+    return () => window.removeEventListener("mousemove", onMove);
   }, [bridge]);
 
   useLayoutEffect(() => {
@@ -71,7 +96,7 @@ export default function DesktopVisibilityControls() {
   };
 
   return (
-    <aside ref={bar} aria-label="Desktop window controls" className="sonora-window-bar">
+    <aside ref={bar} aria-label="Desktop window controls" className="sonora-window-bar sonora-overlay-controls">
       <span className="sonora-window-drag-handle desktop-drag inline-flex items-center gap-1 text-xs font-semibold text-white/80" title="Drag here to move Sonora">
         <GripHorizontal size={17} /> Sonora
       </span>
@@ -110,6 +135,42 @@ export default function DesktopVisibilityControls() {
             <p className="mt-2">Show again: tray → Show Sonora{state?.shortcutRegistered ? ` or ${bridge.shortcut}.` : ". Shortcut unavailable."}</p>
             <p className="mt-2">{state?.contentProtection ? "Capture exclusion requested" : "Capture exclusion off"} — not guaranteed. macOS ScreenCaptureKit and some sharing apps may still capture Sonora. Transparency does not mean hidden from sharing.</p>
             <p className="mt-2">Hiding does not stop audio. Use Stop audio here or in the tray.</p>
+            <label className="mt-3 block text-xs font-semibold">
+              Text size · {Math.round((state?.fontScale ?? 1) * 100)}%
+              <input aria-label="Overlay text size" type="range" min="85" max="160" step="5"
+                value={Math.round((state?.fontScale ?? 1) * 100)} disabled={!state || !bridge.setFontScale}
+                onChange={event => void run(() => bridge.setFontScale!(Number(event.target.value) / 100))}
+                className="mt-2 w-full accent-emerald-400" />
+            </label>
+            <label className="mt-3 flex items-center gap-2 text-xs font-semibold">
+              <input type="checkbox" aria-label="Click through the overlay" checked={!!state?.clickThrough} disabled={!state || !bridge.setClickThrough}
+                onChange={event => void run(() => bridge.setClickThrough!(event.target.checked))} />
+              Click through the overlay
+            </label>
+            <p className="mt-1">Clicks pass through the answer text. Hovering the controls, buttons, or text fields turns click-through off so you can use them.</p>
+            <label className="mt-3 flex items-center gap-2 text-xs font-semibold">
+              <input type="checkbox" aria-label="Show transcript panel" checked={!!state?.transcriptOpen} disabled={!state || !bridge.setTranscriptOpen}
+                onChange={event => void run(() => bridge.setTranscriptOpen!(event.target.checked))} />
+              Show transcript panel
+            </label>
+            <label className="mt-3 flex items-center gap-2 text-xs font-semibold">
+              <input type="checkbox" aria-label="Start Sonora when I sign in" checked={!!state?.openAtLogin} disabled={!state || !bridge.setOpenAtLogin}
+                onChange={event => void run(() => bridge.setOpenAtLogin!(event.target.checked))} />
+              Start Sonora when I sign in
+            </label>
+            <p className="mt-1">Off until you turn it on. It applies to the installed app.</p>
+            {bridge.setHotkeys && bridge.resetHotkeys && <DesktopHotkeysSheet
+              hotkeys={state?.hotkeys ?? []} error={shortcutError}
+              onChange={async (id, accelerator) => {
+                setShortcutError("");
+                try { setState(await bridge.setHotkeys!({ [id]: accelerator })); }
+                catch (cause) { setShortcutError(cause instanceof Error ? cause.message : "That shortcut was not saved."); }
+              }}
+              onReset={async () => {
+                setShortcutError("");
+                try { setState(await bridge.resetHotkeys!()); }
+                catch { setShortcutError("Could not reset shortcuts."); }
+              }} />}
             {state?.preferencesError && <p className="mt-2 text-amber-200">{state.preferencesError}</p>}
              <DesktopMaintenance />
           </div>

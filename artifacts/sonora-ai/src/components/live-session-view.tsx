@@ -156,7 +156,24 @@ export default function LiveSessionView(p: LiveSessionViewProps) {
   const [txOpen, setTxOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [recentOpen, setRecentOpen] = useState(false);
-  useEffect(() => { setTxOpen(false); setMenuOpen(false); setRecentOpen(false); }, [p.session.id]);
+  useEffect(() => {
+    setMenuOpen(false);
+    setRecentOpen(false);
+    const desktop = window.sonoraDesktop;
+    if (!desktop?.getState) { setTxOpen(false); return; }
+    let mounted = true;
+    void desktop.getState().then(next => { if (mounted) setTxOpen(Boolean(next.transcriptOpen)); });
+    return () => { mounted = false; };
+  }, [p.session.id]);
+  useEffect(() => {
+    const desktop = window.sonoraDesktop;
+    if (!desktop?.onStateChange) return;
+    return desktop.onStateChange(next => { if (typeof next.transcriptOpen === "boolean") setTxOpen(next.transcriptOpen); });
+  }, []);
+  const setTranscript = (open: boolean) => {
+    setTxOpen(open);
+    void window.sonoraDesktop?.setTranscriptOpen?.(open);
+  };
 
   const state = p.answerState ?? (p.busy ? "generating" : shownAnswer ? "complete" : "idle");
   const working = p.busy || state === "generating" || state === "streaming";
@@ -223,7 +240,7 @@ export default function LiveSessionView(p: LiveSessionViewProps) {
 
   return (
     <section data-testid="live-session-view" aria-label={`Live session: ${p.session.title}`} className={`lsv-root ${live ? "lsv-live" : ""}`}>
-      <div className="lsv-bar desktop-drag" role="toolbar" aria-label="Live session controls">
+      <div className="lsv-bar desktop-drag sonora-overlay-controls" role="toolbar" aria-label="Live session controls">
         <span className="lsv-grip" aria-hidden="true"><i /><i /></span>
         <div className="lsv-title">
           <strong>{p.session.title}</strong>
@@ -242,7 +259,7 @@ export default function LiveSessionView(p: LiveSessionViewProps) {
       </div>
 
       {menuOpen && (
-        <div className="lsv-menu" id="lsv-menu" role="region" aria-label="Session setup and tools" data-testid="session-menu">
+        <div className="lsv-menu sonora-overlay-controls" id="lsv-menu" role="region" aria-label="Session setup and tools" data-testid="session-menu">
           <div className="lsv-menu-grid">
             <fieldset className="lsv-group" disabled={ended}>
               <legend>Input</legend>
@@ -407,7 +424,7 @@ export default function LiveSessionView(p: LiveSessionViewProps) {
               <div className="lsv-empty"><strong>No answer yet.</strong>Ask below or use a transcript line as the question.</div>
             ))}
           </FollowLatestPane>
-          <div className="lsv-actions">
+          <div className="lsv-actions sonora-overlay-controls">
             <div className="lsv-seg" role="radiogroup" aria-label="Answer length">
               {([["short", "Short"], ["balanced", "Balanced"], ["long", "Detailed"]] as const).map(([v, t]) => (
                 <button key={v} type="button" role="radio" aria-checked={length === v} data-testid={`button-length-${v}`}
@@ -420,7 +437,7 @@ export default function LiveSessionView(p: LiveSessionViewProps) {
             {working && p.onCancelAnswer && <button type="button" className="lsv-btn lsv-stop" data-testid="button-cancel-answer" onClick={p.onCancelAnswer}>Cancel</button>}
             {state === "interrupted" && p.onRetry && !ended && <button type="button" className="lsv-btn lsv-primary" data-testid="button-retry" onClick={p.onRetry}>Retry</button>}
           </div>
-          <form className="lsv-ask" onSubmit={(e) => { e.preventDefault(); if (canAsk) p.onAsk(); }}>
+          <form className="lsv-ask sonora-overlay-controls" onSubmit={(e) => { e.preventDefault(); if (canAsk) p.onAsk(); }}>
             <textarea aria-label="Question" data-testid="input-question" placeholder="Type a question. Enter to ask, Shift+Enter for new line" value={p.question} disabled={ended}
               onChange={(e) => p.onQuestionChange(e.target.value)}
               onKeyDown={(e) => {
@@ -429,7 +446,7 @@ export default function LiveSessionView(p: LiveSessionViewProps) {
             <button type="submit" className="lsv-btn lsv-primary" data-testid="button-ask" disabled={!canAsk} title="Ctrl/Cmd+Enter">
               <Send size={13} aria-hidden="true" /> {working ? "Working" : "Ask"}
             </button>
-            <button type="button" className="lsv-btn" data-testid="button-toggle-transcript" aria-expanded={txOpen} onClick={() => setTxOpen((v) => !v)}>
+            <button type="button" className="lsv-btn" data-testid="button-toggle-transcript" aria-expanded={txOpen} onClick={() => setTranscript(!txOpen)}>
               {txOpen ? <ChevronUp size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />} Transcript
             </button>
           </form>

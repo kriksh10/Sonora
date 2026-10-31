@@ -4,6 +4,17 @@ const { validateServiceUrl } = require('./security.cjs');
 const { buildAssets } = require('./build-assets.cjs');
 const { runtimeFiles } = require('./runtime-files.cjs');
 const { verifyStagedRuntime } = require('./verify-runtime.cjs');
+
+async function bundleUpdater(outfile) {
+  const esbuild = require('esbuild');
+  await esbuild.build({
+    entryPoints: [path.join(__dirname, 'updater-runtime-entry.cjs')],
+    bundle: true, platform: 'node', format: 'cjs', outfile, legalComments: 'none',
+    external: ['electron', 'original-fs'],
+  });
+  const source = fs.readFileSync(outfile, 'utf8');
+  if (/\brequire\s*\(\s*['"]\.\//.test(source)) throw new Error('Updater bundle still has unpackaged relative imports.');
+}
 const root = path.resolve(__dirname, '../../..');
 const stage = path.join(root, 'generated-artifacts/desktop-app');
 
@@ -38,6 +49,8 @@ async function prepare({ arch = process.arch } = {}) {
   fs.copyFileSync(nativeBinary, path.join(stage, 'native', binaryName));
   fs.chmodSync(path.join(stage, 'native', binaryName), 0o755);
   fs.copyFileSync(path.join(__dirname, 'native-audio/THIRD_PARTY_NOTICES.txt'), path.join(stage, 'THIRD_PARTY_NOTICES.txt'));
+  fs.copyFileSync(path.join(__dirname, 'offline.html'), path.join(stage, 'offline.html'));
+  await bundleUpdater(path.join(stage, 'updater-runtime.cjs'));
   fs.writeFileSync(path.join(stage, 'runtime-config.json'), JSON.stringify({ serviceUrl }, null, 2));
   fs.writeFileSync(path.join(stage, 'package.json'), JSON.stringify({
     name: 'sonora-desktop', productName: 'Sonora AI', version: packageJson.version,
@@ -49,4 +62,4 @@ async function prepare({ arch = process.arch } = {}) {
   console.log('Desktop release staging prepared with a reachable hosted Sonora service.');
 }
 if (require.main === module) prepare().catch(error => { console.error(error.message); process.exitCode = 1; });
-module.exports = { prepare, checkHostedService };
+module.exports = { prepare, checkHostedService, bundleUpdater };

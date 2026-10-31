@@ -62,11 +62,13 @@ Open the native title-bar Window settings → About, diagnostics & updates, incl
 
 Diagnostic export is manual, previewable and allowlisted; no audio, transcripts, questions, answers, credentials, account information, local paths or device identifiers are exported or uploaded. Native report contents are fixed by the main process.
 
-Update checks read the trusted hosted `desktop-release.json`, require a matching platform/architecture and valid version, SHA-256 and signing description. Available installer URLs must be same-origin HTTPS, without credentials/query/fragment, ending in `.exe` or `.dmg`; redirects are rejected. HEAD responses must serve a binary installer content type (for example `application/octet-stream`); HTML/JSON fallback pages are rejected. The app checks availability before offering a download and asks for native confirmation before opening the browser. Compare the downloaded file’s SHA-256 with the displayed hash before installing: downloaded bytes are not automatically verified. Installation remains manual, with no forced restart. The publisher must upload a real installer to a durable same-origin download route before marking a manifest build available. Missing/unavailable manifests never imply the installed app is current.
+Installed Windows builds check GitHub Releases with electron-updater on launch and about every four hours. A newer build downloads in the background. Sonora asks whether to restart, and it also installs the downloaded update on quit. Differential NSIS updates use the `.blockmap` published next to the installer. Development runs do not check. The hosted `desktop-release.json` file is still the packager's service-identity check; it is not the update feed.
 
 ### Window privacy
 
-- `Ctrl/Cmd + Shift + Space`: show/hide. A registration failure is shown in the UI.
+- Global shortcuts, including `Ctrl+Shift+Space` to toggle the window. The full list is in [Windows releases](#windows-releases-github-and-azure-trusted-signing). A registration failure is shown in the shortcut cheat sheet.
+- Optional click-through. It is off until enabled. Hovering the controls turns it off so buttons stay usable. The window skips the taskbar, has no shadow, and stays at the screen-saver always-on-top level, including after blur.
+- Text size and whether the transcript panel is open are saved. Start at login is off until enabled.
 - Tray: show, hide, Stop capture, pin, and Quit.
 - Content protection uses Electron's documented `setContentProtection` on Windows/macOS. The UI reports that the flag is set, **not that the meeting app has verified exclusion**.
 - **Modern macOS ScreenCaptureKit capture can ignore this setting entirely.** Windows recording/sharing applications can also differ. There is no universal invisibility or undetectability guarantee.
@@ -101,13 +103,55 @@ The macOS capture adapter derives from MIT-licensed Meetily code. `native-audio/
 
 For a signed release, use electron-builder's standard platform signing/notarization environment on a protected native runner. Windows requires an appropriate code-signing identity; macOS requires an Apple Developer signing identity and notarization credentials. Supply secrets only through the runner's secrets mechanism, never files, frontend code, or chat. The build configuration includes hardened runtime, microphone entitlements, and permission descriptions; it does not acquire certificates or approve publishing. Unsigned artifacts must remain labeled unsigned previews, not verified releases.
 
+## Windows releases, GitHub, and Azure Trusted Signing
+
+The Windows installer is an NSIS x64 build with maximum compression, asar, and differential updates. It is published to GitHub Releases on `kriksh10/Sonora`. The hosted site does not stream the installer. `GET /api/desktop/installers/windows-x64` redirects to the latest release asset and does not require sign-in. `GET /api/desktop/releases` reports that release's version, size, and SHA-256. Releases must be public so the website and electron-updater can read them without a token embedded in the app.
+
+`.github/workflows/desktop-release.yml` runs on tags named `v*` (for example `v0.3.6`) on `windows-latest`. The tag must match `artifacts/sonora-ai/package.json` `version`. The workflow builds the native helper, runs the desktop tests, packages NSIS x64, and publishes with `GH_TOKEN`. If the Azure secrets below are all set, electron-builder signs with Azure Trusted Signing. If any secret is missing, `CSC_IDENTITY_AUTO_DISCOVERY` stays false and the same workflow publishes an unsigned installer. Unsigned builds can show SmartScreen "Unknown publisher".
+
+### Shortcuts
+
+| Action | Default |
+| --- | --- |
+| Answer | Ctrl+Shift+Enter |
+| Alternate answer | Ctrl+Shift+A |
+| Scroll up / down | Ctrl+Alt+Up / Ctrl+Alt+Down |
+| Previous / next answer | Ctrl+Alt+Left / Ctrl+Alt+Right |
+| Move overlay | Ctrl+Shift+arrows |
+| Hide / show | Ctrl+Shift+H |
+| Clear answers | Ctrl+Shift+K |
+| Clear transcript | Ctrl+Shift+L |
+| Screenshot | Ctrl+Shift+S |
+| Toggle window | Ctrl+Shift+Space |
+
+On macOS the Ctrl defaults use Command as well (`CommandOrControl`). Shortcuts can be changed in Window settings. Each one needs a modifier. The screenshot shortcut still asks before a picture is sent.
+
+### What Sai sets up before the first signed tag
+
+1. In the Azure portal, create a Trusted Signing account in a supported region (East US, West US, West Central US, North Europe, or West Europe). Note the account name and the regional endpoint, for example `https://eus.codesigning.azure.net/`.
+2. Complete identity validation, then create a Public Trust certificate profile. Copy the profile name and the certificate subject exactly, for example `CN=Sonora`.
+3. Create an app registration. Copy the Directory (tenant) ID and the Application (client) ID. Create a client secret and copy the value once.
+4. On the certificate profile, assign that app the **Trusted Signing Certificate Profile Signer** role.
+5. In GitHub, open `kriksh10/Sonora` → Settings → Secrets and variables → Actions. Add these repository secrets. Do not commit the values:
+
+   - `AZURE_TENANT_ID` — Directory (tenant) ID
+   - `AZURE_CLIENT_ID` — Application (client) ID
+   - `AZURE_CLIENT_SECRET` — client secret value
+   - `AZURE_TRUSTED_SIGNING_ENDPOINT` — regional endpoint, such as `https://eus.codesigning.azure.net/`
+   - `AZURE_TRUSTED_SIGNING_ACCOUNT` — Trusted Signing account name
+   - `AZURE_TRUSTED_SIGNING_PROFILE` — certificate profile name
+   - `AZURE_TRUSTED_SIGNING_PUBLISHER` — certificate subject, such as `CN=Sonora`
+
+6. Set `artifacts/sonora-ai/package.json` `version` to the release you want, commit it, and push a matching tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+7. Wait for **Publish Windows desktop**. The release should contain `Sonora-X.Y.Z-win-x64.exe`, `Sonora-X.Y.Z-win-x64.exe.blockmap`, `latest.yml`, and `sonora-desktop-release.json`.
+8. Republish the Replit service so the download page and `/api/desktop/releases` see the new route. The first install is from the download page. Later installs update inside the app.
+9. You can publish an unsigned build before the Azure account exists. Add the secrets and push a new version tag when signing should start. Re-running an old tag does not change the version already published for that tag.
+
+Optional: set `SONORA_GITHUB_TOKEN` on the Replit service if the public GitHub API rate limit becomes a problem. The download redirect does not need it for a public repository.
+
 ## Download delivery
 
-After building and validating native installers:
-
-1. With approval, store the `.exe` / `.dmg` and checksum files in durable release storage (App Storage or an approved release host), not Git.
-2. Update `public/desktop-release.json` only with actual, reachable HTTPS download URLs and SHA-256 values. Use `preview` for an untested build; `verified` requires passing the native checklist. Include exact signing/notarization status.
-3. Republish the frontend with approval so `/download` and the workspace's Desktop downloads link expose the real builds.
+Windows installers are published by the tag workflow to GitHub Releases. The website redirects `/api/desktop/installers/windows-x64` to that asset. Republish the service after the route change so the download page can see it. `public/desktop-release.json` stays the packager's service-identity file; the live version, size, and SHA-256 come from the GitHub release.
 
 ## Development
 

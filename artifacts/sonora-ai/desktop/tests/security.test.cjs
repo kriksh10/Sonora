@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { validateServiceUrl, isAllowedNavigation, isTrustedFrame } = require('../security.cjs');
+const { validateServiceUrl, isAllowedNavigation, isTrustedFrame, isBundledOfflineNavigation, desktopRequestAllowed } = require('../security.cjs');
 
 test('release URL rejects preview, insecure URLs, credentials, query and fragment', () => {
   for (const value of [null, '', 'file:///tmp/app', 'http://example.com', 'https://a.replit.dev',
@@ -25,4 +25,20 @@ test('native IPC only accepts the hosted main frame in the correct webContents',
   assert.equal(isTrustedFrame({ sender: contents, senderFrame: { url: frame.url } }, contents, frame.url), false);
   frame.url = 'https://external.example/';
   assert.equal(isTrustedFrame({ sender: contents, senderFrame: frame }, contents, 'https://sonora.example'), false);
+});
+
+test('the bundled offline page can only retry or quit', () => {
+  const offline = 'file:///app/offline.html';
+  const frame = { url: offline };
+  const contents = { mainFrame: frame };
+  const event = { sender: contents, senderFrame: frame };
+  assert.equal(isBundledOfflineNavigation(offline, offline), true);
+  assert.equal(isBundledOfflineNavigation('file:///tmp/other.html', offline), false);
+  assert.equal(isBundledOfflineNavigation(`${offline}?next=https://evil.test`, offline), false);
+  assert.equal(desktopRequestAllowed(event, contents, 'https://sonora.example', 'desktop:retry-connection', offline), true);
+  assert.equal(desktopRequestAllowed(event, contents, 'https://sonora.example', 'overlay:quit', offline), true);
+  assert.equal(desktopRequestAllowed(event, contents, 'https://sonora.example', 'audio:start', offline), false);
+  assert.equal(desktopRequestAllowed(event, contents, 'https://sonora.example', 'desktop:capture-screen', offline), false);
+  frame.url = 'https://sonora.example/app';
+  assert.equal(desktopRequestAllowed(event, contents, 'https://sonora.example', 'audio:start', offline), true);
 });

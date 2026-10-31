@@ -37,6 +37,7 @@ import { firstTextTiming } from "@/lib/live-timing";
 import SessionStudio, { CreditsCounter, creditLabel } from "@/components/session-studio";
 import { apiRequest } from "@/lib/answer-preferences";
 import { loadCreditBalance, type CreditBalance } from "@/lib/session-tools";
+import { interpretDesktopCommand } from "@/lib/desktop-commands";
 
 type SpeechResult = {
   isFinal: boolean;
@@ -215,9 +216,14 @@ export default function InterviewWorkspace() {
   selectedSessionRef.current = selected;
   const settingsRevisionRef = useRef(0);
   const currentRound = selected?.roundNumber ?? 1;
-  const currentEntries = (selected?.transcript ?? []).filter((entry) => roundOf(entry) === currentRound);
+  const [transcriptClearedAt, setTranscriptClearedAt] = useState<string | null>(null);
+  useEffect(() => { setTranscriptClearedAt(null); }, [selectedId, currentRound]);
+  const visibleTranscript = useCallback((entries: TranscriptEntry[]) => (
+    transcriptClearedAt ? entries.filter(entry => (entry.createdAt ?? "") > transcriptClearedAt) : entries
+  ), [transcriptClearedAt]);
+  const currentEntries = visibleTranscript((selected?.transcript ?? []).filter((entry) => roundOf(entry) === currentRound));
   const liveSession = selected ? { ...selected, transcript: currentEntries } : null;
-  const shownEntries = (selected?.transcript ?? []).filter((entry) => roundView === "all" || roundOf(entry) === (roundView === "current" ? currentRound : roundView));
+  const shownEntries = visibleTranscript((selected?.transcript ?? []).filter((entry) => roundView === "all" || roundOf(entry) === (roundView === "current" ? currentRound : roundView)));
   const roundList = [...(selected?.rounds ?? []).filter((round) => round.number !== currentRound), { number: currentRound, startedAt: selected?.startedAt ?? null, endedAt: selected?.endedAt ?? null }]
     .sort((a, b) => a.number - b.number);
   const visibleAnswer = answerCleared ? "" : answer ||
@@ -932,6 +938,50 @@ export default function InterviewWorkspace() {
   const modifyAnswer = (action: "shorten" | "explain" | "again") => {
     if (latestQuestion) void askGemini(latestQuestion, "typed", false, action, answer);
   };
+  const commandRef = useRef({
+    question: "", latestQuestion: "", recentPhoneText: "", answer: "", assistantAnswers: [] as string[], inputMode: "computer" as "phone" | "computer",
+  });
+  commandRef.current = {
+    question: answerInput,
+    latestQuestion,
+    recentPhoneText,
+    answer: visibleAnswer,
+    assistantAnswers: currentEntries.filter(entry => entry.role === "assistant").map(entry => entry.text),
+    inputMode,
+  };
+  const answerRecentRef = useRef(answerRecentPhone);
+  answerRecentRef.current = answerRecentPhone;
+  const modifyRef = useRef(modifyAnswer);
+  modifyRef.current = modifyAnswer;
+  useEffect(() => {
+    const desktop = window.sonoraDesktop;
+    if (!desktop?.onCommand) return;
+    return desktop.onCommand(action => {
+      const result = interpretDesktopCommand(action, commandRef.current);
+      if (result.type === "ask") void askRef.current(result.question, result.source, result.source === "typed");
+      else if (result.type === "ask-recent") answerRecentRef.current();
+      else if (result.type === "again") modifyRef.current("again");
+      else if (result.type === "show-answer") { setAnswerCleared(false); setAnswer(result.answer); setAnswerState("complete"); }
+      else if (result.type === "scroll") {
+        const pane = document.querySelector(".lsv-answer-pane .lsv-scroll");
+        if (pane instanceof HTMLElement) pane.scrollBy({ top: result.top, behavior: "smooth" });
+      }
+      else if (result.type === "clear-answers") {
+        setAnswer(""); setAnswerCleared(true); setAnswerInput(""); setLatestQuestion(""); setAnswerState("idle"); lastRequestRef.current = null;
+        setNotice("Visible answers cleared. Your saved transcript is unchanged.");
+      } else if (result.type === "clear-transcript") {
+        setTranscriptClearedAt(new Date().toISOString());
+        setInterimTranscript("");
+        setNotice("Visible transcript cleared. The saved transcript is unchanged.");
+      } else if (result.type === "screenshot") void (async () => {
+        const image = await window.sonoraDesktop?.captureScreen?.();
+        if (!image) return;
+        screenshotRef.current = image;
+        const question = commandRef.current.question.trim() || commandRef.current.latestQuestion.trim() || "Explain what is visible in this screenshot.";
+        await askRef.current(question);
+      })();
+    });
+  }, []);
 
   const visibleSessions = sessions.filter((session) => {
     const matchesFilter = filter === "all" || session.sessionType === filter;

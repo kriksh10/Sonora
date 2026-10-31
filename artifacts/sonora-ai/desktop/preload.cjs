@@ -9,14 +9,23 @@ ipcRenderer.on('overlay:state-changed', (_event, state) => {
 contextBridge.exposeInMainWorld('sonoraDesktop', {
   isDesktop: true,
   platform: process.platform,
-  shortcut: 'Ctrl/Cmd + Shift + Space',
+  shortcut: 'Ctrl+Shift+Space',
   show: () => ipcRenderer.invoke('overlay:show'),
   hide: () => ipcRenderer.invoke('overlay:hide'),
   toggle: () => ipcRenderer.invoke('overlay:toggle'),
   quit: () => ipcRenderer.invoke('overlay:quit'),
   getState: () => ipcRenderer.invoke('overlay:get-state'),
+  retryConnection: () => ipcRenderer.invoke('desktop:retry-connection'),
   checkForUpdates: () => ipcRenderer.invoke('desktop:check-updates'),
-  openUpdate: () => ipcRenderer.invoke('desktop:open-update'),
+  updateStatus: () => ipcRenderer.invoke('desktop:update-status'),
+  installUpdate: () => ipcRenderer.invoke('desktop:install-update'),
+  setFontScale: value => ipcRenderer.invoke('overlay:set-font-scale', value),
+  setTranscriptOpen: value => ipcRenderer.invoke('overlay:set-transcript-open', Boolean(value)),
+  setClickThrough: value => ipcRenderer.invoke('overlay:set-click-through', Boolean(value)),
+  setControlsHover: value => ipcRenderer.invoke('overlay:set-controls-hover', Boolean(value)),
+  setOpenAtLogin: value => ipcRenderer.invoke('overlay:set-open-at-login', Boolean(value)),
+  setHotkeys: value => ipcRenderer.invoke('overlay:set-hotkeys', value),
+  resetHotkeys: () => ipcRenderer.invoke('overlay:reset-hotkeys'),
   getDiagnostics: () => ipcRenderer.invoke('desktop:diagnostics'),
   exportDiagnostics: () => ipcRenderer.invoke('desktop:export-diagnostics'),
   setBackgroundOpacity: value => ipcRenderer.invoke('overlay:set-background-opacity', value),
@@ -44,5 +53,15 @@ contextBridge.exposeInMainWorld('sonoraDesktop', {
   onStateChange: (listener) => {
     stateListeners.add(listener);
     return () => stateListeners.delete(listener);
+  },
+  onCommand: listener => {
+    const handler = (_event, message) => listener(message?.action);
+    ipcRenderer.on('overlay:command', handler);
+    return () => ipcRenderer.removeListener('overlay:command', handler);
+  },
+  onUpdate: listener => {
+    const handler = (_event, status) => listener(status);
+    ipcRenderer.on('desktop:update', handler);
+    return () => ipcRenderer.removeListener('desktop:update', handler);
   },
 });

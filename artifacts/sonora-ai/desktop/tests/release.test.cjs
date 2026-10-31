@@ -16,6 +16,13 @@ test('release manifest never advertises absent installers', () => {
 test('packaged default is intentionally unconfigured, never points at localhost', () => {
   assert.equal(require('../runtime-config.json').serviceUrl, null);
   const config = fs.readFileSync(path.join(__dirname, '../electron-builder.cjs'), 'utf8');
-  assert.match(config, /publish: null/);
+  assert.match(config, /provider: 'github'/);
+  assert.match(config, /owner: 'kriksh10'/);
+  assert.match(config, /repo: 'Sonora'/);
+  assert.match(config, /compression: 'maximum'/);
+  assert.match(config, /differentialPackage: true/);
+  assert.match(config, /offline\.html/);
+  assert.doesNotMatch(config, /publish: null/);
+  assert.match(fs.readFileSync(path.join(__dirname, '../package-release.cjs'), 'utf8'), /SONORA_DESKTOP_PUBLISH === 'always'/);
   assert.match(config, /NSAudioCaptureUsageDescription/);
 });
