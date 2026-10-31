@@ -1,4 +1,7 @@
 // Contract fixture: use the real encoder, not a separately reimplemented WAV.
+// pcm.rs imports crate::echo, so the example crate has to provide that module too.
+#[path = "../src/echo.rs"]
+mod echo;
 #[path = "../src/pcm.rs"]
 mod pcm;
 
