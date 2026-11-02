@@ -5,10 +5,11 @@
   <title>Sonora is offline</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root { color-scheme: dark; }
-    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #101113; color: #e7e8eb;
+    html, body { background: transparent; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; color: #e7e8eb;
       font: 15px/1.5 "Segoe UI", sans-serif; }
-    main { width: min(420px, calc(100% - 32px)); padding: 24px; border: 1px solid #ffffff22; border-radius: 16px; background: #17181b; }
+    main { width: min(420px, calc(100% - 32px)); padding: 24px; border: 1px solid #ffffff22; border-radius: 16px;
+      background: rgba(18, 20, 24, .72); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); }
     h1 { margin: 0 0 8px; font-size: 20px; }
     p { margin: 0; color: #ffffffa8; }
     .actions { display: flex; gap: 8px; margin-top: 18px; }

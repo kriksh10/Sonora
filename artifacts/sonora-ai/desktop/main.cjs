@@ -111,6 +111,8 @@ function broadcast() {
 }
 function show() {
   if (!win || win.isDestroyed()) return;
+  // Windows can reintroduce an opaque plate when a transparent window is shown again.
+  win.setBackgroundColor?.('#00000000');
   win.show();
   win.focus();
   broadcast();
@@ -327,7 +329,9 @@ function createWindow() {
   const bounds = safeBounds(saved?.bounds, screen.getAllDisplays());
   win = new BrowserWindow({
     ...bounds,
-    minWidth: Math.min(390, bounds.width), minHeight: Math.min(620, bounds.height), show: false, frame: false,
+    minWidth: Math.min(390, bounds.width), minHeight: Math.min(620, bounds.height), show: false,
+    // thickFrame and rounded corners make Windows DWM paint an opaque backing behind a frameless window.
+    frame: false, thickFrame: false, roundedCorners: false,
     transparent: true, backgroundColor: '#00000000', resizable: true, alwaysOnTop: true,
     skipTaskbar: true, hasShadow: false,
     webPreferences: {
@@ -336,6 +340,7 @@ function createWindow() {
       webSecurity: true, backgroundThrottling: false,
     },
   });
+  win.setBackgroundColor('#00000000');
   if (migrateOpacity) persistWindow();
   applyAlwaysOnTop(alwaysOnTop);
   applyOpenAtLogin(openAtLogin);
