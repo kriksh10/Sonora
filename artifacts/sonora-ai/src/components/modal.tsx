@@ -29,10 +29,10 @@ export default function Modal({ label, onClose, children, width = "max-w-[760px]
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   };
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/70 p-3 sm:p-6" role="presentation"
+    <div className={`fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/70 p-3 sm:p-6 ${typeof window !== "undefined" && window.sonoraDesktop ? "dp-backdrop" : ""}`} role="presentation"
       onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
       <div ref={ref} role="dialog" tabIndex={-1} style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties} aria-modal="true" aria-label={label} onKeyDown={onKeyDown}
-        className={`my-auto max-h-[94dvh] w-full ${width} overflow-y-auto rounded-2xl border border-white/10 bg-[#111214] p-5 text-[#e7e8eb] shadow-2xl sm:p-7`}>
+        className={`my-auto max-h-[94dvh] w-full ${width} overflow-y-auto overscroll-contain rounded-2xl border border-white/10 bg-[#111214] p-5 text-[#e7e8eb] shadow-2xl sm:p-7 ${typeof window !== "undefined" && window.sonoraDesktop ? "dp-dialog" : ""}`}>
         {children}
       </div>
     </div>

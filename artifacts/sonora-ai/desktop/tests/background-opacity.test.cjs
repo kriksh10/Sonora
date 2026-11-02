@@ -93,7 +93,13 @@ test('dragging is confined to handle and range has keyboard semantics and compat
   assert.match(ui, /onChange=\{event => opacityControl.current\?\.set/);
   assert.match(ui, /className="sonora-slim-slider"/);
   assert.match(ui, /Opacity is unavailable in this installed app/);
-  assert.match(ui, /backgroundOpacityMin === 0.15 \? 15 : 45/);
+  assert.match(ui, /Math\.round\(state\.backgroundOpacityMin \* 100\)/);
+  assert.match(ui, /: 15;/);
+  assert.match(main, /backgroundMaterial: 'none'/);
+  assert.match(css, /overflow: hidden !important/);
+  assert.match(css, /scrollbar-width: thin/);
+  assert.match(css, /\[class\*="bg-\[#0"\]/);
+  assert.match(css, /\[class\*="bg-black\/"\]/);
   assert.match(css, /\.sonora-window-popover, \.sonora-window-popover \* \{ -webkit-app-region: no-drag;/);
   assert.match(css, /html\.sonora-desktop, html\.sonora-desktop body, html\.sonora-desktop #root \{ background: transparent !important;/);
   assert.match(css, /background-color: var\(--sonora-glass\) !important;/);
@@ -106,7 +112,7 @@ test('dragging is confined to handle and range has keyboard semantics and compat
   assert.match(main, /frame: false/);
   assert.match(main, /thickFrame: false/);
   assert.match(main, /backgroundColor: '#00000000'/);
-  assert.match(main, /setBackgroundColor\('#00000000'\)/);
+  assert.match(main, /setBackgroundColor\?\.\('#00000000'\)/);
   assert.doesNotMatch(main, /\.setOpacity\(/);
   assert.doesNotMatch(workspace, /rgba\(16,17,19,var\(--sonora-background-opacity/);
   assert.match(fs.readFileSync(path.resolve(__dirname, '../../index.html'), 'utf8'), /classList\.add\("sonora-desktop"\)/);

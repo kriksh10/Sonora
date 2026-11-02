@@ -38,9 +38,9 @@ export function SwitchRow({ label, hint, checked, onChange }: { label: string; h
   );
 }
 
-export default function SessionWizard({ onClose, onCreated }: { onClose: () => void; onCreated: (session: CallSession) => void }) {
+export default function SessionWizard({ onClose, onCreated, initialType = "interview" }: { onClose: () => void; onCreated: (session: CallSession) => void; initialType?: Draft["sessionType"] }) {
   const [step, setStep] = useState<"details" | "preferences" | "answers">("details");
-  const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [draft, setDraft] = useState<Draft>({ ...emptyDraft, sessionType: initialType });
   const [prefs, setPrefs] = useState<AnswerPreferences | null>(null);
   const [defaultsError, setDefaultsError] = useState("");
   const [loadingDefaults, setLoadingDefaults] = useState(true);

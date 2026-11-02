@@ -85,8 +85,8 @@ export default function DesktopVisibilityControls() {
   }, [bridge]);
 
   if (!bridge) return null;
-  // Older shells with opacity support reject anything below 45%.
-  const minimumOpacity = state?.backgroundOpacityMin === 0.15 ? 15 : 45;
+  // 15% is near-clear. A shell that publishes a higher floor keeps that floor.
+  const minimumOpacity = typeof state?.backgroundOpacityMin === "number" ? Math.round(state.backgroundOpacityMin * 100) : 15;
   const supported = state && ["win32", "darwin"].includes(state.platform);
   const run = async (action: () => Promise<DesktopState>) => {
     setPending(true); setError("");
@@ -130,7 +130,7 @@ export default function DesktopVisibilityControls() {
                 onChange={event => opacityControl.current?.set(Number(event.target.value) / 100)}
                 className="sonora-slim-slider mt-3 w-full" />
             </label>
-            <p id="sonora-opacity-help" className="mt-2">{minimumOpacity}% is most transparent; 100% is opaque. The transcript and answer panels fade with this slider. The words stay solid. Settings stay darker so the controls stay readable.</p>
+            <p id="sonora-opacity-help" className="mt-2">{minimumOpacity}% is nearly clear; 100% is opaque. Dialogs, inputs, cards, and this menu use the same opacity. The words stay solid.</p>
             {typeof bridge.setBackgroundOpacity === "function" && state && minimumOpacity === 45 &&
               <p className="mt-2 text-amber-200">This older shell supports 45–100%. Rebuild and install version 0.3.1 or newer for the 15% setting.</p>}
             {typeof bridge.setBackgroundOpacity === "function"
