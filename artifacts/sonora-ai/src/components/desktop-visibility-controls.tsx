@@ -114,6 +114,12 @@ export default function DesktopVisibilityControls() {
           onClick={() => void run(() => bridge.setContentProtection(!state?.contentProtection))}><ShieldCheck size={14} /></button>
         <button type="button" disabled={!state || pending} className="sonora-window-action" aria-label="Hide Sonora"
           onClick={() => void run(() => bridge.hide())}><EyeOff size={14} /></button>
+        <label className="sonora-opacity-inline" title={`Overlay opacity ${Math.round(backgroundOpacity * 100)}%`}>
+          <input aria-label="Overlay opacity" type="range" min={minimumOpacity} max="100" step="5"
+            value={Math.round(backgroundOpacity * 100)} disabled={!state || typeof bridge.setBackgroundOpacity !== "function"}
+            onChange={event => opacityControl.current?.set(Number(event.target.value) / 100)}
+            className="sonora-slim-slider" />
+        </label>
         <details className="sonora-window-settings">
           <summary className="sonora-window-action cursor-pointer list-none" aria-label="Window settings"><Settings2 size={15} /></summary>
           <div className="sonora-window-popover desktop-no-drag">
@@ -122,7 +128,7 @@ export default function DesktopVisibilityControls() {
               <input aria-label="Background opacity" aria-describedby="sonora-opacity-help" type="range" min={minimumOpacity} max="100" step="5"
                 value={Math.round(backgroundOpacity * 100)} disabled={!state || typeof bridge.setBackgroundOpacity !== "function"}
                 onChange={event => opacityControl.current?.set(Number(event.target.value) / 100)}
-                className="mt-3 w-full accent-emerald-400" />
+                className="sonora-slim-slider mt-3 w-full" />
             </label>
             <p id="sonora-opacity-help" className="mt-2">{minimumOpacity}% is most transparent; 100% is opaque. The transcript and answer panels fade with this slider. The words stay solid. Settings stay darker so the controls stay readable.</p>
             {typeof bridge.setBackgroundOpacity === "function" && state && minimumOpacity === 45 &&
@@ -140,7 +146,7 @@ export default function DesktopVisibilityControls() {
               <input aria-label="Overlay text size" type="range" min="85" max="160" step="5"
                 value={Math.round((state?.fontScale ?? 1) * 100)} disabled={!state || !bridge.setFontScale}
                 onChange={event => void run(() => bridge.setFontScale!(Number(event.target.value) / 100))}
-                className="mt-2 w-full accent-emerald-400" />
+                className="sonora-slim-slider mt-2 w-full" />
             </label>
             <label className="mt-3 flex items-center gap-2 text-xs font-semibold">
               <input type="checkbox" aria-label="Click through the overlay" checked={!!state?.clickThrough} disabled={!state || !bridge.setClickThrough}
