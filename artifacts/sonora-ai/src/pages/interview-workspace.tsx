@@ -1034,7 +1034,7 @@ export default function InterviewWorkspace() {
 
   return (
     <main className={`sonora-workspace ${liveMode && selected ? "" : "min-h-screen"} text-[#e7e8eb]`}
-      style={{ background: window.sonoraDesktop ? "rgba(16,17,19,var(--sonora-background-opacity,0.4))" : "#101113" }}>
+      style={window.sonoraDesktop ? undefined : { background: "#101113" }}>
       {liveMode && selected && liveSession ? (
         <LiveSessionView
           session={liveSession} answer={answer} busy={busy} listening={listening}
