@@ -4,6 +4,7 @@ import App from './App';
 import { ErrorBoundary } from '@/components/error-boundary';
 
 import './index.css';
+import './desktop-parakeet.css';
 
 // Apply before the first paint so Windows does not composite an opaque body color.
 if (window.sonoraDesktop) document.documentElement.classList.add('sonora-desktop');

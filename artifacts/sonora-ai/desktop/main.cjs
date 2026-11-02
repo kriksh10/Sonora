@@ -109,10 +109,15 @@ function broadcast() {
   if (win && !win.isDestroyed()) win.webContents.send('overlay:state-changed', state());
   updateTray();
 }
+function clearWindowPlate() {
+  if (!win || win.isDestroyed()) return;
+  win.setBackgroundColor?.('#00000000');
+  // Windows 11 otherwise composites Mica/acrylic, which paints an opaque plate and white edges.
+  if (process.platform === 'win32') win.setBackgroundMaterial?.('none');
+}
 function show() {
   if (!win || win.isDestroyed()) return;
-  // Windows can reintroduce an opaque plate when a transparent window is shown again.
-  win.setBackgroundColor?.('#00000000');
+  clearWindowPlate();
   win.show();
   win.focus();
   broadcast();
@@ -330,9 +335,9 @@ function createWindow() {
   win = new BrowserWindow({
     ...bounds,
     minWidth: Math.min(390, bounds.width), minHeight: Math.min(620, bounds.height), show: false,
-    // thickFrame and rounded corners make Windows DWM paint an opaque backing behind a frameless window.
+    // thickFrame, rounded corners, and Win11 Mica paint an opaque backing behind a frameless window.
     frame: false, thickFrame: false, roundedCorners: false,
-    transparent: true, backgroundColor: '#00000000', resizable: true, alwaysOnTop: true,
+    transparent: true, backgroundColor: '#00000000', backgroundMaterial: 'none', resizable: true, alwaysOnTop: true,
     skipTaskbar: true, hasShadow: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'), partition: 'persist:sonora',
@@ -340,7 +345,7 @@ function createWindow() {
       webSecurity: true, backgroundThrottling: false,
     },
   });
-  win.setBackgroundColor('#00000000');
+  clearWindowPlate();
   if (migrateOpacity) persistWindow();
   applyAlwaysOnTop(alwaysOnTop);
   applyOpenAtLogin(openAtLogin);

@@ -22,6 +22,9 @@ import SessionWizard from "@/components/session-wizard";
 import SessionPreferencesDialog from "@/components/session-preferences-dialog";
 import { sessionPreferences, summarizePreferences } from "@/lib/answer-preferences";
 import LiveSessionView from "@/components/live-session-view";
+import DesktopSessions from "@/components/desktop-sessions";
+import DesktopLiveOverlay from "@/components/desktop-live-overlay";
+import { readSonoraTheme, type SonoraTheme } from "@/lib/theme";
 import { createDesktopAudio, createAudioGroup, serverSttAvailable, type AudioCapture } from "@/lib/desktop-audio";
 import type { CaptureDiagnostic } from "@/lib/continuous-audio";
 import { browserLanguage } from "@/lib/call-languages";
@@ -142,6 +145,9 @@ export default function InterviewWorkspace() {
   const [credits, setCredits] = useState<CreditBalance | null>(null);
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
+  const [wizardType, setWizardType] = useState<"interview" | "call" | "mock">("interview");
+  const [desktopTheme, setDesktopTheme] = useState<SonoraTheme>(() => readSonoraTheme());
+  const launchLiveRef = useRef(false);
   const [editOpen, setEditOpen] = useState(false);
   const [answerInput, setAnswerInput] = useState("");
   const [answer, setAnswer] = useState("");
@@ -559,7 +565,8 @@ export default function InterviewWorkspace() {
     setPhoneAuto(false); setPhoneConsent(false);
     inputRef.current = { mode: inputRef.current.mode, phoneAuto: false };
     setTimingSummary(""); setTranscriptionTiming("");
-    setLiveMode(selectedSessionRef.current?.status === "active");
+    setLiveMode(launchLiveRef.current || selectedSessionRef.current?.status === "active");
+    launchLiveRef.current = false;
     setListening(false);
     setRequestingMic(false);
     setInterimTranscript("");
@@ -568,6 +575,20 @@ export default function InterviewWorkspace() {
     };
   }, [selectedId, stopCapture]);
 
+  const openDesktopLive = (session: CallSession) => {
+    launchLiveRef.current = true;
+    if (session.id !== selectedId) setSelectedId(session.id);
+    else setLiveMode(true);
+    if (session.status !== "ready") return;
+    void api<CallSession>(`/sessions/${session.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "active", roundNumber: session.roundNumber }),
+    }).then(updated => {
+      setSessions(items => items.map(item => item.id === updated.id ? updated : item));
+    }).catch(cause => {
+      setError(cause instanceof Error ? cause.message : "Could not start the session timer.");
+    });
+  };
   const startSession = async () => {
     if (!selected) return;
     setLiveMode(true);
@@ -963,7 +984,7 @@ export default function InterviewWorkspace() {
       else if (result.type === "again") modifyRef.current("again");
       else if (result.type === "show-answer") { setAnswerCleared(false); setAnswer(result.answer); setAnswerState("complete"); }
       else if (result.type === "scroll") {
-        const pane = document.querySelector(".lsv-answer-pane .lsv-scroll");
+        const pane = document.querySelector(".dp-answer-scroll, .lsv-answer-pane .lsv-scroll");
         if (pane instanceof HTMLElement) pane.scrollBy({ top: result.top, behavior: "smooth" });
       }
       else if (result.type === "clear-answers") {
@@ -1033,9 +1054,77 @@ export default function InterviewWorkspace() {
   };
 
   return (
-    <main className={`sonora-workspace ${liveMode && selected ? "" : "min-h-screen"} text-[#e7e8eb]`}
+    <main className={`sonora-workspace ${window.sonoraDesktop ? "dp-app" : ""} ${liveMode && selected ? "" : "min-h-screen"} text-[#e7e8eb]`}
       style={window.sonoraDesktop ? undefined : { background: "#101113" }}>
-      {liveMode && selected && liveSession ? (
+      {window.sonoraDesktop && liveMode && selected && liveSession ? (
+        <DesktopLiveOverlay
+          session={liveSession}
+          answer={visibleAnswer}
+          assistantAnswers={currentEntries.filter(entry => entry.role === "assistant").map(entry => entry.text)}
+          latestQuestion={latestQuestion}
+          question={answerInput}
+          onQuestionChange={setAnswerInput}
+          onAsk={() => void askGemini(answerInput || latestQuestion)}
+          onShowAnswer={next => { setAnswerCleared(false); setAnswer(next); setAnswerState("complete"); }}
+          onClearAnswers={() => { setAnswer(""); setAnswerCleared(true); setAnswerInput(""); setLatestQuestion(""); setAnswerState("idle"); lastRequestRef.current = null; setNotice("Visible answers cleared. Your saved transcript is unchanged."); }}
+          onClearTranscript={() => { setTranscriptClearedAt(new Date().toISOString()); setInterimTranscript(""); setNotice("Visible transcript cleared. The saved transcript is unchanged."); }}
+          interim={interimTranscript}
+          entries={currentEntries}
+          listening={listening}
+          level={Math.max(levels.microphone, levels.system)}
+          duration={formatDuration(selected.startedAt, now)}
+          notice={notice}
+          error={error}
+          onEnd={() => void endSession()}
+          onBack={() => { stopCapture(); answerAbortRef.current?.abort(); setLiveMode(false); }}
+          onToggleAudio={() => void toggleMicrophone()}
+          onScreenshot={window.sonoraDesktop.captureScreen ? () => void (async () => {
+            const image = await window.sonoraDesktop?.captureScreen?.();
+            if (!image) return;
+            screenshotRef.current = image;
+            await askGemini(answerInput.trim() || latestQuestion || "Explain what is visible in this screenshot.");
+          })() : undefined}
+          onPreferences={() => setEditOpen(true)}
+          onReadiness={() => setReadinessOpen(true)}
+          audioSource={audioSource}
+          onAudioSourceChange={setAudioSource}
+          autoAnswer={!!selected.autoAnswer}
+          onAutoAnswerChange={value => void updateLiveSettings("autoAnswer", value)}
+        />
+      ) : window.sonoraDesktop ? (
+        <DesktopSessions
+          sessions={visibleSessions}
+          allSessions={sessions}
+          filter={filter}
+          onFilter={setFilter}
+          search={search}
+          onSearch={setSearch}
+          onCreate={() => { setWizardType("interview"); setCreateOpen(true); }}
+          onMock={() => { setWizardType("mock"); setFilter("mock"); setCreateOpen(true); }}
+          onJoin={openDesktopLive}
+          onView={session => { launchLiveRef.current = false; setSelectedId(session.id); setLiveMode(false); }}
+          selected={selected}
+          creditText={creditLabel({
+            bypass: access.role === "owner" || access.role === "approver" || !!credits?.bypass,
+            balance: credits?.balance ?? 0,
+            freeRemaining: credits?.freeRemaining ?? Math.max(0, 10 - sessions.length),
+            unlimitedUntil: credits?.unlimitedUntil ?? null,
+          })}
+          userEmail={user?.primaryEmailAddress?.emailAddress}
+          onSignOut={() => void signOut({ redirectUrl: import.meta.env.BASE_URL })}
+          theme={desktopTheme}
+          onTheme={theme => {
+            setDesktopTheme(theme);
+            document.documentElement.dataset.sonoraTheme = theme;
+            try { localStorage.setItem("sonora-theme", theme); } catch { /* storage is optional */ }
+          }}
+          now={now}
+          role={access.role}
+          freeSessionsUsed={Math.max(0, 10 - (credits?.freeRemaining ?? 10))}
+          unlimitedUntilMs={credits?.unlimitedUntil ? Date.parse(credits.unlimitedUntil) : null}
+          upgradeHref={`${import.meta.env.BASE_URL}pricing`}
+        />
+      ) : liveMode && selected && liveSession ? (
         <LiveSessionView
           session={liveSession} answer={answer} busy={busy} listening={listening}
           requestingAudio={requestingMic} interimTranscript={interimTranscript}
@@ -1072,13 +1161,7 @@ export default function InterviewWorkspace() {
           voiceRecording={voiceRecording}
           onRecordVoice={() => void recordVoice()}
           onClearVoice={clearVoice}
-          onScreenshot={window.sonoraDesktop?.captureScreen ? () => void (async () => {
-            const image = await window.sonoraDesktop?.captureScreen?.();
-            if (!image) return;
-            screenshotRef.current = image;
-            const question = answerInput.trim() || latestQuestion || "Explain what is visible in this screenshot.";
-            await askGemini(question);
-          })() : undefined}
+          onScreenshot={undefined}
           levels={levels} channelStatus={channelStatus}
           onAutoAnswerChange={value => void updateLiveSettings("autoAnswer", value)}
           onLengthChange={value => void updateLiveSettings("length", value)}
@@ -1352,6 +1435,7 @@ export default function InterviewWorkspace() {
 
       {createOpen && (
         <SessionWizard
+          initialType={wizardType}
           onClose={() => setCreateOpen(false)}
           onCreated={(created) => {
             settingsRevisionRef.current += 1;

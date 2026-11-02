@@ -1,0 +1,130 @@
+/* Desktop-only Parakeet-style layout. Rules stay under .dp-* so the website is unchanged. */
+html.sonora-desktop .sonora-workspace.dp-app {
+  background: transparent !important;
+  background-color: transparent !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  color: #f5f6f7;
+  font-family: Inter, "Segoe UI", sans-serif;
+  font-size: 13px;
+}
+.dp-glass {
+  background: rgba(30, 30, 30, var(--sonora-background-opacity, .72));
+  -webkit-backdrop-filter: blur(18px) saturate(1.35);
+  backdrop-filter: blur(18px) saturate(1.35);
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 14px;
+  color: #f7f7f8;
+}
+.dp-app { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 12px; box-sizing: border-box; }
+.dp-app > * { flex: 1; min-height: 0; min-width: 0; }
+.dp-home { display: flex; height: 100%; min-height: 0; gap: 12px; }
+.dp-side { width: 248px; flex: none; display: flex; flex-direction: column; min-height: 0; padding: 14px 12px; }
+.dp-side.is-collapsed { width: 76px; }
+.dp-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+.dp-brand img { width: 28px; height: 28px; border-radius: 8px; }
+.dp-brand strong { font-size: 14px; letter-spacing: -.02em; }
+.dp-brand button, .dp-icon-btn {
+  margin-left: auto; border: 0; background: transparent; color: rgba(255,255,255,.72);
+  width: 28px; height: 28px; border-radius: 8px; cursor: pointer;
+}
+.dp-icon-btn:hover, .dp-brand button:hover { background: rgba(255,255,255,.08); color: #fff; }
+.dp-label { margin: 14px 8px 6px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: rgba(255,255,255,.42); }
+.dp-nav-btn {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  border: 0; background: transparent; color: rgba(255,255,255,.78);
+  border-radius: 10px; padding: 8px 10px; cursor: pointer; font: inherit;
+}
+.dp-nav-btn:hover { background: rgba(255,255,255,.06); color: #fff; }
+.dp-nav-btn.is-active { background: rgba(255,255,255,.1); color: #fff; }
+.dp-live-badge { margin-left: auto; border-radius: 999px; background: #e11d2e; color: #fff; font-size: 10px; font-weight: 700; padding: 1px 6px; }
+.dp-side-foot { margin-top: auto; display: grid; gap: 8px; }
+.dp-plan { padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.04); }
+.dp-plan a, .dp-primary {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: 0; border-radius: 999px; background: #257c3c; color: #fff; font-weight: 650;
+  padding: 8px 14px; text-decoration: none; cursor: pointer; font: inherit;
+}
+.dp-primary:hover { background: #2c9147; }
+.dp-user { display: flex; align-items: center; gap: 8px; font-size: 12px; color: rgba(255,255,255,.7); }
+.dp-user button { margin-left: auto; border: 0; background: transparent; color: inherit; cursor: pointer; }
+.dp-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; padding: 22px 22px 12px; overflow: hidden; }
+.dp-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.dp-head h1 { margin: 0; font-size: 28px; letter-spacing: -.04em; font-weight: 650; }
+.dp-head p { margin: 6px 0 0; color: rgba(255,255,255,.55); font-size: 13px; }
+.dp-tabs { display: flex; gap: 6px; margin: 18px 0 12px; }
+.dp-tabs button, .dp-pill {
+  border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.04); color: rgba(255,255,255,.8);
+  border-radius: 999px; padding: 6px 12px; font: 500 12px/1.2 Inter, "Segoe UI", sans-serif; cursor: pointer;
+}
+.dp-tabs button.is-active, .dp-pill.is-active { background: rgba(255,255,255,.14); color: #fff; }
+.dp-pill kbd, .dp-menu kbd {
+  margin-left: 6px; border-radius: 6px; background: rgba(255,255,255,.12); color: rgba(255,255,255,.7);
+  padding: 1px 5px; font: 11px/1.4 Inter, "Segoe UI", sans-serif;
+}
+.dp-tools { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; color: rgba(255,255,255,.55); font-size: 12px; }
+.dp-search {
+  flex: 1; max-width: 320px; border: 1px solid rgba(255,255,255,.14); border-radius: 10px;
+  background: rgba(255,255,255,.06); color: #fff; padding: 8px 10px; font: inherit;
+}
+.dp-table-wrap { flex: 1; min-height: 0; overflow: auto; }
+.dp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.dp-table th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .04em; color: rgba(255,255,255,.45); padding: 8px 10px; }
+.dp-table td { padding: 12px 10px; border-top: 1px solid rgba(255,255,255,.08); vertical-align: middle; }
+.dp-group td { padding-top: 18px; color: rgba(255,255,255,.45); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; border-top: 0; }
+.dp-chip { display: inline-flex; border-radius: 999px; padding: 2px 8px; font-size: 11px; border: 1px solid transparent; }
+.dp-chip.live { background: rgba(225,29,46,.18); color: #ffb4bc; }
+.dp-chip.ready { background: rgba(117,200,83,.16); color: #d5f5c4; }
+.dp-chip.ended { background: rgba(255,255,255,.08); color: rgba(255,255,255,.6); }
+.dp-row-btn { border: 1px solid rgba(255,255,255,.16); background: transparent; color: #fff; border-radius: 999px; padding: 5px 10px; cursor: pointer; font: inherit; }
+.dp-row-btn:hover { background: rgba(255,255,255,.08); }
+.dp-list { display: grid; gap: 8px; overflow: auto; }
+.dp-list article { padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,.1); }
+.dp-list p { margin: 6px 0 0; white-space: pre-wrap; color: rgba(255,255,255,.72); max-height: 140px; overflow: auto; }
+
+.dp-overlay { display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 0; padding: 8px; box-sizing: border-box; }
+.dp-bar, .dp-strip, .dp-card { padding: 8px 10px; }
+.dp-bar { display: flex; align-items: center; gap: 8px; min-height: 46px; }
+.dp-dots { display: flex; gap: 5px; }
+.dp-dots i { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,.28); display: block; }
+.dp-dots i.on { background: #3dd68c; }
+.dp-dots i.warn { background: #f5c451; }
+.dp-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.dp-drag { flex: 1; min-width: 36px; height: 28px; cursor: grab; }
+.dp-end { border: 0; border-radius: 999px; background: #e11d2e; color: #fff; font-weight: 700; padding: 7px 14px; cursor: pointer; }
+.dp-menu { position: relative; }
+.dp-menu summary { list-style: none; }
+.dp-menu summary::-webkit-details-marker { display: none; }
+.dp-menu-pop {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 5; width: min(320px, 80vw);
+  padding: 12px; display: grid; gap: 8px;
+}
+.dp-menu-pop label, .dp-menu-pop select, .dp-chat textarea {
+  font: inherit; color: #fff;
+}
+.dp-menu-pop select, .dp-chat textarea, html.sonora-desktop .dp-dialog input,
+html.sonora-desktop .dp-dialog textarea, html.sonora-desktop .dp-dialog select {
+  width: 100%; border: 1px solid rgba(255,255,255,.16) !important; border-radius: 10px;
+  background: rgba(255,255,255, calc(var(--sonora-background-opacity, .4) * .16)) !important;
+  color: #fff; padding: 8px 10px; font: inherit;
+}
+.dp-strip { display: flex; align-items: center; gap: 10px; min-height: 42px; }
+.dp-level { width: 36px; height: 10px; border-radius: 99px; background: rgba(255,255,255,.12); overflow: hidden; flex: none; }
+.dp-level b { display: block; height: 100%; background: #75c853; transform-origin: left; }
+.dp-words { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: rgba(255,255,255,.88); }
+.dp-card { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 14px 16px; }
+.dp-card-tools { display: flex; align-items: center; gap: 6px; }
+.dp-card-tools .spacer { flex: 1; }
+.dp-q { margin: 12px 0 8px; font-size: 15px; }
+.dp-q button { border: 0; background: transparent; color: rgba(255,255,255,.7); cursor: pointer; vertical-align: -2px; }
+.dp-answer-scroll { flex: 1; min-height: 0; overflow: auto; font-size: 14px; line-height: 1.55; }
+.dp-answer-scroll h3 { margin: 0 0 6px; font-size: 15px; }
+.dp-foot { display: flex; align-items: center; gap: 8px; margin-top: 8px; color: rgba(255,255,255,.5); font-size: 12px; }
+.dp-foot button { border: 0; background: transparent; color: inherit; cursor: pointer; }
+.dp-foot button.is-on { color: #fff; }
+.dp-chat { padding: 0 4px 4px; }
+html.sonora-desktop .dp-dialog { border-radius: 16px; font-family: Inter, "Segoe UI", sans-serif; font-size: 13px; }
+html.sonora-desktop .dp-app * { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.35) transparent; }

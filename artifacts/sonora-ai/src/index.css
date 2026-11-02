@@ -11,12 +11,30 @@
 .desktop-drag { -webkit-app-region: drag; }
 .desktop-drag button, .desktop-drag a, .desktop-drag input, .desktop-drag select { -webkit-app-region: no-drag; }
 .desktop-drag textarea, .desktop-drag label, .desktop-drag details, .desktop-no-drag { -webkit-app-region: no-drag; }
-html.sonora-desktop, html.sonora-desktop body, html.sonora-desktop #root { background: transparent !important; background-color: transparent !important; }
-html.sonora-desktop { --sonora-background-opacity: 0.4; --sonora-font-scale: 1; --sonora-glass: rgba(18, 20, 24, var(--sonora-background-opacity, 0.4)); }
-html.sonora-desktop .sonora-workspace,
-html.sonora-desktop .min-h-screen.bg-\[\#101113\],
-html.sonora-desktop .min-h-\[100dvh\].bg-\[\#101113\],
-html.sonora-desktop main.bg-\[\#101113\] { background: transparent !important; background-color: transparent !important; }
+html.sonora-desktop, html.sonora-desktop body, html.sonora-desktop #root { background: transparent !important; background-color: transparent !important; margin: 0 !important; }
+html.sonora-desktop, html.sonora-desktop body { height: 100% !important; width: 100% !important; overflow: hidden !important; }
+html.sonora-desktop #root { height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+html.sonora-desktop .sonora-window-bar { flex: 0 0 auto; }
+html.sonora-desktop #root > :not(.sonora-window-bar) { flex: 1 1 auto; min-height: 0; overflow: auto; }
+html.sonora-desktop {
+  --sonora-background-opacity: 0.4;
+  --sonora-font-scale: 1;
+  --sonora-glass: rgba(30, 30, 30, var(--sonora-background-opacity, 0.4));
+  --background: 220 8% 8% / var(--sonora-background-opacity, 0.4);
+  --card: 220 8% 10% / var(--sonora-background-opacity, 0.4);
+  --popover: 220 8% 10% / var(--sonora-background-opacity, 0.4);
+  --muted: 220 6% 14% / var(--sonora-background-opacity, 0.4);
+  --secondary: 220 6% 14% / var(--sonora-background-opacity, 0.4);
+  --accent: 220 6% 16% / var(--sonora-background-opacity, 0.4);
+  --input: 220 6% 12% / var(--sonora-background-opacity, 0.4);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, .35) transparent;
+}
+html.sonora-desktop * { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .35) transparent; }
+html.sonora-desktop *::-webkit-scrollbar { width: 8px; height: 8px; }
+html.sonora-desktop *::-webkit-scrollbar-track,
+html.sonora-desktop *::-webkit-scrollbar-corner { background: transparent; }
+html.sonora-desktop *::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .32); border-radius: 99px; border: 2px solid transparent; background-clip: padding-box; }
 html.sonora-desktop .lsv-answer, html.sonora-desktop .lsv-q, html.sonora-desktop .lsv-scroll { font-size: calc(0.95rem * var(--sonora-font-scale, 1)); }
 html.sonora-desktop .lsv-root {
   height: calc(100dvh - var(--sonora-titlebar-height, 44px));
@@ -51,7 +69,73 @@ html.sonora-desktop .lsv-answer,
 html.sonora-desktop .lsv-md,
 html.sonora-desktop .lsv-text,
 html.sonora-desktop .lsv-title strong { opacity: 1; color: #f4f6f8; }
-.sonora-window-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: .5rem; min-height: 44px; padding: 6px 10px; color: #e7e8eb; border-bottom: 1px solid #ffffff18; background: rgba(18, 20, 24, var(--sonora-background-opacity, .4)); -webkit-backdrop-filter: blur(18px) saturate(1.35); backdrop-filter: blur(18px) saturate(1.35); -webkit-app-region: no-drag; }
+/* Page, dialogs, inputs, tabs, and popovers share one alpha. Brand buttons stay solid. */
+html.sonora-desktop :is(
+  .sonora-workspace,
+  .sonora-window-popover,
+  .bg-background,
+  .bg-card,
+  .bg-popover,
+  .bg-muted,
+  .bg-secondary,
+  .auth-screen,
+  .auth-loading,
+  .auth-fallback,
+  .settings-page.is-dark,
+  .settings-page.is-dark section,
+  .reference-create-modal,
+  .reference-modal-input,
+  .reference-type-switch,
+  .reference-type-switch button.is-selected,
+  .reference-checkbox,
+  .reference-modal-actions button:not(.is-ready),
+  .reference-session-area,
+  .reference-search,
+  .reference-view-toggle,
+  .reference-view-toggle .is-active,
+  .reference-side-link.is-active,
+  .reference-company-mark,
+  .state-ended,
+  .reference-row-action,
+  .reference-lower-section,
+  .reference-feature-grid article,
+  .reference-footer,
+  .reference-plan-signal,
+  .studio-card textarea,
+  .studio-resume,
+  .marketing-page,
+  .sonora-reference-page,
+  .missing-page,
+  [class*="bg-[#0"],
+  [class*="bg-[#1"],
+  [class*="bg-[#2"],
+  [class*="bg-[#3"]
+):not([class*="bg-[#257c3c]"]):not([class*="bg-[#2c9147]"]):not([class*="bg-[#75c853]"]):not([class*="bg-[#f0"]) {
+  background-color: var(--sonora-glass) !important;
+  background-image: none !important;
+  -webkit-backdrop-filter: blur(18px) saturate(1.35);
+  backdrop-filter: blur(18px) saturate(1.35);
+}
+html.sonora-desktop .sonora-workspace:has(.lsv-root) {
+  background: transparent !important;
+  background-color: transparent !important;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+html.sonora-desktop [role="radio"][aria-checked="true"] {
+  background-color: rgba(255, 255, 255, calc(var(--sonora-background-opacity, 0.4) * .28)) !important;
+}
+html.sonora-desktop [class*="bg-black/"],
+html.sonora-desktop .reference-modal-backdrop {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  overflow: hidden !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+html.sonora-desktop .sonora-window-error { background: rgba(68, 30, 36, var(--sonora-background-opacity, .4)) !important; }
+.sonora-window-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: .5rem; min-height: 44px; padding: 6px 10px; color: #e7e8eb; border-bottom: 1px solid #ffffff18; background: rgba(30, 30, 30, var(--sonora-background-opacity, .4)); -webkit-backdrop-filter: blur(18px) saturate(1.35); backdrop-filter: blur(18px) saturate(1.35); -webkit-app-region: no-drag; }
 .sonora-window-drag-handle { align-self: stretch; flex: 1; min-width: 70px; cursor: grab; user-select: none; }
 .sonora-window-popover, .sonora-window-popover * { -webkit-app-region: no-drag; }
 .sonora-slim-slider { -webkit-appearance: none; appearance: none; display: block; width: 100%; height: 16px; margin: 10px 0 0; background: transparent; cursor: ew-resize; touch-action: none; }
