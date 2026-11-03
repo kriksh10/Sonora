@@ -47,6 +47,12 @@ public static class SonoraInput {
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+  public static string Title(IntPtr hWnd) {
+    var sb = new System.Text.StringBuilder(512);
+    GetWindowText(hWnd, sb, sb.Capacity);
+    return sb.ToString();
+  }
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
   public static void Click(int x, int y) {
     int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
