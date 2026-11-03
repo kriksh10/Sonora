@@ -28,7 +28,6 @@ let fontScaleValue = 1;
 let transcriptOpen = false;
 let clickThrough = false;
 let controlsHover = false;
-let pointerOverUi = false;
 let openAtLogin = false;
 let hotkeyOverrides = {};
 let hotkeyState = [];
@@ -102,11 +101,11 @@ function applyAlwaysOnTop(enabled) {
 }
 function applyPassthrough() {
   if (!win || win.isDestroyed() || typeof win.setIgnoreMouseEvents !== 'function') return;
-  // Ignore is off unless the user explicitly turned click-through on.
-  // A transparent pixel is still a hit target; Windows only passes it through when ignore is on.
-  const pass = clickThrough === true && !pointerOverUi && !controlsHover;
+  // One toggle. Mouse moves never call into the main process, so the renderer cannot
+  // stall inside sendSync while the window is deciding whether to take the click.
+  const pass = clickThrough === true;
   ignoringMouse = pass;
-  win.setIgnoreMouseEvents(pass, { forward: pass });
+  win.setIgnoreMouseEvents(pass);
 }
 function applyOpenAtLogin(enabled) {
   openAtLogin = Boolean(enabled);
@@ -286,12 +285,9 @@ function registerIpc() {
     if (controlsHover === value) return state();
     controlsHover = value; applyPassthrough(); return state();
   });
-  ipcMain.on('overlay:set-pointer-capture', (event, value) => {
-    if (!desktopRequestAllowed(event, win?.webContents, target, 'overlay:set-pointer-capture', offlineFileUrl)) return;
-    if (typeof value !== 'boolean' || pointerOverUi === value) return;
-    pointerOverUi = value;
-    applyPassthrough();
-    if (value) holdOnTop();
+  ipcMain.on('overlay:set-pointer-capture', event => {
+    // Answer immediately. A synchronous mouse-move message must never wait on this process.
+    event.returnValue = false;
   });
   handle('overlay:set-open-at-login', value => {
     if (typeof value !== 'boolean') throw new Error('Expected boolean.');
@@ -452,6 +448,8 @@ function createWindow() {
   win.on('hide', broadcast);
   win.on('blur', () => { holdOnTop(); });
   win.webContents.on('render-process-gone', () => { nativeAudio.stop(); if (!nativeAudio.isActive()) captureActive = false; broadcast(); });
+  win.webContents.on('unresponsive', () => bootLog('unresponsive'));
+  win.webContents.on('responsive', () => bootLog('responsive'));
   win.webContents.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => {
     if (mainFrame && !inPlace) { nativeAudio.stop(); if (!nativeAudio.isActive()) captureActive = false; broadcast(); }
   });

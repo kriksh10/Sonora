@@ -290,30 +290,19 @@ function requireApp(name) {
       state = await page.evaluate(() => window.sonoraDesktop.e2eFlags());
       if (state.ignoringMouse) throw new Error('Gap passed through before click-through was enabled');
       await page.evaluate(() => window.sonoraDesktop.setClickThrough(true));
-      await page.waitForFunction(async () => (await window.sonoraDesktop.e2eFlags()).clickThrough);
-      const gap = await page.evaluate(({ x, top, bottom }) => {
-        for (let y = top + 1; y < bottom; y += 1) {
-          const el = document.elementFromPoint(x, y);
-          if (!el) return { x, y, hit: 'none' };
-          if (!el.closest('.dp-glass,.dp-dialog,.dp-chat,.sonora-window-bar,.sonora-window-popover,button,a,input,textarea,select,summary,label')) return { x, y, hit: el.className || el.tagName };
-        }
-        return null;
-      }, { x: bar.x + 24, top: bar.y + bar.height, bottom: strip.y });
-      if (!gap) throw new Error(`No empty gap between the live bar and the transcript ${JSON.stringify({ bar, strip })}`);
-      await page.mouse.move(2, 2);
-      await page.waitForTimeout(100);
-      await page.mouse.move(gap.x, gap.y);
-      for (let i = 0; i < 10 && !(state.ignoringMouse && state.clickThrough); i += 1) {
-        await page.waitForTimeout(100);
-        state = await page.evaluate(() => window.sonoraDesktop.e2eFlags());
-      }
-      if (!state.ignoringMouse || !state.clickThrough) throw new Error(`Gap did not pass through ${JSON.stringify(state)} at ${JSON.stringify(gap)}`);
+      await page.waitForFunction(async () => {
+        const flags = await window.sonoraDesktop.e2eFlags();
+        return flags.clickThrough === true && flags.ignoringMouse === true;
+      });
       await page.mouse.move(bar.x + Math.min(80, bar.width / 3), bar.y + bar.height / 2);
       await page.waitForTimeout(150);
       state = await page.evaluate(() => window.sonoraDesktop.e2eFlags());
-      if (state.ignoringMouse) throw new Error('Button stayed click-through');
+      if (!state.ignoringMouse || !state.clickThrough) throw new Error(`Click-through did not ignore the window ${JSON.stringify(state)}`);
       await page.evaluate(() => window.sonoraDesktop.setClickThrough(false));
-      await page.waitForFunction(async () => !(await window.sonoraDesktop.e2eFlags()).clickThrough);
+      await page.waitForFunction(async () => {
+        const flags = await window.sonoraDesktop.e2eFlags();
+        return flags.clickThrough === false && flags.ignoringMouse === false;
+      });
     });
 
     await scenario('pin, blur, opacity, resize, and restart', async () => {

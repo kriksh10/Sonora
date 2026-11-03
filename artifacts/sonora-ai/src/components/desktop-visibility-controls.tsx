@@ -3,7 +3,6 @@ import { EyeOff, GripHorizontal, Pin, Settings2, ShieldCheck, Square } from "luc
 import DesktopMaintenance from "@/components/desktop-maintenance";
 import DesktopHotkeysSheet from "@/components/desktop-hotkeys-sheet";
 import { createBackgroundOpacity } from "@/lib/background-opacity";
-import { overlayPointerCaptures } from "@/lib/overlay-hit-test";
 
 type DesktopState = Awaited<ReturnType<NonNullable<Window["sonoraDesktop"]>["getState"]>>;
 
@@ -59,29 +58,6 @@ export default function DesktopVisibilityControls() {
       document.documentElement.style.removeProperty("--sonora-background-opacity");
       document.documentElement.style.removeProperty("--sonora-titlebar-height");
       document.documentElement.style.removeProperty("--sonora-font-scale");
-    };
-  }, [bridge]);
-
-  const clickThrough = useRef(false);
-  useEffect(() => { clickThrough.current = !!state?.clickThrough; }, [state]);
-  useEffect(() => {
-    if (!bridge?.setPointerCapture && !bridge?.setControlsHover) return;
-    let capture = false;
-    const sync = (event: MouseEvent) => {
-      // Installed builds only report the pointer while click-through is on.
-      // Otherwise the window stays clickable and no ignore flag is touched.
-      if (!clickThrough.current) return;
-      const next = overlayPointerCaptures(event.target);
-      if (next === capture && event.type !== "mousedown") return;
-      capture = next;
-      if (bridge.setPointerCapture) bridge.setPointerCapture(next);
-      else void bridge.setControlsHover?.(next);
-    };
-    window.addEventListener("mousemove", sync);
-    window.addEventListener("mousedown", sync, true);
-    return () => {
-      window.removeEventListener("mousemove", sync);
-      window.removeEventListener("mousedown", sync, true);
     };
   }, [bridge]);
 
