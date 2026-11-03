@@ -203,7 +203,7 @@ export default function E2EApp() {
             role="user"
             freeSessionsUsed={0}
             unlimitedUntilMs={null}
-            upgradeHref="/pricing"
+            upgradeHref="#"
           />
         )}
         {createOpen && (
