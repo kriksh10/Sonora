@@ -56,6 +56,7 @@ test('packaged shell keeps visible UI clickable and stays above other windows', 
   assert.match(main, /overlay:set-pointer-capture/);
   assert.match(main, /process\.env\?\.SONORA_E2E === '1' && process\.argv\.includes\('--e2e'\)/);
   assert.match(main, /no-proxy-server/);
+  assert.match(main, /force-renderer-accessibility/);
   assert.match(main, /setProxy\(\{ mode: 'direct' \}\)/);
   assert.match(main, /win\.on\('blur', \(\) => \{ holdOnTop\(\); \}\)/);
   assert.match(preload, /sendSync\('overlay:set-pointer-capture'/);

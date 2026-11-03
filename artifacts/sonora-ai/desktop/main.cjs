@@ -64,6 +64,8 @@ function allowLocalE2ENetwork() {
   app.commandLine.appendSwitch('no-proxy-server');
   app.commandLine.appendSwitch('proxy-bypass-list', '<-loopback>');
   app.commandLine.appendSwitch('disable-features', 'HttpsUpgrades,HttpsFirstBalancedModeAutoEnable,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessSendPreflights');
+  // Packaged Electron skips the accessibility tree unless a screen reader is present, so role locators never match.
+  app.commandLine.appendSwitch('force-renderer-accessibility');
 }
 
 function state() {

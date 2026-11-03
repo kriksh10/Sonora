@@ -136,7 +136,11 @@ function requireApp(name) {
 
     await scenario('launch: visible, frameless, transparent, always on top, no console errors', async () => {
       if (page.url().includes('offline.html')) throw new Error(`Packaged app opened the offline page.\n${await pageDump(page)}`);
-      await page.getByRole('heading', { name: 'You are signed out' }).waitFor();
+      try {
+        await page.getByRole('heading', { name: 'You are signed out' }).waitFor();
+      } catch (error) {
+        throw new Error(`${error instanceof Error ? error.message : error}\n${await pageDump(page)}\nconsole:\n${errors.join('\n')}`);
+      }
       const windowFlags = await page.evaluate(() => window.sonoraDesktop.e2eFlags());
       const live = await flags(app);
       if (!live.visible || !live.alwaysOnTop || !live.focused) throw new Error(JSON.stringify(live));
