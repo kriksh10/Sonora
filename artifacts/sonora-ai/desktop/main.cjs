@@ -48,7 +48,7 @@ function bootLog(line) {
   const text = `${new Date().toISOString()} ${line}`;
   if (!localE2E) return;
   console.log(`[sonora-e2e] ${text}`);
-  const destinations = [process.env?.SONORA_E2E_LOG].filter(Boolean);
+  const destinations = [process.env?.SONORA_E2E_LOG, process.env?.SONORA_BOOT_LOG].filter(Boolean);
   try { destinations.push(path.join(app.getPath('userData'), 'e2e-boot.txt')); } catch { /* userData is ready only after app.ready */ }
   for (const file of destinations) {
     try {

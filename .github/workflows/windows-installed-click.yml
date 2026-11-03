@@ -51,7 +51,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path generated-artifacts | Out-Null
           $env:SONORA_MOCK_LOG = (Join-Path (Get-Location) 'generated-artifacts/mock-requests.log')
-          Start-Process -FilePath node -ArgumentList "artifacts/sonora-ai/e2e/server.mjs","artifacts/sonora-ai/dist/public" -WindowStyle Hidden -RedirectStandardOutput generated-artifacts/mock.log -RedirectStandardError generated-artifacts/mock.err
+          Start-Process -FilePath node -ArgumentList "artifacts/sonora-ai/e2e/server.mjs","artifacts/sonora-ai/dist/public" -WindowStyle Hidden
           $ok = $false
           foreach ($i in 1..30) {
             try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:4173/api/e2e/health | Out-Null; $ok = $true; break } catch { Start-Sleep -Milliseconds 300 }
@@ -72,6 +72,17 @@ jobs:
       - name: OS-level clicks against the installed app
         shell: pwsh
         run: |
+          $env:SONORA_MOCK_LOG = (Join-Path (Get-Location) 'generated-artifacts/mock-requests.log')
+          $mockUp = $false
+          try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:4173/api/e2e/health -TimeoutSec 3 | Out-Null; $mockUp = $true } catch { $mockUp = $false }
+          if (-not $mockUp) {
+            Write-Host 'Restarting the mock server in this step so it is not torn down with the previous one'
+            Start-Process -FilePath node -ArgumentList "artifacts/sonora-ai/e2e/server.mjs","artifacts/sonora-ai/dist/public" -WindowStyle Hidden
+            foreach ($i in 1..30) {
+              try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:4173/api/e2e/health -TimeoutSec 2 | Out-Null; $mockUp = $true; break } catch { Start-Sleep -Milliseconds 300 }
+            }
+          }
+          if (-not $mockUp) { throw 'Mock server is not accepting connections' }
           $exe = Get-Content installed-exe.txt
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -STA -NoProfile -ExecutionPolicy Bypass -File artifacts/sonora-ai/e2e/os-click.ps1 -Exe $exe -OutDir generated-artifacts/os-click-proof -Full
       - uses: actions/upload-artifact@v4

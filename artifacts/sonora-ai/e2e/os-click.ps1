@@ -256,7 +256,7 @@ function Invoke-ClickProbe([string]$Label, [IntPtr]$Window, [switch]$MarginsOnly
 }
 function Stop-Sonora {
   Get-Process -Name 'Sonora*' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-  & "$env:SystemRoot\System32\taskkill.exe" /F /IM "Sonora AI.exe" /T 1>$null 2>$null
+  & cmd.exe /c "taskkill /F /IM `"Sonora AI.exe`" /T >nul 2>&1 & exit /b 0"
 }
 function Seed-Preferences {
   $payload = '{"backgroundOpacity":0.15,"opacityVersion":2,"clickThrough":false,"alwaysOnTop":true}'
@@ -617,6 +617,14 @@ finally {
   if ($catcher -and -not $catcher.HasExited) { Stop-Process -Id $catcher.Id -Force -ErrorAction SilentlyContinue }
   Stop-Sonora
   Unblock-SonoraNetwork
+  Get-ChildItem $env:APPDATA, $env:LOCALAPPDATA -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'sonora' } | ForEach-Object {
+    $boot = Join-Path $_.FullName 'e2e-boot.txt'
+    if (Test-Path $boot) {
+      Copy-Item $boot (Join-Path $OutDir 'e2e-boot.txt') -Force
+      Write-Host "e2e-boot $boot"
+      Get-Content $boot -Tail 20 | ForEach-Object { Write-Host $_ }
+    }
+  }
   $ffmpeg = $null
   $cmd = Get-Command ffmpeg -ErrorAction SilentlyContinue
   if ($cmd) { $ffmpeg = $cmd.Source }
