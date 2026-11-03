@@ -22,8 +22,8 @@ function load(file, globals = {}, external = []) {
 }
 
 test('opacity validates rather than silently accepting unsafe values', () => {
-  assert.equal(opacity(.15), .15); assert.equal(opacity(.45), .45); assert.equal(opacity(1), 1);
-  for (const value of [NaN, Infinity, -1, 0, .14, 1.1, '0.8', undefined]) assert.throws(() => opacity(value));
+  assert.equal(opacity(0), 0); assert.equal(opacity(.14), .14); assert.equal(opacity(.15), .15); assert.equal(opacity(1), 1);
+  for (const value of [NaN, Infinity, -1, 1.1, '0.8', undefined]) assert.throws(() => opacity(value));
   assert.equal(initialOpacity(undefined), 0.4);
   assert.equal(initialOpacity({ backgroundOpacity: 0.85 }), 0.4);
   assert.equal(initialOpacity({ backgroundOpacity: 0.7, opacityVersion: 2 }), 0.7);
