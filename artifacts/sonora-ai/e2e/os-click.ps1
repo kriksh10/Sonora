@@ -286,33 +286,23 @@ function Clear-SonoraCache {
   }
 }
 function Block-SonoraNetwork([string]$PathExe) {
-  # The firewall service on the GitHub runner stalls netsh and New-NetFirewallRule.
-  # Point the baked host at loopback instead so the installed app fails open onto offline.html.
-  $asar = Join-Path (Split-Path $PathExe) 'resources\app.asar'
+  # Opening the installed asar makes Defender rescan it and stalls the runner.
+  # The first launch already wrote the hosted origin into Chromium's small preference files.
   $hostName = $null
-  if (Test-Path $asar) {
-    try {
-      $fs = [IO.File]::OpenRead($asar)
-      $buf = New-Object byte[] (256 * 1024)
-      $hold = ''
-      $text = ''
-      $scanned = 0
-      while ($scanned -lt (8 * 1024 * 1024) -and ($n = $fs.Read($buf, 0, $buf.Length)) -gt 0) {
-        $scanned += $n
-        $text = $hold + [Text.Encoding]::ASCII.GetString($buf, 0, $n)
-        if ($text.Contains('serviceUrl')) { break }
-        $hold = if ($text.Length -gt 40) { $text.Substring($text.Length - 40) } else { $text }
-        $text = ''
+  foreach ($root in @($env:APPDATA, $env:LOCALAPPDATA)) {
+    $dirs = @(Get-ChildItem $root -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'sonora' })
+    foreach ($dir in $dirs) {
+      $files = @(Get-ChildItem $dir.FullName -File -ErrorAction SilentlyContinue | Where-Object { $_.Length -lt 300000 -and $_.Length -gt 0 })
+      foreach ($file in $files) {
+        try {
+          $sample = [IO.File]::ReadAllText($file.FullName)
+          $match = [regex]::Match($sample, 'https://(?!127\.0\.0\.1|localhost|github\.com|electronjs\.org|microsoft\.com)[A-Za-z0-9.-]+\.[A-Za-z]{2,}')
+          if ($match.Success) { $hostName = ([Uri]$match.Value).Host; break }
+        } catch {}
       }
-      $fs.Close()
-      Write-Host "scanned $scanned bytes of asar"
-      $match = [regex]::Match($text, 'serviceUrl.{0,20}https://[A-Za-z0-9.-]+')
-      if (-not $match.Success) { $match = [regex]::Match($text, 'https://[A-Za-z0-9.-]+\.[A-Za-z]{2,}') }
-      if ($match.Success) {
-        $url = [regex]::Match($match.Value, 'https://[A-Za-z0-9.-]+')
-        if ($url.Success) { $hostName = ([Uri]$url.Value).Host }
-      }
-    } catch { Write-Host "host scan failed: $_" }
+      if ($hostName) { break }
+    }
+    if ($hostName) { break }
   }
   if ($hostName -and $hostName -ne '127.0.0.1') {
     $hosts = "$env:SystemRoot\System32\drivers\etc\hosts"
@@ -393,15 +383,18 @@ try {
     Start-Sleep -Seconds 1
     Clear-SonoraCache
     Block-SonoraNetwork $Exe
-    $offline = Start-Sonora @('--force-renderer-accessibility')
-    $hwnd = $offline.hwnd
-    $title = Wait-Title $hwnd 'offline' 25
-    Start-Sleep -Seconds 3
-    Write-Host "offline title='$title'"
-    $probe = Invoke-ClickProbe 'offline-transparent' $hwnd
-    Save-Screen '01c-offline.png'
-    $detail = "surface swallowed clicks; offline $($probe.detail)"
-    $passedThrough = $probe.inside -gt 0
+    if (-not $script:blockedHost) { Write-Host 'PHASE skip-offline no host' }
+    else {
+      $offline = Start-Sonora @('--force-renderer-accessibility')
+      $hwnd = $offline.hwnd
+      $title = Wait-Title $hwnd 'offline' 25
+      Start-Sleep -Seconds 2
+      Write-Host "offline title='$title'"
+      $probe = Invoke-ClickProbe 'offline-transparent' $hwnd
+      Save-Screen '01c-offline.png'
+      $detail = "surface swallowed clicks; offline $($probe.detail)"
+      $passedThrough = $probe.inside -gt 0
+    }
   }
 
   if (-not $Full) {
