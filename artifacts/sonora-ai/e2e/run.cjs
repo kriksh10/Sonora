@@ -73,6 +73,7 @@ async function flags(app) {
 }
 
 async function scenario(name, fn) {
+  console.log(`START ${name}`);
   try {
     await fn();
     scenarios.push({ name, pass: true });
@@ -159,7 +160,7 @@ function requireApp(name) {
       if (!windowFlags.transparent || !windowFlags.frameless || windowFlags.backgroundMaterial !== 'none' || windowFlags.ignoringMouse) throw new Error(JSON.stringify(windowFlags));
       const noisy = errors.filter(line => !/favicon|Download the React DevTools|fonts\.(google|gstatic)/i.test(line));
       if (noisy.length) throw new Error(noisy.join('\n'));
-      await shot('01-signed-out.png');
+      await shot('01-signed-out.png').catch(() => {});
     });
 
     await scenario('signed-out state and sign-in', async () => {

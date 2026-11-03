@@ -483,6 +483,15 @@ async function loadService() {
   if (localE2E) {
     try { await win.webContents.session.setProxy({ mode: 'direct' }); }
     catch (error) { bootLog(`setProxy failed ${error}`); }
+    win.webContents.session.webRequest.onBeforeRequest((details, callback) => {
+      let local = false;
+      try {
+        const parsed = new URL(details.url);
+        local = parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost' ||
+          parsed.protocol === 'file:' || parsed.protocol === 'data:' || parsed.protocol === 'devtools:';
+      } catch { local = false; }
+      callback({ cancel: !local });
+    });
     // A hidden transparent window can fail the first navigation on Windows.
     if (!win.isVisible()) win.show();
     win.focus();
