@@ -1,3 +1,5 @@
+process.stdout._handle?.setBlocking?.(true);
+process.stderr._handle?.setBlocking?.(true);
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
@@ -151,13 +153,6 @@ function requireApp(name) {
       } catch (error) {
         throw new Error(`${error instanceof Error ? error.message : error}\n${await pageDump(page)}\nconsole:\n${errors.join('\n')}`);
       }
-      await app.evaluate(({ BrowserWindow }) => {
-        const win = BrowserWindow.getAllWindows().find(item => !item.isDestroyed());
-        win.show();
-        win.focus();
-        win.moveTop();
-      });
-      await page.waitForTimeout(200);
       const windowFlags = await page.evaluate(() => window.sonoraDesktop.e2eFlags());
       const live = await flags(app);
       if (!live.visible || !live.alwaysOnTop || !live.focused) throw new Error(JSON.stringify(live));
