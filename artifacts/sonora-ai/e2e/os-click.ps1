@@ -283,28 +283,32 @@ function Clear-SonoraCache {
   }
 }
 function Block-SonoraNetwork([string]$PathExe) {
-  & cmd.exe /c "netsh advfirewall firewall delete rule name=Sonora-repro-block >nul 2>&1 & exit /b 0"
-  & cmd.exe /c "netsh advfirewall firewall add rule name=Sonora-repro-block dir=out program=`"$PathExe`" action=block >nul 2>&1 & exit /b 0"
-  Write-Host "firewall blocked $PathExe"
+  # The firewall service on the GitHub runner stalls netsh and New-NetFirewallRule.
+  # Point the baked host at loopback instead so the installed app fails open onto offline.html.
   $asar = Join-Path (Split-Path $PathExe) 'resources\app.asar'
   $hostName = $null
   if (Test-Path $asar) {
     try {
       $fs = [IO.File]::OpenRead($asar)
-      $buf = New-Object byte[] (512 * 1024)
+      $buf = New-Object byte[] (256 * 1024)
       $hold = ''
+      $text = ''
       $scanned = 0
-      while ($scanned -lt (6 * 1024 * 1024) -and ($n = $fs.Read($buf, 0, $buf.Length)) -gt 0) {
+      while ($scanned -lt (8 * 1024 * 1024) -and ($n = $fs.Read($buf, 0, $buf.Length)) -gt 0) {
         $scanned += $n
         $text = $hold + [Text.Encoding]::ASCII.GetString($buf, 0, $n)
-        $match = [regex]::Match($text, 'serviceUrl.{0,12}https://[A-Za-z0-9.-]+')
-        if ($match.Success) {
-          $url = [regex]::Match($match.Value, 'https://[A-Za-z0-9.-]+')
-          if ($url.Success) { $hostName = ([Uri]$url.Value).Host; break }
-        }
-        $hold = if ($text.Length -gt 80) { $text.Substring($text.Length - 80) } else { $text }
+        if ($text.Contains('serviceUrl')) { break }
+        $hold = if ($text.Length -gt 40) { $text.Substring($text.Length - 40) } else { $text }
+        $text = ''
       }
       $fs.Close()
+      Write-Host "scanned $scanned bytes of asar"
+      $match = [regex]::Match($text, 'serviceUrl.{0,20}https://[A-Za-z0-9.-]+')
+      if (-not $match.Success) { $match = [regex]::Match($text, 'https://[A-Za-z0-9.-]+\.[A-Za-z]{2,}') }
+      if ($match.Success) {
+        $url = [regex]::Match($match.Value, 'https://[A-Za-z0-9.-]+')
+        if ($url.Success) { $hostName = ([Uri]$url.Value).Host }
+      }
     } catch { Write-Host "host scan failed: $_" }
   }
   if ($hostName -and $hostName -ne '127.0.0.1') {
@@ -312,10 +316,9 @@ function Block-SonoraNetwork([string]$PathExe) {
     Add-Content -Path $hosts -Value "`r`n127.0.0.1 $hostName`r`n::1 $hostName"
     $script:blockedHost = $hostName
     Write-Host "blocked host $hostName"
-  }
+  } else { Write-Host 'no hosted name found; offline relaunch may still load the cached page' }
 }
 function Unblock-SonoraNetwork {
-  & cmd.exe /c "netsh advfirewall firewall delete rule name=Sonora-repro-block >nul 2>&1 & exit /b 0"
   if ($script:blockedHost) {
     $hosts = "$env:SystemRoot\System32\drivers\etc\hosts"
     if (Test-Path $hosts) {
@@ -368,6 +371,7 @@ try {
   Write-Host "runner $($os.Caption) $($os.Version)"
   $launched = Start-Sonora @('--force-renderer-accessibility')
   $hwnd = $launched.hwnd
+  Write-Host 'PHASE live-ui'
   Start-Sleep -Seconds 8
   $names = Dump-Ui 30
   Write-Host ("UI names: " + ($names -join ' | '))
@@ -378,6 +382,7 @@ try {
   $detail = $probe.detail
 
   if (-not $passedThrough -and -not $Full) {
+    Write-Host 'PHASE offline-prep'
     Write-Host 'Loaded surface swallowed the grid. Retrying the installed offline page, whose backdrop is fully transparent.'
     Stop-Sonora
     Start-Sleep -Seconds 1
