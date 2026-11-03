@@ -34,14 +34,13 @@ async function click(page, locator) {
   await page.mouse.click(x, y);
 }
 
-function shot(name) {
+async function shot(name) {
   const file = path.join(shots, name);
-  // Playwright's page.screenshot and webContents.capturePage never finish on a
-  // transparent Electron window and leave the test session stuck. The desktop
-  // grab is capped so a locked runner screen cannot stall the scenarios.
+  // Do not wait on the grab. CopyFromScreen and child.kill can both stall the
+  // Windows runner, and Playwright's own screenshot APIs never return here.
   if (process.platform !== 'win32') {
     fs.writeFileSync(`${file}.txt`, 'Desktop capture runs on the Windows runner.');
-    return Promise.resolve();
+    return;
   }
   const child = spawn('powershell', ['-NoProfile', '-Command', `
 Add-Type -AssemblyName System.Windows.Forms
@@ -52,12 +51,9 @@ $g = [System.Drawing.Graphics]::FromImage($bmp)
 $g.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
 $bmp.Save($env:E2E_SHOT, [System.Drawing.Imaging.ImageFormat]::Png)
 $g.Dispose(); $bmp.Dispose()
-`], { env: { ...process.env, E2E_SHOT: file }, stdio: 'ignore', windowsHide: true });
-  return new Promise(resolve => {
-    const timer = setTimeout(() => { child.kill(); resolve(); }, 8000);
-    child.on('exit', () => { clearTimeout(timer); resolve(); });
-    child.on('error', () => { clearTimeout(timer); resolve(); });
-  });
+`], { env: { ...process.env, E2E_SHOT: file }, detached: true, stdio: 'ignore', windowsHide: true });
+  child.unref();
+  await new Promise(resolve => setTimeout(resolve, 1200));
 }
 
 async function pageDump(page) {
@@ -116,7 +112,6 @@ async function launch(appPath) {
   child.stderr?.on('data', chunk => process.stderr.write(`[electron] ${chunk}`));
   const page = await app.firstWindow({ timeout: 90000 });
   page.setDefaultTimeout(20000);
-  await page.route(/fonts\.(googleapis|gstatic)\.com/, route => route.abort()).catch(() => {});
   console.log(await pageDump(page));
   return { app, page };
 }
@@ -133,6 +128,11 @@ function requireApp(name) {
 
 (async () => {
   fs.mkdirSync(shots, { recursive: true });
+  setTimeout(() => {
+    console.error('e2e watchdog: stopping after 6 minutes');
+    try { fs.writeFileSync(resultsFile, JSON.stringify({ scenarios, fatal: 'watchdog' }, null, 2)); } catch { /* results are best effort */ }
+    process.exit(1);
+  }, 6 * 60 * 1000);
   if (!fs.existsSync(path.join(dist, 'index.html'))) throw new Error(`E2E renderer is missing ${path.join(dist, 'index.html')}`);
   server = await startServer();
   const errors = [];
