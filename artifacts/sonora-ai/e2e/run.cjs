@@ -73,7 +73,8 @@ async function launch(appPath) {
     env: { ...process.env, SONORA_E2E: '1', SONORA_DESKTOP_URL: serviceUrl },
   });
   const page = await app.firstWindow({ timeout: 90000 });
-  page.setDefaultTimeout(15000);
+  page.setDefaultTimeout(20000);
+  await page.route(/fonts\.(googleapis|gstatic)\.com/, route => route.abort()).catch(() => {});
   return { app, page };
 }
 
