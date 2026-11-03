@@ -88,7 +88,7 @@ public static class SonoraInput {
     if (sent != 3) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
   }
   public static void RaiseWithoutFocus(IntPtr hWnd) {
-    SetWindowPos(hWnd, IntPtr.Zero, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    SetWindowPos(hWnd, new IntPtr(-1), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
   }
 }
 "@
@@ -523,11 +523,16 @@ try {
     if ($pattern -and $pattern.Current.ToggleState -ne $want) { Click-Name 'Keep on top' | Out-Null; Start-Sleep -Milliseconds 200 }
     elseif (-not $pattern -and -not $pin) { Click-Name 'Keep on top' | Out-Null }
     foreach ($focus in @($true, $false)) {
-      if ($focus) { [SonoraInput]::SetForegroundWindow($hwnd) | Out-Null }
-      else {
+      $swp = [SonoraInput]::SWP_NOMOVE -bor [SonoraInput]::SWP_NOSIZE -bor [SonoraInput]::SWP_NOACTIVATE -bor [SonoraInput]::SWP_SHOWWINDOW
+      if ($focus) {
+        if (-not $pin) { [SonoraInput]::SetWindowPos($hwnd, [IntPtr](-2), 0, 0, 0, 0, $swp) | Out-Null }
+        [SonoraInput]::SetForegroundWindow($hwnd) | Out-Null
+      } else {
+        # The catcher is maximized. Keep Sonora painted above it, then focus the catcher
+        # so the click starts while Sonora is not the foreground window.
+        [SonoraInput]::SetWindowPos($hwnd, [IntPtr](-1), 0, 0, 0, 0, $swp) | Out-Null
         $catcherHwnd = (Get-Process -Id $catcher.Id -ErrorAction SilentlyContinue).MainWindowHandle
         if ($catcherHwnd -and $catcherHwnd -ne [IntPtr]::Zero) { [SonoraInput]::SetForegroundWindow($catcherHwnd) | Out-Null }
-        [SonoraInput]::RaiseWithoutFocus($hwnd) | Out-Null
       }
       Start-Sleep -Milliseconds 200
       foreach ($ratio in @(0.0, 0.5, 1.0)) {
