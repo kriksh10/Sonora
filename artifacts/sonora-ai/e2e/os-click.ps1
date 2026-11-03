@@ -337,8 +337,10 @@ function Dump-Ui([int]$Limit) {
     if ($root) {
       $all = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
       for ($i = 0; $i -lt [Math]::Min($Limit, $all.Count); $i++) {
-        $n = $all.Item($i).Current.Name
-        if ($n) { $names += $n }
+        $item = $all.Item($i)
+        $n = $item.Current.Name
+        $kind = $item.Current.ControlType.ProgrammaticName
+        if ($n) { $names += $n } else { $names += "($kind)" }
       }
     }
   } catch { Write-Host "UI dump failed: $_" }
