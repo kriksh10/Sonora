@@ -449,11 +449,10 @@ else {
   app.on('second-instance', show);
   app.whenReady().then(async () => {
     try {
-      if (development || e2e) target = validateServiceUrl(process.env.SONORA_DESKTOP_URL, true);
-      else {
-        const bundled = JSON.parse(fs.readFileSync(path.join(__dirname, 'runtime-config.json'), 'utf8'));
-        target = validateServiceUrl(bundled.serviceUrl, false);
-      }
+      const bundled = JSON.parse(fs.readFileSync(path.join(__dirname, 'runtime-config.json'), 'utf8'));
+      const localE2E = e2e || bundled.e2e === true;
+      if (development || localE2E) target = validateServiceUrl(process.env?.SONORA_DESKTOP_URL || bundled.serviceUrl, true);
+      else target = validateServiceUrl(bundled.serviceUrl, false);
     } catch {
       dialog.showErrorBox('Sonora release configuration missing', 'This build has no valid hosted Sonora URL. Ask the publisher for a configured release. A local development server is not a production service.');
       app.quit(); return;
