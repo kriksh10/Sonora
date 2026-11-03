@@ -121,7 +121,7 @@ while (-not (Test-Path `$stop)) {
     `$g.Dispose(); `$bmp.Dispose()
     `$i++
   } catch {}
-  Start-Sleep -Milliseconds 700
+  Start-Sleep -Milliseconds 1200
 }
 "@
 $framePath = Join-Path $OutDir 'frames.ps1'
@@ -275,25 +275,27 @@ function Seed-Preferences {
 function Clear-SonoraCache {
   foreach ($root in @($env:APPDATA, $env:LOCALAPPDATA)) {
     Get-ChildItem $root -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'sonora' } | ForEach-Object {
-      foreach ($sub in @('Cache', 'Code Cache', 'GPUCache', 'Session Storage', 'Local Storage', 'Service Worker', 'Partitions', 'blob_storage', 'DawnCache', 'DawnGraphiteCache', 'DawnWebGPUCache')) {
+      foreach ($sub in @('Cache', 'Code Cache', 'GPUCache', 'Session Storage', 'Local Storage', 'Service Worker', 'Partitions', 'blob_storage')) {
         $path = Join-Path $_.FullName $sub
-        if (Test-Path $path) { Remove-Item $path -Recurse -Force -ErrorAction SilentlyContinue; Write-Host "cleared $path" }
+        if (Test-Path $path) { & cmd.exe /c "rmdir /s /q `"$path`" & exit /b 0"; Write-Host "cleared $path" }
       }
     }
   }
 }
 function Block-SonoraNetwork([string]$PathExe) {
-  $rule = 'Sonora-repro-block'
-  Get-NetFirewallRule -DisplayName $rule -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
-  New-NetFirewallRule -DisplayName $rule -Direction Outbound -Program $PathExe -Action Block | Out-Null
+  & cmd.exe /c "netsh advfirewall firewall delete rule name=Sonora-repro-block >nul 2>&1 & exit /b 0"
+  & cmd.exe /c "netsh advfirewall firewall add rule name=Sonora-repro-block dir=out program=`"$PathExe`" action=block >nul 2>&1 & exit /b 0"
+  Write-Host "firewall blocked $PathExe"
   $asar = Join-Path (Split-Path $PathExe) 'resources\app.asar'
   $hostName = $null
   if (Test-Path $asar) {
     try {
       $fs = [IO.File]::OpenRead($asar)
-      $buf = New-Object byte[] (1024 * 1024)
+      $buf = New-Object byte[] (512 * 1024)
       $hold = ''
-      while (($n = $fs.Read($buf, 0, $buf.Length)) -gt 0) {
+      $scanned = 0
+      while ($scanned -lt (6 * 1024 * 1024) -and ($n = $fs.Read($buf, 0, $buf.Length)) -gt 0) {
+        $scanned += $n
         $text = $hold + [Text.Encoding]::ASCII.GetString($buf, 0, $n)
         $match = [regex]::Match($text, 'serviceUrl.{0,12}https://[A-Za-z0-9.-]+')
         if ($match.Success) {
@@ -311,10 +313,9 @@ function Block-SonoraNetwork([string]$PathExe) {
     $script:blockedHost = $hostName
     Write-Host "blocked host $hostName"
   }
-  Write-Host "firewall blocked $PathExe"
 }
 function Unblock-SonoraNetwork {
-  Get-NetFirewallRule -DisplayName 'Sonora-repro-block' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+  & cmd.exe /c "netsh advfirewall firewall delete rule name=Sonora-repro-block >nul 2>&1 & exit /b 0"
   if ($script:blockedHost) {
     $hosts = "$env:SystemRoot\System32\drivers\etc\hosts"
     if (Test-Path $hosts) {
@@ -384,7 +385,7 @@ try {
     Block-SonoraNetwork $Exe
     $offline = Start-Sonora @('--force-renderer-accessibility')
     $hwnd = $offline.hwnd
-    $title = Wait-Title $hwnd 'offline' 55
+    $title = Wait-Title $hwnd 'offline' 25
     Start-Sleep -Seconds 3
     Write-Host "offline title='$title'"
     Write-Host ("offline UI: " + ((Dump-Ui 20) -join ' | '))
@@ -635,9 +636,14 @@ finally {
   $video = Join-Path $OutDir 'desktop.mp4'
   if ($ffmpeg) {
     $frames = @(Get-ChildItem $frameDir -Filter 'f*.png' -ErrorAction SilentlyContinue)
-    Write-Host "stitching $($frames.Count) frames with $ffmpeg"
-    if ($frames.Count -ge 2) {
-      & $ffmpeg -y -hide_banner -loglevel error -start_number 0 -framerate 2 -i (Join-Path $frameDir 'f%04d.png') -c:v libx264 -pix_fmt yuv420p -preset ultrafast -movflags +faststart $video 2> (Join-Path $OutDir 'ffmpeg-err.txt')
+    $clip = Join-Path $OutDir 'clip'
+    New-Item -ItemType Directory -Force -Path $clip | Out-Null
+    $picked = @($frames | Sort-Object Name | Select-Object -Last 16)
+    for ($i = 0; $i -lt $picked.Count; $i++) { Copy-Item $picked[$i].FullName (Join-Path $clip ('f{0:D4}.png' -f $i)) -Force }
+    Write-Host "stitching $($picked.Count) of $($frames.Count) frames with $ffmpeg"
+    if ($picked.Count -ge 2) {
+      $ff = Start-Process -FilePath $ffmpeg -ArgumentList @('-y','-hide_banner','-loglevel','error','-start_number','0','-framerate','2','-i',(Join-Path $clip 'f%04d.png'),'-c:v','libx264','-pix_fmt','yuv420p','-preset','ultrafast','-movflags','+faststart',$video) -PassThru -WindowStyle Hidden -RedirectStandardError (Join-Path $OutDir 'ffmpeg-err.txt')
+      if (-not $ff.WaitForExit(45000)) { try { $ff.Kill() } catch {} ; Write-Host 'ffmpeg stopped after 45s' }
       $bytes = (Get-Item $video -ErrorAction SilentlyContinue).Length
       Write-Host "video bytes=$bytes"
       if ($bytes -gt 10000) { Remove-Item $frameDir -Recurse -Force -ErrorAction SilentlyContinue }
