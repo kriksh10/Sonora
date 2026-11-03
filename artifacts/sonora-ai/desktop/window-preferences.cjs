@@ -2,8 +2,8 @@ const DEFAULT_OPACITY = 0.4;
 const OPACITY_VERSION = 2;
 
 function opacity(value) {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0.15 || value > 1) {
-    throw new Error('Background opacity must be between 15% and 100%.');
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
+    throw new Error('Background opacity must be between 0% and 100%.');
   }
   return value;
 }

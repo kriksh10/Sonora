@@ -1,0 +1,47 @@
+name: Sonora 1.0.3 OS click reproduction
+on:
+  pull_request:
+    branches: [replit-sync]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: v103-os-clicks-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  reproduce-v103:
+    name: Reproduce v1.0.3 pass-through
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ffmpeg
+        continue-on-error: true
+        shell: pwsh
+        run: winget install --id Gyan.FFmpeg -e --accept-source-agreements --accept-package-agreements
+      - name: Download Sonora 1.0.3
+        shell: pwsh
+        run: gh release download v1.0.3 --repo kriksh10/Sonora --pattern "Sonora-1.0.3-win-x64.exe" --dir "$env:RUNNER_TEMP"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Install Sonora 1.0.3 silently
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP "Sonora-1.0.3-win-x64.exe"
+          Start-Process -FilePath $installer -ArgumentList "/S" -Wait
+          $exe = Get-ChildItem -Path "$env:LOCALAPPDATA\Programs","$env:ProgramFiles" -Filter "Sonora AI.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { throw "Sonora AI.exe was not installed" }
+          Set-Content -Path installed-exe.txt -Value $exe.FullName
+          Write-Host "Installed $($exe.FullName)"
+      - name: OS-level clicks against the installed v1.0.3 app
+        shell: pwsh
+        run: |
+          $exe = Get-Content installed-exe.txt
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -STA -NoProfile -ExecutionPolicy Bypass -File artifacts/sonora-ai/e2e/os-click.ps1 -Exe $exe -OutDir generated-artifacts/os-click-proof
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v103-os-click-proof
+          path: generated-artifacts/os-click-proof/**
+          if-no-files-found: warn
+          retention-days: 14

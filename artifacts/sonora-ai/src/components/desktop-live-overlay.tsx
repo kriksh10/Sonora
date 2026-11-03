@@ -114,7 +114,7 @@ export default function DesktopLiveOverlay(props: {
             <button type="button" className="dp-icon-btn" aria-label="Hide answer" onClick={() => setAnswerOpen(false)}><X size={14} /></button>
           </div>
           <div className="dp-q"><b>Question:</b> {props.latestQuestion || props.question || "Waiting for a question"} <button type="button" aria-label="Copy question" onClick={() => void navigator.clipboard?.writeText(props.latestQuestion || props.question || "")}><Copy size={13} /></button></div>
-          <div className="dp-answer-scroll">
+          <div className="dp-answer-scroll" aria-label={props.answer || "Answer pending"}>
             <h3>Answer: {headline}</h3>
             {props.answer ? <SafeMarkdown text={props.answer} /> : <p>Ask, or let Auto Answer respond when the interviewer finishes.</p>}
           </div>

@@ -74,7 +74,7 @@ test('invalid values never reach native code; hung IPC recovers with an honest e
     display: v => values.push(v), error: e => errors.push(e), timeoutMs: 5,
     save: async () => { writes++; return new Promise(() => {}); },
   });
-  for (const value of [NaN, Infinity, .14, 1.01]) h.set(value);
+  for (const value of [NaN, Infinity, -0.01, 1.01]) h.set(value);
   assert.equal(writes, 0); assert.equal(values.length, 0);
   h.sync(.9); h.set(.2);
   await new Promise(resolve => setTimeout(resolve, 20));
@@ -101,7 +101,7 @@ test('dragging is confined to handle and range has keyboard semantics and compat
   assert.match(css, /\[class\*="bg-\[#0"\]/);
   assert.match(css, /\[class\*="bg-black\/"\]/);
   assert.match(css, /\.sonora-window-popover, \.sonora-window-popover \* \{ -webkit-app-region: no-drag;/);
-  assert.match(css, /html\.sonora-desktop, html\.sonora-desktop body, html\.sonora-desktop #root \{ background: transparent !important;/);
+  assert.match(css, /html\.sonora-desktop, html\.sonora-desktop body, html\.sonora-desktop #root \{ background-color: rgba\(0, 0, 0, 0\.004\) !important;/);
   assert.match(css, /background-color: var\(--sonora-glass\) !important;/);
   assert.match(css, /backdrop-filter: blur\(18px\) saturate\(1\.35\)/);
   assert.match(css, /html\.sonora-desktop \.lsv-answer-pane \.lsv-scroll/);
@@ -111,8 +111,10 @@ test('dragging is confined to handle and range has keyboard semantics and compat
   assert.match(main, /transparent: true/);
   assert.match(main, /frame: false/);
   assert.match(main, /thickFrame: false/);
-  assert.match(main, /backgroundColor: '#00000000'/);
-  assert.match(main, /setBackgroundColor\?\.\('#00000000'\)/);
+  assert.match(main, /backgroundColor: HIT_FLOOR/);
+  assert.match(main, /setBackgroundColor\?\.\(HIT_FLOOR\)/);
+  assert.match(main, /const HIT_FLOOR = '#01000000'/);
+  assert.match(main, /win\.setIgnoreMouseEvents\(false\)/);
   assert.doesNotMatch(main, /\.setOpacity\(/);
   assert.doesNotMatch(workspace, /rgba\(16,17,19,var\(--sonora-background-opacity/);
   assert.match(fs.readFileSync(path.resolve(__dirname, '../../index.html'), 'utf8'), /classList\.add\("sonora-desktop"\)/);

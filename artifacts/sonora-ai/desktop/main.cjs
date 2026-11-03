@@ -48,7 +48,7 @@ function bootLog(line) {
   const text = `${new Date().toISOString()} ${line}`;
   if (!localE2E) return;
   console.log(`[sonora-e2e] ${text}`);
-  const destinations = [process.env?.SONORA_E2E_LOG].filter(Boolean);
+  const destinations = [process.env?.SONORA_E2E_LOG, process.env?.SONORA_BOOT_LOG].filter(Boolean);
   try { destinations.push(path.join(app.getPath('userData'), 'e2e-boot.txt')); } catch { /* userData is ready only after app.ready */ }
   for (const file of destinations) {
     try {
@@ -70,7 +70,7 @@ function allowLocalE2ENetwork() {
 
 function state() {
   return { visible: win?.isVisible() ?? false, alwaysOnTop, contentProtection, captureActive, shortcutRegistered, platform: process.platform,
-    audioProtocol: 2, nativeAudioProtocol: 2, version: app.getVersion(), backgroundOpacity, backgroundOpacityMin: 0.15, preferencesError,
+    audioProtocol: 2, nativeAudioProtocol: 2, version: app.getVersion(), backgroundOpacity, backgroundOpacityMin: 0, preferencesError,
     fontScale: fontScaleValue, transcriptOpen, clickThrough, openAtLogin, hotkeys: hotkeySummary(hotkeyState),
     update: updates.status() };
 }
@@ -102,9 +102,9 @@ function applyAlwaysOnTop(enabled) {
 }
 function applyPassthrough() {
   if (!win || win.isDestroyed() || typeof win.setIgnoreMouseEvents !== 'function') return;
-  // Pass clicks only through empty gaps, and only after the user opts in.
-  // Visible glass, the sidebar, dialogs, and every control keep the mouse.
-  const pass = clickThrough && !pointerOverUi && !controlsHover;
+  // Ignore is off unless the user explicitly turned click-through on.
+  // A transparent pixel is still a hit target; Windows only passes it through when ignore is on.
+  const pass = clickThrough === true && !pointerOverUi && !controlsHover;
   ignoringMouse = pass;
   win.setIgnoreMouseEvents(pass, { forward: pass });
 }
@@ -145,10 +145,12 @@ function broadcast() {
   if (win && !win.isDestroyed()) win.webContents.send('overlay:state-changed', state());
   updateTray();
 }
+const HIT_FLOOR = '#01000000';
 function clearWindowPlate() {
   if (!win || win.isDestroyed()) return;
-  win.setBackgroundColor?.('#00000000');
-  // Windows 11 otherwise composites Mica/acrylic, which paints an opaque plate and white edges.
+  // Alpha 0 makes Windows treat the whole layered window as click-through.
+  // 1/255 is invisible and is still a hit target.
+  win.setBackgroundColor?.(HIT_FLOOR);
   if (process.platform === 'win32') win.setBackgroundMaterial?.('none');
 }
 function show() {
@@ -385,15 +387,15 @@ function createWindow() {
     minWidth: Math.min(390, bounds.width), minHeight: Math.min(620, bounds.height), show: false,
     // thickFrame, rounded corners, and Win11 Mica paint an opaque backing behind a frameless window.
     frame: false, thickFrame: false, roundedCorners: false,
-    transparent: true, backgroundColor: '#00000000', backgroundMaterial: 'none', resizable: true, alwaysOnTop: true,
+    transparent: true, backgroundColor: HIT_FLOOR, backgroundMaterial: 'none', resizable: true, alwaysOnTop: true,
     skipTaskbar: true, hasShadow: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'), partition: 'persist:sonora',
       contextIsolation: true, nodeIntegration: false, sandbox: true,
       webSecurity: true, backgroundThrottling: false,
-      ...(localE2E ? { additionalArguments: ['--sonora-e2e'] } : {}),
     },
   });
+  win.setIgnoreMouseEvents(false);
   clearWindowPlate();
   if (migrateOpacity) persistWindow();
   applyAlwaysOnTop(alwaysOnTop);
@@ -473,7 +475,10 @@ function createWindow() {
       else { quitting = true; app.quit(); }
     }
   });
-  win.webContents.on('did-finish-load', () => bootLog(`did-finish-load ${win.webContents.getURL()}`));
+  win.webContents.on('did-finish-load', () => {
+    try { app.setAccessibilitySupportEnabled(true); } catch (error) { bootLog(`accessibility ${error}`); }
+    bootLog(`did-finish-load ${win.webContents.getURL()}`);
+  });
   configurePermissions();
   win.once('ready-to-show', show);
   void loadService();
@@ -515,11 +520,20 @@ else {
   app.on('second-instance', show);
   app.whenReady().then(async () => {
     try {
+      app.setAccessibilitySupportEnabled(true);
+      if (process.env?.SONORA_BOOT_LOG) fs.appendFileSync(process.env.SONORA_BOOT_LOG, 'accessibility=on\n');
+    } catch (error) {
+      if (process.env?.SONORA_BOOT_LOG) fs.appendFileSync(process.env.SONORA_BOOT_LOG, `accessibility=${error}\n`);
+    }
+    try {
       const bundled = JSON.parse(fs.readFileSync(path.join(__dirname, 'runtime-config.json'), 'utf8'));
       localE2E = e2e || bundled.e2e === true;
       if (development || localE2E) target = validateServiceUrl(process.env?.SONORA_DESKTOP_URL || bundled.serviceUrl, true);
       else target = validateServiceUrl(bundled.serviceUrl, false);
       bootLog(`target=${target} packaged=${app.isPackaged} argvE2E=${process.argv.includes('--e2e')} envE2E=${process.env?.SONORA_E2E === '1'} bundledE2E=${bundled.e2e === true}`);
+      if (process.env?.SONORA_BOOT_LOG) {
+        try { fs.appendFileSync(process.env.SONORA_BOOT_LOG, `target=${target} localE2E=${localE2E} argv=${process.argv.join(' ')}\n`); } catch { /* diagnostic only */ }
+      }
     } catch (error) {
       bootLog(`config rejected ${error}`);
       dialog.showErrorBox('Sonora release configuration missing', 'This build has no valid hosted Sonora URL. Ask the publisher for a configured release. A local development server is not a production service.');

@@ -23,11 +23,7 @@ contextBridge.exposeInMainWorld('sonoraDesktop', {
   setTranscriptOpen: value => ipcRenderer.invoke('overlay:set-transcript-open', Boolean(value)),
   setClickThrough: value => ipcRenderer.invoke('overlay:set-click-through', Boolean(value)),
   setControlsHover: value => ipcRenderer.invoke('overlay:set-controls-hover', Boolean(value)),
-  setPointerCapture: value => {
-    // sendSync during Playwright's mouse events deadlocks the packaged e2e session.
-    if (process.argv.includes('--sonora-e2e')) ipcRenderer.send('overlay:set-pointer-capture', Boolean(value));
-    else ipcRenderer.sendSync('overlay:set-pointer-capture', Boolean(value));
-  },
+  setPointerCapture: value => ipcRenderer.sendSync('overlay:set-pointer-capture', Boolean(value)),
   e2eFlags: () => ipcRenderer.invoke('e2e:window-flags'),
   setOpenAtLogin: value => ipcRenderer.invoke('overlay:set-open-at-login', Boolean(value)),
   setHotkeys: value => ipcRenderer.invoke('overlay:set-hotkeys', value),

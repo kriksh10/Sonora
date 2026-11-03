@@ -51,7 +51,7 @@ test('packaged shell keeps visible UI clickable and stays above other windows', 
   const preload = fs.readFileSync(path.resolve(__dirname, '../preload.cjs'), 'utf8');
   const css = fs.readFileSync(path.resolve(__dirname, '../../src/desktop-parakeet.css'), 'utf8');
   const overlay = fs.readFileSync(path.resolve(__dirname, '../../src/components/desktop-live-overlay.tsx'), 'utf8');
-  assert.match(main, /const pass = clickThrough && !pointerOverUi && !controlsHover/);
+  assert.match(main, /const pass = clickThrough === true && !pointerOverUi && !controlsHover/);
   assert.match(main, /setIgnoreMouseEvents\(pass, \{ forward: pass \}\)/);
   assert.match(main, /overlay:set-pointer-capture/);
   assert.match(main, /process\.env\?\.SONORA_E2E === '1' && process\.argv\.includes\('--e2e'\)/);
@@ -61,9 +61,9 @@ test('packaged shell keeps visible UI clickable and stays above other windows', 
   assert.match(main, /setProxy\(\{ mode: 'direct' \}\)/);
   assert.match(main, /win\.on\('blur', \(\) => \{ holdOnTop\(\); \}\)/);
   assert.match(preload, /sendSync\('overlay:set-pointer-capture'/);
-  assert.match(preload, /--sonora-e2e/);
+  assert.doesNotMatch(preload, /--sonora-e2e/);
   assert.match(css, /-webkit-app-region: no-drag/);
-  assert.match(css, /background: rgba\(0, 0, 0, \.02\)/);
+  assert.match(css, /background: rgba\(0, 0, 0, 0\.04\)/);
   assert.match(overlay, /liveAnswerQuestion/);
   assert.match(overlay, /onClick=\{\(\) => ask\(askText\)\}/);
   assert.doesNotMatch(main, /setIgnoreMouseEvents\(true/);

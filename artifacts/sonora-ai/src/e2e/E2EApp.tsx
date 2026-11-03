@@ -37,10 +37,22 @@ export default function E2EApp() {
   const [company, setCompany] = useState("");
   const [formError, setFormError] = useState("");
   const [theme, setTheme] = useState<SonoraTheme>(() => readSonoraTheme());
+  const [lastClick, setLastClick] = useState("idle");
   const [audioSource, setAudioSource] = useState<"microphone" | "system" | "both">("system");
   const selected = sessions.find(session => session.id === selectedId) ?? null;
   const visible = sessions.filter(session => (filter === "all" || session.sessionType === filter) &&
     `${session.title} ${session.company ?? ""}`.toLowerCase().includes(search.toLowerCase()));
+
+  useEffect(() => {
+    const onClick = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const control = target?.closest("button, a, summary, input, label");
+      const name = control?.getAttribute("aria-label") || control?.textContent || "panel";
+      setLastClick(name.replace(/\s+/g, " ").trim().slice(0, 80) || "panel");
+    };
+    window.addEventListener("click", onClick, true);
+    return () => window.removeEventListener("click", onClick, true);
+  }, []);
 
   useEffect(() => {
     const onTranscript = (event: Event) => {
@@ -98,7 +110,13 @@ export default function E2EApp() {
       const response = await fetch(`/api/sessions/${selected.id}/live-audio`, { credentials: "include" });
       if (response.status === 503) { setError(""); setNotice("Speechmatics unavailable. Using Gemini fallback for transcription."); }
       else if (!response.ok) setError("Live transcription could not start.");
-      else { setError(""); setNotice("Listening. Speechmatics is connected."); }
+      else {
+        const body = await response.json().catch(() => ({})) as { transcript?: string };
+        const heard = body.transcript?.trim();
+        if (heard) setEntries(current => [...current, { role: "user", text: heard, source: "system", createdAt: new Date().toISOString() }]);
+        setError("");
+        setNotice("Listening. Speechmatics is connected.");
+      }
       setListening(true);
     } catch {
       setError("Network offline. Sonora is still open; retry when you are connected.");
@@ -119,6 +137,7 @@ export default function E2EApp() {
   return (
     <>
       <DesktopVisibilityControls />
+      <p id="sonora-last-click" aria-label={`Last click ${lastClick}`} style={{ position: "absolute", width: 1, height: 1, overflow: "hidden" }}>{lastClick}</p>
       <main className="sonora-workspace dp-app text-[#e7e8eb]">
         {!signedIn ? (
           <section className="dp-glass dp-card" aria-label="Signed out">
@@ -184,7 +203,7 @@ export default function E2EApp() {
             role="user"
             freeSessionsUsed={0}
             unlimitedUntilMs={null}
-            upgradeHref="/pricing"
+            upgradeHref="#"
           />
         )}
         {createOpen && (

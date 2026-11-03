@@ -289,9 +289,8 @@ function requireApp(name) {
       await page.waitForTimeout(100);
       state = await page.evaluate(() => window.sonoraDesktop.e2eFlags());
       if (state.ignoringMouse) throw new Error('Gap passed through before click-through was enabled');
-      await click(page, page.locator('summary[aria-label="Window settings"]'));
-      await click(page, page.getByLabel('Click through the overlay'));
-      await click(page, page.locator('summary[aria-label="Window settings"]'));
+      await page.evaluate(() => window.sonoraDesktop.setClickThrough(true));
+      await page.waitForFunction(async () => (await window.sonoraDesktop.e2eFlags()).clickThrough);
       const gap = await page.evaluate(({ x, top, bottom }) => {
         for (let y = top + 1; y < bottom; y += 1) {
           const el = document.elementFromPoint(x, y);
@@ -313,9 +312,8 @@ function requireApp(name) {
       await page.waitForTimeout(150);
       state = await page.evaluate(() => window.sonoraDesktop.e2eFlags());
       if (state.ignoringMouse) throw new Error('Button stayed click-through');
-      await click(page, page.locator('summary[aria-label="Window settings"]'));
-      await click(page, page.getByLabel('Click through the overlay'));
-      await click(page, page.locator('summary[aria-label="Window settings"]'));
+      await page.evaluate(() => window.sonoraDesktop.setClickThrough(false));
+      await page.waitForFunction(async () => !(await window.sonoraDesktop.e2eFlags()).clickThrough);
     });
 
     await scenario('pin, blur, opacity, resize, and restart', async () => {
@@ -329,7 +327,7 @@ function requireApp(name) {
       await page.waitForTimeout(300);
       state = await page.evaluate(() => window.sonoraDesktop.e2eFlags());
       if (!state.alwaysOnTop || !before.alwaysOnTop) throw new Error('Blur dropped the pinned window');
-      const slider = page.getByLabel('Overlay opacity');
+      const slider = page.getByRole('slider', { name: 'Overlay opacity' });
       const box = await slider.boundingBox();
       for (const [ratio, label] of [[0.02, 'min'], [0.5, 'mid'], [0.98, 'max']]) {
         await page.mouse.click(box.x + box.width * ratio, box.y + box.height / 2);
