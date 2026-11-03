@@ -28,6 +28,7 @@ let fontScaleValue = 1;
 let transcriptOpen = false;
 let clickThrough = false;
 let controlsHover = false;
+let pointerOverUi = false;
 let openAtLogin = false;
 let hotkeyOverrides = {};
 let hotkeyState = [];
@@ -56,21 +57,27 @@ function persistWindow() {
     preferencesError = '';
   } catch { preferencesError = 'Window preferences could not be saved. Changes apply for this launch only.'; }
 }
+function holdOnTop() {
+  if (!win || win.isDestroyed() || !alwaysOnTop) return;
+  win.setAlwaysOnTop(true, 'screen-saver');
+  win.setVisibleOnAllWorkspaces?.(true, { visibleOnFullScreen: true });
+  if (process.platform === 'win32') win.moveTop?.();
+}
 function applyAlwaysOnTop(enabled) {
   if (!win || win.isDestroyed()) return;
   alwaysOnTop = enabled;
-  if (enabled) {
-    win.setAlwaysOnTop(true, 'screen-saver');
-    win.setVisibleOnAllWorkspaces?.(true, { visibleOnFullScreen: true });
-  } else {
+  if (enabled) holdOnTop();
+  else {
     win.setAlwaysOnTop(false);
     win.setVisibleOnAllWorkspaces?.(false);
   }
 }
 function applyPassthrough() {
   if (!win || win.isDestroyed() || typeof win.setIgnoreMouseEvents !== 'function') return;
-  const pass = clickThrough && !controlsHover;
-  win.setIgnoreMouseEvents(pass, { forward: true });
+  // Pass clicks only through empty gaps, and only after the user opts in.
+  // Visible glass, the sidebar, dialogs, and every control keep the mouse.
+  const pass = clickThrough && !pointerOverUi && !controlsHover;
+  win.setIgnoreMouseEvents(pass, { forward: pass });
 }
 function applyOpenAtLogin(enabled) {
   openAtLogin = Boolean(enabled);
@@ -243,6 +250,13 @@ function registerIpc() {
     if (controlsHover === value) return state();
     controlsHover = value; applyPassthrough(); return state();
   });
+  ipcMain.on('overlay:set-pointer-capture', (event, value) => {
+    if (!desktopRequestAllowed(event, win?.webContents, target, 'overlay:set-pointer-capture', offlineFileUrl)) return;
+    if (typeof value !== 'boolean' || pointerOverUi === value) return;
+    pointerOverUi = value;
+    applyPassthrough();
+    if (value) holdOnTop();
+  });
   handle('overlay:set-open-at-login', value => {
     if (typeof value !== 'boolean') throw new Error('Expected boolean.');
     applyOpenAtLogin(value); persistWindow(); broadcast(); return state();
@@ -399,7 +413,7 @@ function createWindow() {
   win.on('close', event => { if (!quitting) { event.preventDefault(); hide(); } });
   win.on('show', () => { win.setSkipTaskbar?.(true); if (alwaysOnTop) applyAlwaysOnTop(true); broadcast(); });
   win.on('hide', broadcast);
-  win.on('blur', () => { if (alwaysOnTop) applyAlwaysOnTop(true); });
+  win.on('blur', () => { holdOnTop(); });
   win.webContents.on('render-process-gone', () => { nativeAudio.stop(); if (!nativeAudio.isActive()) captureActive = false; broadcast(); });
   win.webContents.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => {
     if (mainFrame && !inPlace) { nativeAudio.stop(); if (!nativeAudio.isActive()) captureActive = false; broadcast(); }

@@ -1064,7 +1064,12 @@ export default function InterviewWorkspace() {
           latestQuestion={latestQuestion}
           question={answerInput}
           onQuestionChange={setAnswerInput}
-          onAsk={() => void askGemini(answerInput || latestQuestion)}
+          onAsk={question => {
+            const spoken = [...currentEntries].reverse().find(entry => entry.role !== "assistant")?.text || "";
+            const next = question.trim() || answerInput.trim() || latestQuestion.trim() || interimTranscript.trim() || spoken.trim();
+            if (!next) { setError("Nothing to answer yet. Click Listen so Sonora can hear the question, or type one in Chat."); return; }
+            void askGemini(next);
+          }}
           onShowAnswer={next => { setAnswerCleared(false); setAnswer(next); setAnswerState("complete"); }}
           onClearAnswers={() => { setAnswer(""); setAnswerCleared(true); setAnswerInput(""); setLatestQuestion(""); setAnswerState("idle"); lastRequestRef.current = null; setNotice("Visible answers cleared. Your saved transcript is unchanged."); }}
           onClearTranscript={() => { setTranscriptClearedAt(new Date().toISOString()); setInterimTranscript(""); setNotice("Visible transcript cleared. The saved transcript is unchanged."); }}

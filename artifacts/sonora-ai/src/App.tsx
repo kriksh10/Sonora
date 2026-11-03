@@ -155,6 +155,7 @@ type SonoraDesktopBridge = {
   setTranscriptOpen?: (value: boolean) => Promise<DesktopState>;
   setClickThrough?: (value: boolean) => Promise<DesktopState>;
   setControlsHover?: (value: boolean) => Promise<DesktopState>;
+  setPointerCapture?: (capture: boolean) => void;
   setOpenAtLogin?: (value: boolean) => Promise<DesktopState>;
   setHotkeys?: (value: Record<string, string>) => Promise<DesktopState>;
   resetHotkeys?: () => Promise<DesktopState>;

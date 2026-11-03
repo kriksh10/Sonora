@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ChevronLeft, ChevronRight, Copy, Expand, MoreVertical, ThumbsDown, ThumbsUp, X } from "lucide-react";
 import type { CallSession, TranscriptEntry } from "@workspace/api-client-react";
 import SafeMarkdown from "@/components/safe-markdown";
-import { neighborAnswer } from "@/lib/desktop-commands";
+import { liveAnswerQuestion } from "@/lib/overlay-hit-test";
 
 type AudioSource = "microphone" | "system" | "both";
 
@@ -13,7 +13,7 @@ export default function DesktopLiveOverlay(props: {
   latestQuestion: string;
   question: string;
   onQuestionChange: (value: string) => void;
-  onAsk: () => void;
+  onAsk: (question: string) => void;
   onShowAnswer: (answer: string) => void;
   onClearAnswers: () => void;
   onClearTranscript: () => void;
@@ -41,9 +41,17 @@ export default function DesktopLiveOverlay(props: {
   const [answerOpen, setAnswerOpen] = useState(true);
   const [vote, setVote] = useState<"up" | "down" | null>(null);
   const spoken = [...props.entries].reverse().find(entry => entry.role !== "assistant")?.text || "";
-  const liveWords = props.interim || spoken || "Waiting for speech…";
-  const previous = neighborAnswer(props.assistantAnswers, props.answer, -1);
-  const next = neighborAnswer(props.assistantAnswers, props.answer, 1);
+  const liveWords = props.interim || spoken || (props.listening ? "Listening…" : "Listening is off. Click Listen, or type a question in Chat.");
+  const askText = liveAnswerQuestion({ typed: props.question, latest: props.latestQuestion, interim: props.interim, spoken });
+  const history = props.assistantAnswers.filter(text => text.trim());
+  const at = history.lastIndexOf(props.answer);
+  const previous = at > 0 ? history[at - 1] : at < 0 && history.length ? history[history.length - 1] : null;
+  const next = at >= 0 && at < history.length - 1 ? history[at + 1] : null;
+  const ask = (question: string) => {
+    const text = question.trim();
+    if (text) props.onAsk(text);
+    else props.onAsk("");
+  };
   const headline = props.answer.split("\n").map(line => line.trim()).find(Boolean)?.replace(/^#+\s*/, "") || "No answer yet";
 
   return (
@@ -51,13 +59,13 @@ export default function DesktopLiveOverlay(props: {
       <header className="dp-glass dp-bar">
         <span className="dp-dots" aria-hidden="true"><i className={props.listening ? "on" : ""} /><i className={props.error ? "warn" : props.listening ? "on" : ""} /></span>
         <div className="dp-actions">
-          <button className="dp-pill" onClick={props.onAsk}>Answer <kbd>Ctrl+Enter</kbd></button>
-          <button className="dp-pill" disabled={!props.onScreenshot} onClick={props.onScreenshot}>Screenshot <kbd>Ctrl+Shift+Enter</kbd></button>
-          <button className={`dp-pill ${chat ? "is-active" : ""}`} onClick={() => setChat(value => !value)}>Chat</button>
-          <button className="dp-pill" onClick={props.onToggleAudio}>{props.listening ? "Stop listening" : "Listen"}</button>
+          <button type="button" className="dp-pill" onClick={() => ask(askText)}>Answer <kbd>Ctrl+Enter</kbd></button>
+          <button type="button" className="dp-pill" disabled={!props.onScreenshot} onClick={props.onScreenshot}>Screenshot <kbd>Ctrl+Shift+Enter</kbd></button>
+          <button type="button" className={`dp-pill ${chat ? "is-active" : ""}`} onClick={() => setChat(value => !value)}>Chat</button>
+          <button type="button" className="dp-pill" onClick={props.onToggleAudio}>{props.listening ? "Stop listening" : "Listen"}</button>
         </div>
         <div className="dp-drag desktop-drag" title="Drag Sonora" />
-        <button className="dp-icon-btn" aria-label={collapsed ? "Expand overlay" : "Collapse overlay"} onClick={() => setCollapsed(value => !value)}><ChevronLeft size={16} /></button>
+        <button type="button" className="dp-icon-btn" aria-label={collapsed ? "Expand overlay" : "Collapse overlay"} onClick={() => setCollapsed(value => !value)}><ChevronLeft size={16} /></button>
         <details className="dp-menu">
           <summary className="dp-icon-btn" aria-label="Overlay menu"><MoreVertical size={16} /></summary>
           <div className="dp-glass dp-menu-pop">
@@ -69,39 +77,41 @@ export default function DesktopLiveOverlay(props: {
                 <option value="both">Both</option>
               </select>
             </label>
-            {props.onAutoAnswerChange && <button className="dp-pill" onClick={() => props.onAutoAnswerChange?.(!props.autoAnswer)}>Auto Answer {props.autoAnswer ? "on" : "off"}</button>}
-            <button className="dp-pill" onClick={props.onPreferences}>Answer settings</button>
-            {props.onReadiness && <button className="dp-pill" onClick={props.onReadiness}>Readiness</button>}
-            <button className="dp-pill" onClick={props.onClearAnswers}>Clear answers</button>
-            <button className="dp-pill" onClick={props.onBack}>Back to sessions</button>
+            {props.onAutoAnswerChange && <button type="button" className="dp-pill" onClick={() => props.onAutoAnswerChange?.(!props.autoAnswer)}>Auto Answer {props.autoAnswer ? "on" : "off"}</button>}
+            <button type="button" className="dp-pill" onClick={props.onPreferences}>Answer settings</button>
+            {props.onReadiness && <button type="button" className="dp-pill" onClick={props.onReadiness}>Readiness</button>}
+            <button type="button" className="dp-pill" onClick={props.onClearAnswers}>Clear answers</button>
+            <button type="button" className="dp-pill" onClick={props.onBack}>Back to sessions</button>
           </div>
         </details>
-        <button className="dp-end" onClick={props.onEnd}>End</button>
+        <button type="button" className="dp-end" onClick={props.onEnd}>End</button>
       </header>
       {chat && (
-        <form className="dp-glass dp-chat" onSubmit={event => { event.preventDefault(); props.onAsk(); }}>
+        <form className="dp-glass dp-chat" onSubmit={event => { event.preventDefault(); ask(props.question); }}>
           <textarea aria-label="Question" rows={2} value={props.question} placeholder="Type a question" onChange={event => props.onQuestionChange(event.target.value)}
-            onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); props.onAsk(); } }} />
+            onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); ask(props.question); } }} />
         </form>
       )}
       {!collapsed && (
         <section className="dp-glass dp-strip" aria-label="Live transcript">
           <span className="dp-level" aria-hidden="true"><b style={{ width: `${Math.round(Math.max(0, Math.min(1, props.level)) * 100)}%` }} /></span>
           {transcriptOpen ? (
-            <div className="dp-answer-scroll" style={{ maxHeight: 160 }}>{props.entries.filter(entry => entry.role !== "assistant").map((entry, index) => <div key={index}>{entry.text}</div>)}</div>
-          ) : <div className="dp-words">{liveWords}</div>}
-          <button className="dp-pill" onClick={props.onClearTranscript}>Clear</button>
-          <button className="dp-icon-btn" aria-label={transcriptOpen ? "Collapse transcript" : "Expand transcript"} onClick={() => setTranscriptOpen(value => !value)}><Expand size={14} /></button>
+            <div className="dp-answer-scroll" style={{ maxHeight: 160 }}>{props.entries.filter(entry => entry.role !== "assistant").map((entry, index) => (
+              <button type="button" className="dp-line" key={index} onClick={() => ask(entry.text)}>{entry.text}</button>
+            ))}</div>
+          ) : <button type="button" className="dp-words" onClick={() => ask(spoken || props.interim)}>{liveWords}</button>}
+          <button type="button" className="dp-pill" onClick={props.onClearTranscript}>Clear</button>
+          <button type="button" className="dp-icon-btn" aria-label={transcriptOpen ? "Collapse transcript" : "Expand transcript"} onClick={() => setTranscriptOpen(value => !value)}><Expand size={14} /></button>
         </section>
       )}
       {!collapsed && answerOpen && (
         <article className="dp-glass dp-card" aria-label="Answer">
           <div className="dp-card-tools">
-            <button className="dp-icon-btn" aria-label="Previous answer" disabled={!previous} onClick={() => previous && props.onShowAnswer(previous)}><ChevronLeft size={16} /></button>
-            <button className="dp-icon-btn" aria-label="Next answer" disabled={!next} onClick={() => next && props.onShowAnswer(next)}><ChevronRight size={16} /></button>
+            <button type="button" className="dp-icon-btn" aria-label="Previous answer" disabled={!previous} onClick={() => previous && props.onShowAnswer(previous)}><ChevronLeft size={16} /></button>
+            <button type="button" className="dp-icon-btn" aria-label="Next answer" disabled={!next} onClick={() => next && props.onShowAnswer(next)}><ChevronRight size={16} /></button>
             <span className="spacer" />
-            <button className="dp-pill" onClick={props.onClearAnswers}>Clear</button>
-            <button className="dp-icon-btn" aria-label="Hide answer" onClick={() => setAnswerOpen(false)}><X size={14} /></button>
+            <button type="button" className="dp-pill" onClick={props.onClearAnswers}>Clear</button>
+            <button type="button" className="dp-icon-btn" aria-label="Hide answer" onClick={() => setAnswerOpen(false)}><X size={14} /></button>
           </div>
           <div className="dp-q"><b>Question:</b> {props.latestQuestion || props.question || "Waiting for a question"} <button type="button" aria-label="Copy question" onClick={() => void navigator.clipboard?.writeText(props.latestQuestion || props.question || "")}><Copy size={13} /></button></div>
           <div className="dp-answer-scroll">
@@ -117,7 +127,7 @@ export default function DesktopLiveOverlay(props: {
           </footer>
         </article>
       )}
-      {!collapsed && !answerOpen && <button className="dp-pill" onClick={() => setAnswerOpen(true)}>Show answer</button>}
+      {!collapsed && !answerOpen && <button type="button" className="dp-pill" onClick={() => setAnswerOpen(true)}>Show answer</button>}
     </div>
   );
 }
