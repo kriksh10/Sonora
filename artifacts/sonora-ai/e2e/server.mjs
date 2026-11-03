@@ -86,7 +86,7 @@ const server = http.createServer(async (req, res) => {
     const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json' };
     if (ext === '.html' || ext === '.css') {
       const text = fs.readFileSync(resolved, 'utf8')
-        .replace(/@import\s+url\((['"]?)https:\/\/fonts\.googleapis\.com[^)]+\)\1;?/g, '')
+        .replace(/@import\s*(?:url\()?['"]https:\/\/fonts\.googleapis\.com[^'"]+['"]\)?;?/g, '')
         .replace(/<link[^>]+fonts\.(googleapis|gstatic)\.com[^>]*>/gi, '');
       res.writeHead(200, { 'Content-Type': types[ext] || 'text/plain', 'Cache-Control': 'no-store' });
       res.end(text);

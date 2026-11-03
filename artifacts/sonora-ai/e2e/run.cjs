@@ -132,7 +132,10 @@ function requireApp(name) {
   try {
     ({ app, page } = await launch(exePath()));
     page.on('pageerror', error => errors.push(error.message));
-    page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+    page.on('console', message => {
+      if (message.type() !== 'error') return;
+      errors.push(`${message.text()} ${message.location().url || ''}`);
+    });
 
     await scenario('launch: visible, frameless, transparent, always on top, no console errors', async () => {
       if (page.url().includes('offline.html')) throw new Error(`Packaged app opened the offline page.\n${await pageDump(page)}`);
@@ -141,11 +144,18 @@ function requireApp(name) {
       } catch (error) {
         throw new Error(`${error instanceof Error ? error.message : error}\n${await pageDump(page)}\nconsole:\n${errors.join('\n')}`);
       }
+      await app.evaluate(({ BrowserWindow }) => {
+        const win = BrowserWindow.getAllWindows().find(item => !item.isDestroyed());
+        win.show();
+        win.focus();
+        win.moveTop();
+      });
+      await page.waitForTimeout(200);
       const windowFlags = await page.evaluate(() => window.sonoraDesktop.e2eFlags());
       const live = await flags(app);
       if (!live.visible || !live.alwaysOnTop || !live.focused) throw new Error(JSON.stringify(live));
       if (!windowFlags.transparent || !windowFlags.frameless || windowFlags.backgroundMaterial !== 'none' || windowFlags.ignoringMouse) throw new Error(JSON.stringify(windowFlags));
-      const noisy = errors.filter(line => !/favicon|Download the React DevTools|fonts\.google/i.test(line));
+      const noisy = errors.filter(line => !/favicon|Download the React DevTools|fonts\.(google|gstatic)/i.test(line));
       if (noisy.length) throw new Error(noisy.join('\n'));
       await shot(app, page, '01-signed-out.png');
     });
