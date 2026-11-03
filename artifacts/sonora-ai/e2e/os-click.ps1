@@ -94,39 +94,22 @@ public static class SonoraInput {
 "@
 
 function Save-Screen([string]$Name) {
-  $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-  $bmp = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
-  $g = [System.Drawing.Graphics]::FromImage($bmp)
-  $g.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
-  $path = Join-Path $shotDir $Name
-  $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
-  $g.Dispose(); $bmp.Dispose()
-  Write-Host "screenshot $path"
+  # CopyFromScreen can stall the runner when another grabber holds the desktop DC.
+  $job = Start-Job -ScriptBlock {
+    param($shotDir, $Name)
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+    $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+    $bmp = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+    $g = [System.Drawing.Graphics]::FromImage($bmp)
+    $g.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+    $bmp.Save((Join-Path $shotDir $Name), [System.Drawing.Imaging.ImageFormat]::Png)
+    $g.Dispose(); $bmp.Dispose()
+  } -ArgumentList $shotDir, $Name
+  if (-not (Wait-Job $job -Timeout 8)) { Stop-Job $job -ErrorAction SilentlyContinue; Write-Host "screenshot timed out $Name" }
+  else { Write-Host "screenshot $Name" }
+  Remove-Job $job -Force -ErrorAction SilentlyContinue
 }
-
-$frameScript = @"
-`$ErrorActionPreference = 'Continue'
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-`$dir = '$($frameDir.Replace("'", "''"))'
-`$stop = '$($stopFrames.Replace("'", "''"))'
-`$i = 0
-while (-not (Test-Path `$stop)) {
-  try {
-    `$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-    `$bmp = New-Object System.Drawing.Bitmap `$bounds.Width, `$bounds.Height
-    `$g = [System.Drawing.Graphics]::FromImage(`$bmp)
-    `$g.CopyFromScreen(`$bounds.Location, [System.Drawing.Point]::Empty, `$bounds.Size)
-    `$bmp.Save((Join-Path `$dir ('f{0:D4}.png' -f `$i)), [System.Drawing.Imaging.ImageFormat]::Png)
-    `$g.Dispose(); `$bmp.Dispose()
-    `$i++
-  } catch {}
-  Start-Sleep -Milliseconds 1200
-}
-"@
-$framePath = Join-Path $OutDir 'frames.ps1'
-Set-Content -Path $framePath -Value $frameScript -Encoding UTF8
-$recorder = Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -ArgumentList @('-STA', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $framePath) -PassThru -WindowStyle Hidden
 
 $catcherScript = @"
 `$ErrorActionPreference = 'Stop'
@@ -584,9 +567,6 @@ finally {
   $failed = @($scenarios | Where-Object { -not $_.pass })
   $payload = @{ scenarios = $scenarios; full = [bool]$Full; exe = $Exe } | ConvertTo-Json -Depth 6
   Set-Content -Path (Join-Path $OutDir 'results.json') -Value $payload -Encoding utf8
-  Set-Content -Path $stopFrames -Value 'stop' -Encoding utf8
-  Start-Sleep -Seconds 1
-  if ($recorder -and -not $recorder.HasExited) { Stop-Process -Id $recorder.Id -Force -ErrorAction SilentlyContinue }
   if ($catcher -and -not $catcher.HasExited) { Stop-Process -Id $catcher.Id -Force -ErrorAction SilentlyContinue }
   Stop-Sonora
   Unblock-SonoraNetwork
@@ -601,18 +581,17 @@ finally {
   $ffmpeg = $null
   $cmd = Get-Command ffmpeg -ErrorAction SilentlyContinue
   if ($cmd) { $ffmpeg = $cmd.Source }
-  if (-not $ffmpeg) {
-    $found = Get-ChildItem -Path 'C:\ffmpeg', "$env:LOCALAPPDATA\Microsoft\WinGet\Links", 'C:\Program Files' -Filter ffmpeg.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($found) { $ffmpeg = $found.FullName }
+  foreach ($candidate in @("$env:LOCALAPPDATA\Microsoft\WinGet\Links\ffmpeg.exe", 'C:\ffmpeg\bin\ffmpeg.exe')) {
+    if (-not $ffmpeg -and (Test-Path $candidate)) { $ffmpeg = $candidate }
   }
   $video = Join-Path $OutDir 'desktop.mp4'
   if ($ffmpeg) {
-    $frames = @(Get-ChildItem $frameDir -Filter 'f*.png' -ErrorAction SilentlyContinue)
+    $frames = @(Get-ChildItem $OutDir -Filter '*.png' -ErrorAction SilentlyContinue | Sort-Object Name)
     $clip = Join-Path $OutDir 'clip'
     New-Item -ItemType Directory -Force -Path $clip | Out-Null
-    $picked = @($frames | Sort-Object Name | Select-Object -Last 16)
+    $picked = @($frames | Select-Object -First 12)
     for ($i = 0; $i -lt $picked.Count; $i++) { Copy-Item $picked[$i].FullName (Join-Path $clip ('f{0:D4}.png' -f $i)) -Force }
-    Write-Host "stitching $($picked.Count) of $($frames.Count) frames with $ffmpeg"
+    Write-Host "stitching $($picked.Count) screenshots with $ffmpeg"
     if ($picked.Count -ge 2) {
       $ff = Start-Process -FilePath $ffmpeg -ArgumentList @('-y','-hide_banner','-loglevel','error','-start_number','0','-framerate','2','-i',(Join-Path $clip 'f%04d.png'),'-c:v','libx264','-pix_fmt','yuv420p','-preset','ultrafast','-movflags','+faststart',$video) -PassThru -WindowStyle Hidden -RedirectStandardError (Join-Path $OutDir 'ffmpeg-err.txt')
       if (-not $ff.WaitForExit(45000)) { try { $ff.Kill() } catch {} ; Write-Host 'ffmpeg stopped after 45s' }
