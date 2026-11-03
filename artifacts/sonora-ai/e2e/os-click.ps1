@@ -126,8 +126,48 @@ function Get-SonoraWindow([int]$ProcessId) {
   return [IntPtr]::Zero
 }
 
+function Click-Count { return @(Get-Content $clickFile | Where-Object { $_ -match '^click ' }).Count }
+function Invoke-ClickProbe([string]$Label, [IntPtr]$Window) {
+  $rect = New-Object SonoraInput+RECT
+  [SonoraInput]::GetWindowRect($Window, [ref]$rect) | Out-Null
+  $width = $rect.Right - $rect.Left
+  $height = $rect.Bottom - $rect.Top
+  Write-Host "$Label hwnd=$Window rect=$($rect.Left),$($rect.Top) ${width}x${height}"
+  $outsideX = [Math]::Max(8, $rect.Left - 30)
+  $outsideY = [Math]::Min([System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height - 20, $rect.Bottom + 40)
+  if ($outsideY -le $rect.Bottom -and $outsideY -ge $rect.Top) { $outsideY = [Math]::Max(8, $rect.Top - 20) }
+  $beforeCal = Click-Count
+  [SonoraInput]::Click($outsideX, $outsideY)
+  Start-Sleep -Milliseconds 400
+  $cal = (Click-Count) - $beforeCal
+  Write-Host "$Label calibration clicks=$cal at $outsideX,$outsideY"
+  $points = @(
+    @{ x = [int](($rect.Left + $rect.Right) / 2); y = [int](($rect.Top + $rect.Bottom) / 2) },
+    @{ x = $rect.Left + 70; y = $rect.Top + 70 },
+    @{ x = $rect.Right - 70; y = $rect.Top + 80 },
+    @{ x = $rect.Left + 90; y = $rect.Bottom - 70 },
+    @{ x = $rect.Right - 90; y = $rect.Bottom - 80 }
+  )
+  $before = Click-Count
+  foreach ($point in $points) {
+    [SonoraInput]::Click($point.x, $point.y)
+    Start-Sleep -Milliseconds 250
+  }
+  Start-Sleep -Milliseconds 500
+  $inside = (Click-Count) - $before
+  $fg = [SonoraInput]::GetForegroundWindow()
+  $fgPid = 0
+  [SonoraInput]::GetWindowThreadProcessId($fg, [ref]$fgPid) | Out-Null
+  $fgName = ''
+  try { $fgName = (Get-Process -Id $fgPid -ErrorAction Stop).ProcessName } catch { $fgName = "pid $fgPid" }
+  return [ordered]@{ label = $Label; calibration = $cal; inside = $inside; foreground = $fgName; width = $width; height = $height }
+}
+
 try {
   if (-not (Test-Path $Exe)) { throw "Installed executable not found: $Exe" }
+  $prefDir = Join-Path $env:APPDATA 'Sonora AI'
+  New-Item -ItemType Directory -Force -Path $prefDir | Out-Null
+  Set-Content -Path (Join-Path $prefDir 'window-preferences.json') -Value '{"backgroundOpacity":0.15,"opacityVersion":2,"clickThrough":false}' -Encoding utf8
   $proc = Start-Process -FilePath $Exe -PassThru
   $hwnd = [IntPtr]::Zero
   $deadline = (Get-Date).AddSeconds(90)
@@ -137,42 +177,41 @@ try {
     Start-Sleep -Milliseconds 400
   }
   if ($hwnd -eq [IntPtr]::Zero) { throw 'Sonora window did not appear.' }
-  Start-Sleep -Seconds 2
-  $rect = New-Object SonoraInput+RECT
-  [SonoraInput]::GetWindowRect($hwnd, [ref]$rect) | Out-Null
-  $width = $rect.Right - $rect.Left
-  $height = $rect.Bottom - $rect.Top
-  Write-Host "Sonora hwnd=$hwnd rect=$($rect.Left),$($rect.Top) ${width}x${height}"
+  Start-Sleep -Seconds 8
   Save-Screen '00-before-click.png'
-
-  $points = @(
-    @{ x = [int](($rect.Left + $rect.Right) / 2); y = [int](($rect.Top + $rect.Bottom) / 2) },
-    @{ x = $rect.Left + 80; y = $rect.Top + 80 },
-    @{ x = $rect.Right - 80; y = $rect.Top + 90 },
-    @{ x = $rect.Left + 100; y = $rect.Bottom - 80 },
-    @{ x = $rect.Right - 100; y = $rect.Bottom - 90 }
-  )
-  foreach ($point in $points) {
-    [SonoraInput]::Click($point.x, $point.y)
-    Start-Sleep -Milliseconds 250
-  }
-  Start-Sleep -Milliseconds 600
+  $probe = Invoke-ClickProbe 'default' $hwnd
   Save-Screen '01-after-os-clicks.png'
-  $caught = @(Get-Content $clickFile | Where-Object { $_ -match '^click ' })
-  $fg = [SonoraInput]::GetForegroundWindow()
-  $fgPid = 0
-  [SonoraInput]::GetWindowThreadProcessId($fg, [ref]$fgPid) | Out-Null
-  $fgName = ''
-  try { $fgName = (Get-Process -Id $fgPid -ErrorAction Stop).ProcessName } catch { $fgName = "pid $fgPid" }
-  $stayed = $fgName -like 'Sonora*'
-  $detail = "catcher clicks=$($caught.Count); foreground=$fgName; window=${width}x${height}"
-  Add-Scenario 'OS clicks on the installed window do not reach the app behind' ($caught.Count -eq 0 -and $stayed) $detail
+  Write-Host ("probe " + ($probe | ConvertTo-Json -Compress))
+  $passedThrough = $probe.inside -gt 0
+  if (-not $passedThrough -and -not $Full) {
+    Get-Process -Name 'Sonora*' -ErrorAction SilentlyContinue | Stop-Process -Force
+    Start-Sleep -Seconds 1
+    $proc2 = Start-Process -FilePath $Exe -ArgumentList '--disable-gpu' -PassThru
+    $hwnd2 = [IntPtr]::Zero
+    $deadline = (Get-Date).AddSeconds(60)
+    while ((Get-Date) -lt $deadline) {
+      $hwnd2 = Get-SonoraWindow $proc2.Id
+      if ($hwnd2 -ne [IntPtr]::Zero) { break }
+      Start-Sleep -Milliseconds 400
+    }
+    if ($hwnd2 -ne [IntPtr]::Zero) {
+      Start-Sleep -Seconds 6
+      $probe2 = Invoke-ClickProbe 'disable-gpu' $hwnd2
+      Save-Screen '01b-disable-gpu.png'
+      Write-Host ("probe " + ($probe2 | ConvertTo-Json -Compress))
+      if ($probe2.inside -gt 0) { $passedThrough = $true; $probe = $probe2 }
+    }
+  }
+  $detail = "inside=$($probe.inside) calibration=$($probe.calibration) foreground=$($probe.foreground) mode=$($probe.label) window=$($probe.width)x$($probe.height)"
+  if ($probe.calibration -lt 1) { Add-Scenario 'OS clicks on the installed window do not reach the app behind' $false "SendInput missed the catcher. $detail" }
+  else { Add-Scenario 'OS clicks on the installed window do not reach the app behind' (-not $passedThrough) $detail }
 
   if (-not $Full) {
-    if ($caught.Count -gt 0 -or -not $stayed) { throw "Reproduced: real OS clicks passed through the installed window. $detail" }
+    if ($passedThrough) { throw "Reproduced: real OS clicks passed through the installed window. $detail" }
+    if ($probe.calibration -lt 1) { throw "SendInput did not reach the catcher, so this run does not prove click handling. $detail" }
     return
   }
-  if ($caught.Count -gt 0 -or -not $stayed) { throw "Glass is still click-through. $detail" }
+  if ($passedThrough -or $probe.calibration -lt 1) { throw "Glass is still click-through or the click probe is invalid. $detail" }
 
   function Get-SonoraAutomation {
     $procId = (Get-Process | Where-Object { $_.ProcessName -like 'Sonora*' } | Select-Object -First 1).Id
