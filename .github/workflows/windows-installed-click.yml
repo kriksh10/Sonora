@@ -5,6 +5,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: installed-os-clicks-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   installed-os-clicks:
     name: Installed NSIS OS clicks
@@ -47,6 +50,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path generated-artifacts | Out-Null
+          $env:SONORA_MOCK_LOG = (Join-Path (Get-Location) 'generated-artifacts/mock-requests.log')
           Start-Process -FilePath node -ArgumentList "artifacts/sonora-ai/e2e/server.mjs","artifacts/sonora-ai/dist/public" -WindowStyle Hidden -RedirectStandardOutput generated-artifacts/mock.log -RedirectStandardError generated-artifacts/mock.err
           $ok = $false
           foreach ($i in 1..30) {
@@ -65,27 +69,11 @@ jobs:
           Set-Content -Path installed-exe.txt -Value $exe.FullName
           Write-Host "Installed $($exe.FullName)"
           cmd /c "findstr 127.0.0.1 `"$($exe.DirectoryName)\resources\app.asar`" & exit /b 0"
-      - name: Record the desktop
-        shell: pwsh
-        run: |
-          $env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User')
-          $ffmpeg = (Get-Command ffmpeg -ErrorAction SilentlyContinue).Source
-          New-Item -ItemType Directory -Force -Path generated-artifacts/os-click-proof | Out-Null
-          if (-not $ffmpeg) { Write-Host "ffmpeg missing"; exit 0 }
-          Start-Process -FilePath $ffmpeg -ArgumentList @(
-            "-y","-f","gdigrab","-framerate","8","-draw_mouse","1","-i","desktop",
-            "-movflags","frag_keyframe+empty_moov","-pix_fmt","yuv420p",
-            "generated-artifacts/os-click-proof/desktop.mp4"
-          ) -WindowStyle Hidden
       - name: OS-level clicks against the installed app
         shell: pwsh
         run: |
           $exe = Get-Content installed-exe.txt
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -STA -NoProfile -ExecutionPolicy Bypass -File artifacts/sonora-ai/e2e/os-click.ps1 -Exe $exe -OutDir generated-artifacts/os-click-proof -Full
-      - name: Stop the recording
-        if: always()
-        shell: pwsh
-        run: Get-Process ffmpeg -ErrorAction SilentlyContinue | Stop-Process -Force
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -94,5 +82,6 @@ jobs:
             generated-artifacts/os-click-proof/**
             generated-artifacts/mock.log
             generated-artifacts/mock.err
+            generated-artifacts/mock-requests.log
           if-no-files-found: warn
           retention-days: 14

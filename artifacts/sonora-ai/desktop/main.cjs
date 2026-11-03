@@ -516,6 +516,7 @@ if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on('second-instance', show);
   app.whenReady().then(async () => {
+    try { app.setAccessibilitySupportEnabled?.(true); } catch { /* older runtimes omit this */ }
     try {
       const bundled = JSON.parse(fs.readFileSync(path.join(__dirname, 'runtime-config.json'), 'utf8'));
       localE2E = e2e || bundled.e2e === true;

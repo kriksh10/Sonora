@@ -27,9 +27,16 @@ function readBody(req) {
   });
 }
 
+function note(line) {
+  console.log(line);
+  if (process.env.SONORA_MOCK_LOG) {
+    try { fs.appendFileSync(process.env.SONORA_MOCK_LOG, line + '\n'); } catch { /* diagnostic only */ }
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', 'http://127.0.0.1');
-  console.log(`${req.method} ${url.pathname}`);
+  note(`${req.method} ${url.pathname}`);
   req.on('error', () => {});
   res.on('error', () => {});
   const cookie = req.headers.cookie || '';
@@ -101,5 +108,5 @@ const server = http.createServer(async (req, res) => {
 
 server.on('clientError', () => {});
 server.listen(port, '127.0.0.1', () => {
-  console.log(`e2e mock listening on http://127.0.0.1:${port}`);
+  note(`e2e mock listening on http://127.0.0.1:${port}`);
 });

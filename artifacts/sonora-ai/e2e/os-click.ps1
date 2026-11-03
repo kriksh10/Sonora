@@ -18,8 +18,12 @@ $env:ELECTRON_LOG_FILE = Join-Path $OutDir 'electron.log'
 $env:SONORA_BOOT_LOG = Join-Path $OutDir 'boot.txt'
 $clickFile = Join-Path $OutDir 'catcher-clicks.txt'
 $shotDir = $OutDir
+$frameDir = Join-Path $OutDir 'frames'
+New-Item -ItemType Directory -Force -Path $frameDir | Out-Null
 if (Test-Path $clickFile) { Remove-Item $clickFile -Force }
 Set-Content -Path $clickFile -Value '' -Encoding utf8
+$stopFrames = Join-Path $OutDir 'stop-frames.txt'
+if (Test-Path $stopFrames) { Remove-Item $stopFrames -Force }
 
 Add-Type @"
 using System;
@@ -33,6 +37,10 @@ public static class SonoraInput {
   public const int SM_YVIRTUALSCREEN = 77;
   public const int SM_CXVIRTUALSCREEN = 78;
   public const int SM_CYVIRTUALSCREEN = 79;
+  public const uint SWP_NOSIZE = 0x0001;
+  public const uint SWP_NOMOVE = 0x0002;
+  public const uint SWP_NOACTIVATE = 0x0010;
+  public const uint SWP_SHOWWINDOW = 0x0040;
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
   [StructLayout(LayoutKind.Sequential)] public struct MOUSEINPUT {
     public int dx, dy; public uint mouseData, dwFlags, time; public IntPtr dwExtraInfo;
@@ -47,11 +55,22 @@ public static class SonoraInput {
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+  [DllImport("user32.dll", EntryPoint = "GetWindowLongPtr")] public static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
   public static string Title(IntPtr hWnd) {
     var sb = new System.Text.StringBuilder(512);
     GetWindowText(hWnd, sb, sb.Capacity);
     return sb.ToString();
+  }
+  public static string ExStyle(IntPtr hWnd) {
+    long style = GetWindowLongPtr64(hWnd, -20).ToInt64();
+    var parts = new System.Collections.Generic.List<string>();
+    if ((style & 0x20) != 0) parts.Add("WS_EX_TRANSPARENT");
+    if ((style & 0x80000) != 0) parts.Add("WS_EX_LAYERED");
+    if ((style & 0x200000) != 0) parts.Add("WS_EX_NOREDIRECTIONBITMAP");
+    if ((style & 0x8) != 0) parts.Add("WS_EX_TOPMOST");
+    return "0x" + style.ToString("X") + " " + string.Join(",", parts);
   }
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
   public static void Click(int x, int y) {
@@ -68,6 +87,9 @@ public static class SonoraInput {
     uint sent = SendInput(3, inputs, Marshal.SizeOf(typeof(INPUT)));
     if (sent != 3) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
   }
+  public static void RaiseWithoutFocus(IntPtr hWnd) {
+    SetWindowPos(hWnd, IntPtr.Zero, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+  }
 }
 "@
 
@@ -81,6 +103,30 @@ function Save-Screen([string]$Name) {
   $g.Dispose(); $bmp.Dispose()
   Write-Host "screenshot $path"
 }
+
+$frameScript = @"
+`$ErrorActionPreference = 'Continue'
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+`$dir = '$($frameDir.Replace("'", "''"))'
+`$stop = '$($stopFrames.Replace("'", "''"))'
+`$i = 0
+while (-not (Test-Path `$stop)) {
+  try {
+    `$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+    `$bmp = New-Object System.Drawing.Bitmap `$bounds.Width, `$bounds.Height
+    `$g = [System.Drawing.Graphics]::FromImage(`$bmp)
+    `$g.CopyFromScreen(`$bounds.Location, [System.Drawing.Point]::Empty, `$bounds.Size)
+    `$bmp.Save((Join-Path `$dir ('f{0:D4}.png' -f `$i)), [System.Drawing.Imaging.ImageFormat]::Png)
+    `$g.Dispose(); `$bmp.Dispose()
+    `$i++
+  } catch {}
+  Start-Sleep -Milliseconds 700
+}
+"@
+$framePath = Join-Path $OutDir 'frames.ps1'
+Set-Content -Path $framePath -Value $frameScript -Encoding UTF8
+$recorder = Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -ArgumentList @('-STA', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $framePath) -PassThru -WindowStyle Hidden
 
 $catcherScript = @"
 `$ErrorActionPreference = 'Stop'
@@ -118,6 +164,7 @@ $catcher = Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v
 Start-Sleep -Seconds 1
 
 $scenarios = New-Object System.Collections.Generic.List[object]
+$script:blockedHost = $null
 function Get-SonoraAutomation {
   $procId = (Get-Process | Where-Object { $_.ProcessName -like 'Sonora*' } | Select-Object -First 1).Id
   if (-not $procId) { return $null }
@@ -126,28 +173,50 @@ function Get-SonoraAutomation {
 }
 function Add-Scenario([string]$Name, [bool]$Pass, [string]$Detail) {
   $script:scenarios.Add([ordered]@{ name = $Name; pass = $Pass; detail = $Detail }) | Out-Null
-  if ($Pass) { Write-Host "PASS $Name" } else { Write-Host "FAIL $Name $Detail" }
+  if ($Pass) { Write-Host "PASS $Name :: $Detail" } else { Write-Host "FAIL $Name :: $Detail" }
 }
-
 function Get-SonoraWindow([int]$ProcessId) {
-  $found = $null
-  Get-Process -Id $ProcessId -ErrorAction SilentlyContinue | Out-Null
-  $handles = [System.Diagnostics.Process]::GetProcessById($ProcessId).MainWindowHandle
-  if ($handles -ne [IntPtr]::Zero -and [SonoraInput]::IsWindowVisible($handles)) { return $handles }
+  try {
+    $handles = [System.Diagnostics.Process]::GetProcessById($ProcessId).MainWindowHandle
+    if ($handles -ne [IntPtr]::Zero -and [SonoraInput]::IsWindowVisible($handles)) { return $handles }
+  } catch {}
   $procs = Get-Process | Where-Object { $_.ProcessName -like 'Sonora*' -and $_.MainWindowHandle -ne [IntPtr]::Zero }
   foreach ($proc in $procs) {
     if ([SonoraInput]::IsWindowVisible($proc.MainWindowHandle)) { return $proc.MainWindowHandle }
   }
   return [IntPtr]::Zero
 }
-
-function Click-Count { return @(Get-Content $clickFile | Where-Object { $_ -match '^click ' }).Count }
-function Invoke-ClickProbe([string]$Label, [IntPtr]$Window) {
+function Click-Count { return @(Get-Content $clickFile -ErrorAction SilentlyContinue | Where-Object { $_ -match '^click ' }).Count }
+function Get-ForegroundName {
+  $fg = [SonoraInput]::GetForegroundWindow()
+  $fgPid = 0
+  [SonoraInput]::GetWindowThreadProcessId($fg, [ref]$fgPid) | Out-Null
+  try { return (Get-Process -Id $fgPid -ErrorAction Stop).ProcessName } catch { return "pid $fgPid" }
+}
+function Get-ProbePoints($Rect) {
+  $points = @()
+  $width = [Math]::Max(1, $Rect.Right - $Rect.Left)
+  $height = [Math]::Max(1, $Rect.Bottom - $Rect.Top)
+  foreach ($fx in @(0.02, 0.15, 0.5, 0.85, 0.98)) {
+    foreach ($fy in @(0.02, 0.15, 0.5, 0.85, 0.98)) {
+      $points += [ordered]@{
+        x = [int]($Rect.Left + $width * $fx)
+        y = [int]($Rect.Top + $height * $fy)
+        edge = ($fx -lt 0.1 -or $fx -gt 0.9 -or $fy -lt 0.1 -or $fy -gt 0.9)
+        center = ($fx -eq 0.5 -and $fy -eq 0.5)
+      }
+    }
+  }
+  return $points
+}
+function Invoke-ClickProbe([string]$Label, [IntPtr]$Window, [switch]$MarginsOnly) {
   $rect = New-Object SonoraInput+RECT
   [SonoraInput]::GetWindowRect($Window, [ref]$rect) | Out-Null
   $width = $rect.Right - $rect.Left
   $height = $rect.Bottom - $rect.Top
-  Write-Host "$Label hwnd=$Window title='$([SonoraInput]::Title($Window))' rect=$($rect.Left),$($rect.Top) ${width}x${height}"
+  $style = [SonoraInput]::ExStyle($Window)
+  $title = [SonoraInput]::Title($Window)
+  Write-Host "$Label hwnd=$Window title='$title' rect=$($rect.Left),$($rect.Top) ${width}x${height} exstyle=$style"
   $outsideX = [Math]::Max(8, $rect.Left - 30)
   $outsideY = [Math]::Min([System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height - 20, $rect.Bottom + 40)
   if ($outsideY -le $rect.Bottom -and $outsideY -ge $rect.Top) { $outsideY = [Math]::Max(8, $rect.Top - 20) }
@@ -156,34 +225,107 @@ function Invoke-ClickProbe([string]$Label, [IntPtr]$Window) {
   Start-Sleep -Milliseconds 400
   $cal = (Click-Count) - $beforeCal
   Write-Host "$Label calibration clicks=$cal at $outsideX,$outsideY"
-  $points = @(
-    @{ x = [int](($rect.Left + $rect.Right) / 2); y = [int](($rect.Top + $rect.Bottom) / 2) },
-    @{ x = $rect.Left + 70; y = $rect.Top + 70 },
-    @{ x = $rect.Right - 70; y = $rect.Top + 80 },
-    @{ x = $rect.Left + 90; y = $rect.Bottom - 70 },
-    @{ x = $rect.Right - 90; y = $rect.Bottom - 80 }
-  )
-  $before = Click-Count
+  [SonoraInput]::RaiseWithoutFocus($Window) | Out-Null
+  $passed = @()
+  $edgePass = 0
+  $centerPass = 0
+  $points = if ($MarginsOnly) {
+    @(
+      @{ x = $rect.Left + 3; y = $rect.Bottom - 3; edge = $true; center = $false },
+      @{ x = $rect.Right - 3; y = $rect.Bottom - 3; edge = $true; center = $false },
+      @{ x = $rect.Left + 3; y = [int](($rect.Top + $rect.Bottom) / 2); edge = $true; center = $false },
+      @{ x = $rect.Right - 3; y = [int](($rect.Top + $rect.Bottom) / 2); edge = $true; center = $false }
+    )
+  } else { @(Get-ProbePoints $rect) }
   foreach ($point in $points) {
+    $before = Click-Count
     [SonoraInput]::Click($point.x, $point.y)
     Start-Sleep -Milliseconds 250
+    $hit = (Click-Count) - $before
+    if ($hit -gt 0) {
+      $passed += "$($point.x),$($point.y)"
+      if ($point.edge) { $edgePass++ }
+      if ($point.center) { $centerPass++ }
+    }
   }
-  Start-Sleep -Milliseconds 500
-  $inside = (Click-Count) - $before
-  $fg = [SonoraInput]::GetForegroundWindow()
-  $fgPid = 0
-  [SonoraInput]::GetWindowThreadProcessId($fg, [ref]$fgPid) | Out-Null
-  $fgName = ''
-  try { $fgName = (Get-Process -Id $fgPid -ErrorAction Stop).ProcessName } catch { $fgName = "pid $fgPid" }
-  return [ordered]@{ label = $Label; calibration = $cal; inside = $inside; foreground = $fgName; width = $width; height = $height }
+  Start-Sleep -Milliseconds 300
+  $fgName = Get-ForegroundName
+  $detail = "inside=$($passed.Count) edge=$edgePass center=$centerPass calibration=$cal foreground=$fgName title=$title exstyle=$style window=${width}x${height} points=$($passed -join ';')"
+  Write-Host "$Label $detail"
+  return [ordered]@{ label = $Label; calibration = $cal; inside = $passed.Count; edge = $edgePass; center = $centerPass; foreground = $fgName; width = $width; height = $height; title = $title; exstyle = $style; detail = $detail; passed = $passed }
 }
-
-try {
-  if (-not (Test-Path $Exe)) { throw "Installed executable not found: $Exe" }
-  $prefDir = Join-Path $env:APPDATA 'Sonora AI'
-  New-Item -ItemType Directory -Force -Path $prefDir | Out-Null
-  Set-Content -Path (Join-Path $prefDir 'window-preferences.json') -Value '{"backgroundOpacity":0.15,"opacityVersion":2,"clickThrough":false}' -Encoding utf8
-  $proc = Start-Process -FilePath $Exe -ArgumentList '--force-renderer-accessibility' -PassThru
+function Stop-Sonora {
+  Get-Process -Name 'Sonora*' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+  & "$env:SystemRoot\System32\taskkill.exe" /F /IM "Sonora AI.exe" /T 1>$null 2>$null
+}
+function Seed-Preferences {
+  $payload = '{"backgroundOpacity":0.15,"opacityVersion":2,"clickThrough":false,"alwaysOnTop":true}'
+  foreach ($root in @($env:APPDATA, $env:LOCALAPPDATA)) {
+    Get-ChildItem $root -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'sonora' } | ForEach-Object {
+      Set-Content -Path (Join-Path $_.FullName 'window-preferences.json') -Value $payload -Encoding utf8
+      Write-Host "seeded $($_.FullName)"
+    }
+    foreach ($name in @('Sonora AI', 'sonora-ai', 'Sonora', 'sonora')) {
+      $dir = Join-Path $root $name
+      New-Item -ItemType Directory -Force -Path $dir | Out-Null
+      Set-Content -Path (Join-Path $dir 'window-preferences.json') -Value $payload -Encoding utf8
+    }
+  }
+}
+function Clear-SonoraCache {
+  foreach ($root in @($env:APPDATA, $env:LOCALAPPDATA)) {
+    Get-ChildItem $root -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'sonora' } | ForEach-Object {
+      foreach ($sub in @('Cache', 'Code Cache', 'GPUCache', 'Session Storage', 'Local Storage', 'Service Worker', 'Partitions', 'blob_storage', 'DawnCache', 'DawnGraphiteCache', 'DawnWebGPUCache')) {
+        $path = Join-Path $_.FullName $sub
+        if (Test-Path $path) { Remove-Item $path -Recurse -Force -ErrorAction SilentlyContinue; Write-Host "cleared $path" }
+      }
+    }
+  }
+}
+function Block-SonoraNetwork([string]$PathExe) {
+  $rule = 'Sonora-repro-block'
+  Get-NetFirewallRule -DisplayName $rule -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+  New-NetFirewallRule -DisplayName $rule -Direction Outbound -Program $PathExe -Action Block | Out-Null
+  $asar = Join-Path (Split-Path $PathExe) 'resources\app.asar'
+  $hostName = $null
+  if (Test-Path $asar) {
+    try {
+      $fs = [IO.File]::OpenRead($asar)
+      $buf = New-Object byte[] (1024 * 1024)
+      $hold = ''
+      while (($n = $fs.Read($buf, 0, $buf.Length)) -gt 0) {
+        $text = $hold + [Text.Encoding]::ASCII.GetString($buf, 0, $n)
+        $match = [regex]::Match($text, 'serviceUrl.{0,12}https://[A-Za-z0-9.-]+')
+        if ($match.Success) {
+          $url = [regex]::Match($match.Value, 'https://[A-Za-z0-9.-]+')
+          if ($url.Success) { $hostName = ([Uri]$url.Value).Host; break }
+        }
+        $hold = if ($text.Length -gt 80) { $text.Substring($text.Length - 80) } else { $text }
+      }
+      $fs.Close()
+    } catch { Write-Host "host scan failed: $_" }
+  }
+  if ($hostName -and $hostName -ne '127.0.0.1') {
+    $hosts = "$env:SystemRoot\System32\drivers\etc\hosts"
+    Add-Content -Path $hosts -Value "`r`n127.0.0.1 $hostName`r`n::1 $hostName"
+    $script:blockedHost = $hostName
+    Write-Host "blocked host $hostName"
+  }
+  Write-Host "firewall blocked $PathExe"
+}
+function Unblock-SonoraNetwork {
+  Get-NetFirewallRule -DisplayName 'Sonora-repro-block' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+  if ($script:blockedHost) {
+    $hosts = "$env:SystemRoot\System32\drivers\etc\hosts"
+    if (Test-Path $hosts) {
+      $kept = Get-Content $hosts | Where-Object { $_ -notmatch [regex]::Escape($script:blockedHost) }
+      Set-Content -Path $hosts -Value $kept -Encoding ascii
+    }
+  }
+}
+function Start-Sonora([string[]]$Arguments) {
+  Seed-Preferences
+  $proc = Start-Process -FilePath $Exe -ArgumentList $Arguments -PassThru
   $hwnd = [IntPtr]::Zero
   $deadline = (Get-Date).AddSeconds(90)
   while ((Get-Date) -lt $deadline) {
@@ -192,61 +334,95 @@ try {
     Start-Sleep -Milliseconds 400
   }
   if ($hwnd -eq [IntPtr]::Zero) { throw 'Sonora window did not appear.' }
-  Start-Sleep -Seconds 8
+  return @{ proc = $proc; hwnd = $hwnd }
+}
+function Wait-Title([IntPtr]$Window, [string]$Pattern, [int]$Seconds) {
+  $deadline = (Get-Date).AddSeconds($Seconds)
+  $title = ''
+  while ((Get-Date) -lt $deadline) {
+    $title = [SonoraInput]::Title($Window)
+    if ($title -match $Pattern) { return $title }
+    Start-Sleep -Milliseconds 400
+  }
+  return $title
+}
+function Dump-Ui([int]$Limit) {
+  $names = @()
   try {
-    $uiRoot = Get-SonoraAutomation
-    if ($uiRoot) {
-      $all = $uiRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
-      $names = @()
-      for ($i = 0; $i -lt [Math]::Min(25, $all.Count); $i++) {
+    $root = Get-SonoraAutomation
+    if ($root) {
+      $all = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+      for ($i = 0; $i -lt [Math]::Min($Limit, $all.Count); $i++) {
         $n = $all.Item($i).Current.Name
         if ($n) { $names += $n }
       }
-      Write-Host ("UI names: " + ($names -join ' | '))
     }
   } catch { Write-Host "UI dump failed: $_" }
+  return $names
+}
+
+try {
+  if (-not (Test-Path $Exe)) { throw "Installed executable not found: $Exe" }
+  $os = Get-CimInstance Win32_OperatingSystem
+  Write-Host "runner $($os.Caption) $($os.Version)"
+  $launched = Start-Sonora @('--force-renderer-accessibility')
+  $hwnd = $launched.hwnd
+  Start-Sleep -Seconds 8
+  $names = Dump-Ui 30
+  Write-Host ("UI names: " + ($names -join ' | '))
   Save-Screen '00-before-click.png'
-  $probe = Invoke-ClickProbe 'default' $hwnd
+  $probe = Invoke-ClickProbe 'installed-surface' $hwnd -MarginsOnly:$Full
   Save-Screen '01-after-os-clicks.png'
-  Write-Host ("probe " + ($probe | ConvertTo-Json -Compress))
   $passedThrough = $probe.inside -gt 0
+  $detail = $probe.detail
+
   if (-not $passedThrough -and -not $Full) {
-    Get-Process -Name 'Sonora*' -ErrorAction SilentlyContinue | Stop-Process -Force
+    Write-Host 'Loaded surface swallowed the grid. Retrying the installed offline page, whose backdrop is fully transparent.'
+    Stop-Sonora
     Start-Sleep -Seconds 1
-    $proc2 = Start-Process -FilePath $Exe -ArgumentList '--disable-gpu','--force-renderer-accessibility' -PassThru
-    $hwnd2 = [IntPtr]::Zero
-    $deadline = (Get-Date).AddSeconds(60)
-    while ((Get-Date) -lt $deadline) {
-      $hwnd2 = Get-SonoraWindow $proc2.Id
-      if ($hwnd2 -ne [IntPtr]::Zero) { break }
-      Start-Sleep -Milliseconds 400
-    }
-    if ($hwnd2 -ne [IntPtr]::Zero) {
-      Start-Sleep -Seconds 6
-      $probe2 = Invoke-ClickProbe 'disable-gpu' $hwnd2
-      Save-Screen '01b-disable-gpu.png'
-      Write-Host ("probe " + ($probe2 | ConvertTo-Json -Compress))
-      if ($probe2.inside -gt 0) { $passedThrough = $true; $probe = $probe2 }
-    }
+    Clear-SonoraCache
+    Block-SonoraNetwork $Exe
+    $offline = Start-Sonora @('--force-renderer-accessibility')
+    $hwnd = $offline.hwnd
+    $title = Wait-Title $hwnd 'offline' 55
+    Start-Sleep -Seconds 3
+    Write-Host "offline title='$title'"
+    Write-Host ("offline UI: " + ((Dump-Ui 20) -join ' | '))
+    $probe = Invoke-ClickProbe 'offline-transparent' $hwnd
+    Save-Screen '01c-offline.png'
+    $detail = "surface swallowed clicks; offline $($probe.detail)"
+    $passedThrough = $probe.inside -gt 0
   }
-  $detail = "inside=$($probe.inside) calibration=$($probe.calibration) foreground=$($probe.foreground) mode=$($probe.label) window=$($probe.width)x$($probe.height)"
-  if ($probe.calibration -lt 1) { Add-Scenario 'OS clicks on the installed window do not reach the app behind' $false "SendInput missed the catcher. $detail" }
-  else { Add-Scenario 'OS clicks on the installed window do not reach the app behind' (-not $passedThrough) $detail }
 
   if (-not $Full) {
-    if ($passedThrough) { throw "Reproduced: real OS clicks passed through the installed window. $detail" }
-    if ($probe.calibration -lt 1) { throw "SendInput did not reach the catcher, so this run does not prove click handling. $detail" }
-    return
+    if ($probe.calibration -lt 1) {
+      Add-Scenario 'OS clicks on the installed window do not reach the app behind' $false "SendInput missed the catcher. $detail"
+      throw "SendInput did not reach the catcher, so this run does not prove click handling. $detail"
+    }
+    if ($passedThrough) {
+      Add-Scenario 'OS clicks on the installed window do not reach the app behind' $false "Reproduced: $detail"
+      throw "Reproduced: real OS clicks passed through the installed v1.0.3 window while click-through was off. $detail"
+    }
+    Add-Scenario 'OS clicks on the installed window do not reach the app behind' $false "Not reproduced: $detail"
+    throw "Not reproduced: installed v1.0.3 swallowed every OS click on this runner, including the transparent offline backdrop. $detail"
+  }
+  if ($probe.calibration -lt 1) {
+    Add-Scenario 'OS clicks on the installed window do not reach the app behind' $false "SendInput missed the catcher. $detail"
+  } else {
+    Add-Scenario 'OS clicks on the installed window do not reach the app behind' (-not $passedThrough) $detail
   }
   if ($passedThrough -or $probe.calibration -lt 1) { throw "Glass is still click-through or the click probe is invalid. $detail" }
 
   function Find-All([string]$Name) {
     $root = Get-SonoraAutomation
     if (-not $root) { return @() }
-    $cond = New-Object System.Windows.Automation.PropertyCondition ([System.Windows.Automation.AutomationElement]::NameProperty, $Name)
-    $all = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $cond)
+    $all = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
     $items = @()
-    for ($i = 0; $i -lt $all.Count; $i++) { $items += $all.Item($i) }
+    for ($i = 0; $i -lt $all.Count; $i++) {
+      $el = $all.Item($i)
+      $n = $el.Current.Name
+      if ($n -and ($n -eq $Name -or $n.StartsWith("$Name ") -or $n.Contains($Name))) { $items += $el }
+    }
     return $items
   }
   function Find-Element([string]$Name) {
@@ -254,49 +430,67 @@ try {
     if ($items.Count -eq 0) { return $null }
     return $items[0]
   }
+  function Find-Largest([string]$Name) {
+    $best = $null
+    $area = 0
+    foreach ($el in @(Find-All $Name)) {
+      $r = $el.Current.BoundingRectangle
+      $a = $r.Width * $r.Height
+      if ($a -gt $area) { $area = $a; $best = $el }
+    }
+    return $best
+  }
   function Click-Element($el) {
     if (-not $el) { throw 'No UI element to click' }
     $r = $el.Current.BoundingRectangle
-    if ($r.Width -lt 1 -or $r.Height -lt 1) { throw 'Element has no on-screen box' }
+    if ($r.Width -lt 1 -or $r.Height -lt 1) { throw "Element $($el.Current.Name) has no on-screen box" }
+    $before = Click-Count
     [SonoraInput]::Click([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2))
-    Start-Sleep -Milliseconds 400
+    Start-Sleep -Milliseconds 350
+    if ((Click-Count) -gt $before) { throw "OS click on '$($el.Current.Name)' passed through to the window behind." }
   }
   function Click-Name([string]$Name, [switch]$Last) {
     $items = @(Find-All $Name)
     if ($items.Count -eq 0) { throw "No UI element named $Name" }
-    $el = if ($Last) { $items[$items.Count - 1] } else { $items[0] }
+    $buttons = @($items | Where-Object { $_.Current.ControlType.ProgrammaticName -match 'Button|Hyperlink|Edit|Slider|Tab|RadioButton|CheckBox|ComboBox|SplitButton' })
+    $pool = if ($buttons.Count -gt 0) { $buttons } else { $items }
+    $el = if ($Last) { $pool[$pool.Count - 1] } else { $pool[0] }
     Click-Element $el
     return $el
   }
 
   $signIn = $null
-  $waitUntil = (Get-Date).AddSeconds(25)
+  $waitUntil = (Get-Date).AddSeconds(30)
   while ((Get-Date) -lt $waitUntil -and -not $signIn) {
     $signIn = Find-Element 'Sign in'
     if (-not $signIn) { Start-Sleep -Milliseconds 500 }
   }
   if (-not $signIn) {
-    $root = Get-SonoraAutomation
-    $names = @()
-    if ($root) {
-      $all = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
-      for ($i = 0; $i -lt [Math]::Min(40, $all.Count); $i++) { if ($all.Item($i).Current.Name) { $names += $all.Item($i).Current.Name } }
-    }
-    Add-Scenario 'Sign in with an OS click' $false ("UI: " + ($names -join ' | '))
-    throw "Installed window has no Sign in control. UI: $($names -join ' | ')"
+    $seen = Dump-Ui 40
+    $boot = ''
+    if (Test-Path $env:SONORA_BOOT_LOG) { $boot = (Get-Content $env:SONORA_BOOT_LOG -Tail 8) -join ' ; ' }
+    Add-Scenario 'Sign in with an OS click' $false ("UI: " + ($seen -join ' | ') + " boot: $boot")
+    throw "Installed window has no Sign in control. UI: $($seen -join ' | ') boot: $boot"
   }
   if (Find-Element 'Hide from screen sharing (best effort)') { Click-Name 'Hide from screen sharing (best effort)' | Out-Null }
   Click-Element $signIn
-  Start-Sleep -Milliseconds 500
+  Start-Sleep -Milliseconds 700
   $signed = Find-Element 'Call Sessions'
   Add-Scenario 'Sign in with an OS click' ([bool]$signed) ''
   Save-Screen '02-signed-in.png'
+  if (-not $signed) { throw 'Sign-in click did not open Call Sessions.' }
 
-  $names = @('Create session','Resumes','Documents','Call Sessions','Mock Interview','Dark','Light','Upgrade')
+  $names = @('Resumes', 'Documents', 'Call Sessions', 'Dark', 'Light', 'Upgrade')
   $missing = @()
   foreach ($name in $names) {
     if (-not (Find-Element $name)) { $missing += $name }
     else { Click-Name $name | Out-Null }
+  }
+  foreach ($name in @('Create session', 'Mock Interview')) {
+    if (-not (Find-Element $name)) { $missing += $name; continue }
+    Click-Name $name | Out-Null
+    Start-Sleep -Milliseconds 250
+    if (Find-Element 'Cancel') { Click-Name 'Cancel' | Out-Null; Start-Sleep -Milliseconds 200 }
   }
   Add-Scenario 'Every home and sidebar control receives an OS click' ($missing.Count -eq 0) ($(if ($missing) { "missing $($missing -join ', ')" } else { 'all clicked' }))
 
@@ -309,10 +503,11 @@ try {
   $company = Find-Element 'Company'
   if (-not $company) { Add-Scenario 'Create Session valid input' $false 'company field missing' }
   else {
+    Click-Element $company
     $company.SetFocus()
     [System.Windows.Forms.SendKeys]::SendWait('Northwind')
     Click-Name 'Create session' -Last | Out-Null
-    Start-Sleep -Milliseconds 400
+    Start-Sleep -Milliseconds 500
     Add-Scenario 'Create Session valid input' ([bool](Find-Element 'Northwind interview')) ''
   }
   Save-Screen '03-session.png'
@@ -323,91 +518,123 @@ try {
     $r = $el.Current.BoundingRectangle
     $x = [int]($r.X + [Math]::Max(4, ($r.Width - 8) * $Ratio))
     $y = [int]($r.Y + $r.Height / 2)
+    $before = Click-Count
     [SonoraInput]::Click($x, $y)
     Start-Sleep -Milliseconds 300
+    if ((Click-Count) -gt $before) { throw "Slider click passed through at ratio $Ratio" }
   }
   function Click-Panel {
-    $el = Find-Element 'Call Sessions'
-    if (-not $el) { $el = Find-Element 'Sign in' }
+    $el = Find-Largest 'Call Sessions'
     if (-not $el) { throw 'No panel to click' }
     $r = $el.Current.BoundingRectangle
-    [SonoraInput]::Click([int]($r.X + 30), [int]($r.Y + $r.Height / 2))
+    $before = Click-Count
+    [SonoraInput]::Click([int]($r.X + [Math]::Min(40, $r.Width / 2)), [int]($r.Y + $r.Height / 2))
     Start-Sleep -Milliseconds 250
+    return (Click-Count) - $before
   }
 
   foreach ($pin in @($true, $false)) {
     $keep = Find-Element 'Keep on top'
     if (-not $keep) { throw 'Keep on top missing' }
-    $pressed = $keep.Current.Name
-    # Toggle by clicking until the desired pin state is reflected by the button's help text is not available.
-    # The button name stays "Keep on top"; aria-pressed is the toggle state.
-    $pattern = $keep.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern)
+    $pattern = $null
+    try { $pattern = $keep.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern) } catch { $pattern = $null }
     $want = $(if ($pin) { [System.Windows.Automation.ToggleState]::On } else { [System.Windows.Automation.ToggleState]::Off })
-    if ($pattern.Current.ToggleState -ne $want) { Click-Name 'Keep on top' | Out-Null; Start-Sleep -Milliseconds 200 }
+    if ($pattern -and $pattern.Current.ToggleState -ne $want) { Click-Name 'Keep on top' | Out-Null; Start-Sleep -Milliseconds 200 }
+    elseif (-not $pattern -and -not $pin) { Click-Name 'Keep on top' | Out-Null }
     foreach ($focus in @($true, $false)) {
       if ($focus) { [SonoraInput]::SetForegroundWindow($hwnd) | Out-Null }
       else {
         $catcherHwnd = (Get-Process -Id $catcher.Id -ErrorAction SilentlyContinue).MainWindowHandle
         if ($catcherHwnd -and $catcherHwnd -ne [IntPtr]::Zero) { [SonoraInput]::SetForegroundWindow($catcherHwnd) | Out-Null }
+        [SonoraInput]::RaiseWithoutFocus($hwnd) | Out-Null
       }
       Start-Sleep -Milliseconds 200
       foreach ($ratio in @(0.0, 0.5, 1.0)) {
-        $before = (Get-Content $clickFile | Where-Object { $_ -match '^click ' }).Count
+        $before = Click-Count
         Set-Slider $ratio
-        Click-Panel
-        $after = (Get-Content $clickFile | Where-Object { $_ -match '^click ' }).Count
-        $fg2 = [SonoraInput]::GetForegroundWindow()
-        $fg2Pid = 0
-        [SonoraInput]::GetWindowThreadProcessId($fg2, [ref]$fg2Pid) | Out-Null
-        $fg2Name = (Get-Process -Id $fg2Pid -ErrorAction SilentlyContinue).ProcessName
+        $panelPassed = Click-Panel
+        $marginBefore = Click-Count
+        $winRect = New-Object SonoraInput+RECT
+        [SonoraInput]::GetWindowRect($hwnd, [ref]$winRect) | Out-Null
+        [SonoraInput]::Click($winRect.Left + 4, $winRect.Bottom - 4)
+        Start-Sleep -Milliseconds 200
+        $marginPassed = (Click-Count) - $marginBefore
+        $after = Click-Count
+        $fg2Name = Get-ForegroundName
         $label = "slider $([int]($ratio * 100)) $(if ($focus) {'focused'} else {'unfocused'}) $(if ($pin) {'pinned'} else {'unpinned'})"
-        $ok = ($after -eq $before) -and ($fg2Name -like 'Sonora*')
-        Add-Scenario $label $ok "pass-through=$($after - $before) foreground=$fg2Name"
+        $ok = ($panelPassed -eq 0) -and ($marginPassed -eq 0) -and ($fg2Name -like 'Sonora*')
+        Add-Scenario $label $ok "panel=$panelPassed margin=$marginPassed foreground=$fg2Name total=$($after - $before)"
       }
     }
   }
   Save-Screen '04-slider-matrix.png'
 
-  if (Find-Element 'Start') { Click-Name 'Start' | Out-Null; Start-Sleep -Milliseconds 400 }
+  $row = Find-Element 'Northwind interview'
+  if ($row) {
+    $start = Find-Element 'Start'
+    if ($start) { Click-Element $start } else { Click-Element $row }
+    Start-Sleep -Milliseconds 500
+  }
   Click-Name 'Listen' | Out-Null
-  Start-Sleep -Milliseconds 400
-  Click-Name 'Answer Ctrl+Enter' | Out-Null
-  Start-Sleep -Milliseconds 800
-  $heard = Find-Element 'Heard: How does caching work?'
-  Add-Scenario 'Live session mocked transcript produces an answer' ([bool]$heard) ''
-  foreach ($name in @('Screenshot Ctrl+Shift+Enter','Chat','Previous answer','Next answer','Clear','End')) {
-    if (Find-Element $name) { Click-Name $name | Out-Null } else { Add-Scenario "OS click $name" $false 'missing' }
+  Start-Sleep -Milliseconds 600
+  Click-Name 'Answer' | Out-Null
+  $heard = $null
+  $waitUntil = (Get-Date).AddSeconds(8)
+  while ((Get-Date) -lt $waitUntil -and -not $heard) {
+    $heard = Find-Element 'Heard: How does caching work?'
+    if (-not $heard) { Start-Sleep -Milliseconds 400 }
+  }
+  Add-Scenario 'Live session mocked transcript produces an answer' ([bool]$heard) $(if ($heard) { '' } else { 'answer text missing' })
+  foreach ($name in @('Screenshot', 'Chat', 'Previous answer', 'Next answer', 'Clear', 'End')) {
+    if (Find-Element $name) { Click-Name $name | Out-Null; Add-Scenario "OS click $name" $true '' }
+    else { Add-Scenario "OS click $name" $false 'missing' }
   }
   Save-Screen '05-live.png'
 
-  Get-Process -Name 'Sonora*' -ErrorAction SilentlyContinue | Stop-Process -Force
+  Stop-Sonora
   Start-Sleep -Seconds 1
-  $again = Start-Process -FilePath $Exe -ArgumentList '--force-renderer-accessibility' -PassThru
-  $hwnd2 = [IntPtr]::Zero
-  $deadline = (Get-Date).AddSeconds(60)
-  while ((Get-Date) -lt $deadline) {
-    $hwnd2 = Get-SonoraWindow $again.Id
-    if ($hwnd2 -ne [IntPtr]::Zero) { break }
-    Start-Sleep -Milliseconds 400
-  }
-  if ($hwnd2 -eq [IntPtr]::Zero) { Add-Scenario 'Restart still receives OS clicks' $false 'window did not return' }
-  else {
-    $rect2 = New-Object SonoraInput+RECT
-    [SonoraInput]::GetWindowRect($hwnd2, [ref]$rect2) | Out-Null
-    $before = (Get-Content $clickFile | Where-Object { $_ -match '^click ' }).Count
-    [SonoraInput]::Click([int](($rect2.Left + $rect2.Right) / 2), [int](($rect2.Top + $rect2.Bottom) / 2))
-    Start-Sleep -Milliseconds 400
-    $after = (Get-Content $clickFile | Where-Object { $_ -match '^click ' }).Count
-    Add-Scenario 'Restart still receives OS clicks' ($after -eq $before) "new pass-through=$($after - $before)"
-    Save-Screen '06-restart.png'
-  }
+  $again = Start-Sonora @('--force-renderer-accessibility')
+  Start-Sleep -Seconds 4
+  $hwnd2 = $again.hwnd
+  $rect2 = New-Object SonoraInput+RECT
+  [SonoraInput]::GetWindowRect($hwnd2, [ref]$rect2) | Out-Null
+  $before = Click-Count
+  [SonoraInput]::Click([int](($rect2.Left + $rect2.Right) / 2), [int](($rect2.Top + $rect2.Bottom) / 2))
+  Start-Sleep -Milliseconds 400
+  [SonoraInput]::Click($rect2.Left + 6, $rect2.Bottom - 6)
+  Start-Sleep -Milliseconds 400
+  $after = Click-Count
+  Add-Scenario 'Restart still receives OS clicks' ($after -eq $before) "new pass-through=$($after - $before)"
+  Save-Screen '06-restart.png'
 }
 finally {
   $failed = @($scenarios | Where-Object { -not $_.pass })
-  $payload = @{ scenarios = $scenarios; full = [bool]$Full; exe = $Exe } | ConvertTo-Json -Depth 5
+  $payload = @{ scenarios = $scenarios; full = [bool]$Full; exe = $Exe } | ConvertTo-Json -Depth 6
   Set-Content -Path (Join-Path $OutDir 'results.json') -Value $payload -Encoding utf8
+  Set-Content -Path $stopFrames -Value 'stop' -Encoding utf8
+  Start-Sleep -Seconds 1
+  if ($recorder -and -not $recorder.HasExited) { Stop-Process -Id $recorder.Id -Force -ErrorAction SilentlyContinue }
   if ($catcher -and -not $catcher.HasExited) { Stop-Process -Id $catcher.Id -Force -ErrorAction SilentlyContinue }
-  Get-Process -Name 'Sonora*' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+  Stop-Sonora
+  Unblock-SonoraNetwork
+  $ffmpeg = $null
+  $cmd = Get-Command ffmpeg -ErrorAction SilentlyContinue
+  if ($cmd) { $ffmpeg = $cmd.Source }
+  if (-not $ffmpeg) {
+    $found = Get-ChildItem -Path 'C:\ffmpeg', "$env:LOCALAPPDATA\Microsoft\WinGet\Links", 'C:\Program Files' -Filter ffmpeg.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($found) { $ffmpeg = $found.FullName }
+  }
+  $video = Join-Path $OutDir 'desktop.mp4'
+  if ($ffmpeg) {
+    $frames = @(Get-ChildItem $frameDir -Filter 'f*.png' -ErrorAction SilentlyContinue)
+    Write-Host "stitching $($frames.Count) frames with $ffmpeg"
+    if ($frames.Count -ge 2) {
+      & $ffmpeg -y -hide_banner -loglevel error -start_number 0 -framerate 2 -i (Join-Path $frameDir 'f%04d.png') -c:v libx264 -pix_fmt yuv420p -preset ultrafast -movflags +faststart $video 2> (Join-Path $OutDir 'ffmpeg-err.txt')
+      $bytes = (Get-Item $video -ErrorAction SilentlyContinue).Length
+      Write-Host "video bytes=$bytes"
+      if ($bytes -gt 10000) { Remove-Item $frameDir -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+  } else { Write-Host 'ffmpeg not available for stitch' }
 }
 if ($failed.Count -gt 0) { exit 1 }
 exit 0
