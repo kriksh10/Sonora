@@ -129,11 +129,12 @@ function requireApp(name) {
 
 (async () => {
   fs.mkdirSync(shots, { recursive: true });
-  setTimeout(() => {
-    console.error('e2e watchdog: stopping after 6 minutes');
+  const watchdog = setTimeout(() => {
+    console.error('e2e watchdog: stopping after 10 minutes');
     try { fs.writeFileSync(resultsFile, JSON.stringify({ scenarios, fatal: 'watchdog' }, null, 2)); } catch { /* results are best effort */ }
     process.exit(1);
   }, 10 * 60 * 1000);
+  watchdog.unref();
   if (!fs.existsSync(path.join(dist, 'index.html'))) throw new Error(`E2E renderer is missing ${path.join(dist, 'index.html')}`);
   server = await startServer();
   const errors = [];
@@ -272,14 +273,29 @@ function requireApp(name) {
       if (state.ignoringMouse) throw new Error('Gap passed through before click-through was enabled');
       await click(page, page.locator('summary[aria-label="Window settings"]'));
       await click(page, page.getByLabel('Click through the overlay'));
-      await page.mouse.move(bar.x + 30, gapY);
-      await page.waitForTimeout(150);
-      state = await page.evaluate(() => window.sonoraDesktop.e2eFlags());
-      if (!state.ignoringMouse || !state.clickThrough) throw new Error(`Gap did not pass through ${JSON.stringify(state)}`);
+      await click(page, page.locator('summary[aria-label="Window settings"]'));
+      const gap = await page.evaluate(({ x, top, bottom }) => {
+        for (let y = top + 1; y < bottom; y += 1) {
+          const el = document.elementFromPoint(x, y);
+          if (!el) return { x, y, hit: 'none' };
+          if (!el.closest('.dp-glass,.dp-dialog,.dp-chat,.sonora-window-bar,.sonora-window-popover,button,a,input,textarea,select,summary,label')) return { x, y, hit: el.className || el.tagName };
+        }
+        return null;
+      }, { x: bar.x + 24, top: bar.y + bar.height, bottom: strip.y });
+      if (!gap) throw new Error(`No empty gap between the live bar and the transcript ${JSON.stringify({ bar, strip })}`);
+      await page.mouse.move(2, 2);
+      await page.waitForTimeout(100);
+      await page.mouse.move(gap.x, gap.y);
+      for (let i = 0; i < 10 && !(state.ignoringMouse && state.clickThrough); i += 1) {
+        await page.waitForTimeout(100);
+        state = await page.evaluate(() => window.sonoraDesktop.e2eFlags());
+      }
+      if (!state.ignoringMouse || !state.clickThrough) throw new Error(`Gap did not pass through ${JSON.stringify(state)} at ${JSON.stringify(gap)}`);
       await page.mouse.move(bar.x + Math.min(80, bar.width / 3), bar.y + bar.height / 2);
       await page.waitForTimeout(150);
       state = await page.evaluate(() => window.sonoraDesktop.e2eFlags());
       if (state.ignoringMouse) throw new Error('Button stayed click-through');
+      await click(page, page.locator('summary[aria-label="Window settings"]'));
       await click(page, page.getByLabel('Click through the overlay'));
       await click(page, page.locator('summary[aria-label="Window settings"]'));
     });
@@ -348,11 +364,11 @@ function requireApp(name) {
   fs.writeFileSync(resultsFile, JSON.stringify({ scenarios }, null, 2));
   const failed = scenarios.filter(item => !item.pass);
   console.log(JSON.stringify(scenarios, null, 2));
-  process.exitCode = failed.length ? 1 : 0;
+  process.exit(failed.length ? 1 : 0);
 })().catch(error => {
   server?.kill();
   console.error(error);
   fs.mkdirSync(shots, { recursive: true });
   fs.writeFileSync(resultsFile, JSON.stringify({ scenarios, fatal: String(error) }, null, 2));
-  process.exitCode = 1;
+  process.exit(1);
 });
