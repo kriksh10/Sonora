@@ -471,11 +471,15 @@ try {
   $dialogGone = -not (Find-Element 'Company')
   Add-Scenario 'Create Session cancel' $dialogGone ''
   Click-Name 'Create session' | Out-Null
-  $company = Find-Element 'Company'
+  $company = $null
+  foreach ($candidate in @(Find-All 'Company')) {
+    if ($candidate.Current.ControlType.ProgrammaticName -match 'Edit') { $company = $candidate; break }
+    if (-not $company) { $company = $candidate }
+  }
   if (-not $company) { Add-Scenario 'Create Session valid input' $false 'company field missing' }
   else {
     Click-Element $company
-    $company.SetFocus()
+    try { $company.SetFocus() } catch { Write-Host "company focus skipped" }
     [System.Windows.Forms.SendKeys]::SendWait('Northwind')
     Click-Name 'Create session' -Last | Out-Null
     Start-Sleep -Milliseconds 500
