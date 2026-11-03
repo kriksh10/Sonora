@@ -375,9 +375,11 @@ try {
   $launched = Start-Sonora @('--force-renderer-accessibility')
   $hwnd = $launched.hwnd
   Write-Host 'PHASE live-ui'
-  Start-Sleep -Seconds 8
-  $names = Dump-Ui 30
-  Write-Host ("UI names: " + ($names -join ' | '))
+  Start-Sleep -Seconds 6
+  if ($Full) {
+    $names = Dump-Ui 30
+    Write-Host ("UI names: " + ($names -join ' | '))
+  }
   Save-Screen '00-before-click.png'
   $probe = Invoke-ClickProbe 'installed-surface' $hwnd -MarginsOnly:$Full
   Save-Screen '01-after-os-clicks.png'
@@ -396,7 +398,6 @@ try {
     $title = Wait-Title $hwnd 'offline' 25
     Start-Sleep -Seconds 3
     Write-Host "offline title='$title'"
-    Write-Host ("offline UI: " + ((Dump-Ui 20) -join ' | '))
     $probe = Invoke-ClickProbe 'offline-transparent' $hwnd
     Save-Screen '01c-offline.png'
     $detail = "surface swallowed clicks; offline $($probe.detail)"
