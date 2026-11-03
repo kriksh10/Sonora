@@ -64,6 +64,7 @@ jobs:
           if (-not $exe) { throw "Sonora AI.exe was not installed" }
           Set-Content -Path installed-exe.txt -Value $exe.FullName
           Write-Host "Installed $($exe.FullName)"
+          cmd /c "findstr 127.0.0.1 `"$($exe.DirectoryName)\resources\app.asar`" & exit /b 0"
       - name: Record the desktop
         shell: pwsh
         run: |

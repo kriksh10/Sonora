@@ -522,6 +522,9 @@ else {
       if (development || localE2E) target = validateServiceUrl(process.env?.SONORA_DESKTOP_URL || bundled.serviceUrl, true);
       else target = validateServiceUrl(bundled.serviceUrl, false);
       bootLog(`target=${target} packaged=${app.isPackaged} argvE2E=${process.argv.includes('--e2e')} envE2E=${process.env?.SONORA_E2E === '1'} bundledE2E=${bundled.e2e === true}`);
+      if (process.env?.SONORA_BOOT_LOG) {
+        try { fs.appendFileSync(process.env.SONORA_BOOT_LOG, `target=${target} localE2E=${localE2E} argv=${process.argv.join(' ')}\n`); } catch { /* diagnostic only */ }
+      }
     } catch (error) {
       bootLog(`config rejected ${error}`);
       dialog.showErrorBox('Sonora release configuration missing', 'This build has no valid hosted Sonora URL. Ask the publisher for a configured release. A local development server is not a production service.');

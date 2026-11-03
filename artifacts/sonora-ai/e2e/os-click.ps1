@@ -15,6 +15,7 @@ New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $OutDir = (Resolve-Path $OutDir).Path
 $env:ELECTRON_ENABLE_LOGGING = '1'
 $env:ELECTRON_LOG_FILE = Join-Path $OutDir 'electron.log'
+$env:SONORA_BOOT_LOG = Join-Path $OutDir 'boot.txt'
 $clickFile = Join-Path $OutDir 'catcher-clicks.txt'
 $shotDir = $OutDir
 if (Test-Path $clickFile) { Remove-Item $clickFile -Force }
