@@ -1,0 +1,61 @@
+name: Sonora 1.0.3 OS click reproduction
+on:
+  pull_request:
+    branches: [replit-sync]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  reproduce-v103:
+    name: Reproduce v1.0.3 pass-through
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ffmpeg
+        continue-on-error: true
+        shell: pwsh
+        run: winget install --id Gyan.FFmpeg -e --accept-source-agreements --accept-package-agreements
+      - name: Download Sonora 1.0.3
+        shell: pwsh
+        run: gh release download v1.0.3 --repo kriksh10/Sonora --pattern "Sonora-1.0.3-win-x64.exe" --dir "$env:RUNNER_TEMP"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Install Sonora 1.0.3 silently
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP "Sonora-1.0.3-win-x64.exe"
+          Start-Process -FilePath $installer -ArgumentList "/S" -Wait
+          $exe = Get-ChildItem -Path "$env:LOCALAPPDATA\Programs","$env:ProgramFiles" -Filter "Sonora AI.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { throw "Sonora AI.exe was not installed" }
+          Set-Content -Path installed-exe.txt -Value $exe.FullName
+          Write-Host "Installed $($exe.FullName)"
+      - name: Record the desktop
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User')
+          $ffmpeg = (Get-Command ffmpeg -ErrorAction SilentlyContinue).Source
+          New-Item -ItemType Directory -Force -Path generated-artifacts/os-click-proof | Out-Null
+          if (-not $ffmpeg) { Write-Host "ffmpeg not available"; exit 0 }
+          Start-Process -FilePath $ffmpeg -ArgumentList @(
+            "-y","-f","gdigrab","-framerate","8","-draw_mouse","1","-i","desktop",
+            "-movflags","frag_keyframe+empty_moov","-pix_fmt","yuv420p",
+            "generated-artifacts/os-click-proof/desktop.mp4"
+          ) -WindowStyle Hidden
+      - name: OS-level clicks against the installed v1.0.3 app
+        shell: pwsh
+        run: |
+          $exe = Get-Content installed-exe.txt
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -STA -NoProfile -ExecutionPolicy Bypass -File artifacts/sonora-ai/e2e/os-click.ps1 -Exe $exe -OutDir generated-artifacts/os-click-proof
+      - name: Stop the recording
+        if: always()
+        shell: pwsh
+        run: Get-Process ffmpeg -ErrorAction SilentlyContinue | Stop-Process -Force
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v103-os-click-proof
+          path: generated-artifacts/os-click-proof/**
+          if-no-files-found: warn
+          retention-days: 14
