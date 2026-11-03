@@ -273,11 +273,14 @@ function Seed-Preferences {
   }
 }
 function Clear-SonoraCache {
+  # rmdir of a locked Chromium cache stalls the runner. Renaming fails immediately when a handle is still open.
   foreach ($root in @($env:APPDATA, $env:LOCALAPPDATA)) {
     Get-ChildItem $root -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'sonora' } | ForEach-Object {
       foreach ($sub in @('Cache', 'Code Cache', 'GPUCache', 'Session Storage', 'Local Storage', 'Service Worker', 'Partitions', 'blob_storage')) {
         $path = Join-Path $_.FullName $sub
-        if (Test-Path $path) { & cmd.exe /c "rmdir /s /q `"$path`" & exit /b 0"; Write-Host "cleared $path" }
+        if (-not (Test-Path -LiteralPath $path)) { continue }
+        try { Rename-Item -LiteralPath $path -NewName ($sub.Replace(' ', '_') + '.stale') -ErrorAction Stop; Write-Host "renamed $path" }
+        catch { Write-Host "left $path" }
       }
     }
   }
