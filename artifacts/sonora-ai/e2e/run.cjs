@@ -42,18 +42,24 @@ async function shot(name) {
     fs.writeFileSync(`${file}.txt`, 'Desktop capture runs on the Windows runner.');
     return;
   }
-  const child = spawn('powershell', ['-NoProfile', '-Command', `
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-$bmp = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
-$g = [System.Drawing.Graphics]::FromImage($bmp)
-$g.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
-$bmp.Save($env:E2E_SHOT, [System.Drawing.Imaging.ImageFormat]::Png)
-$g.Dispose(); $bmp.Dispose()
+  const child = spawn('powershell.exe', ['-NoProfile', '-Command', `
+$ErrorActionPreference = 'Stop'
+try {
+  Add-Type -AssemblyName System.Windows.Forms
+  Add-Type -AssemblyName System.Drawing
+  $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+  $bmp = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+  $g = [System.Drawing.Graphics]::FromImage($bmp)
+  $g.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+  $bmp.Save($env:E2E_SHOT, [System.Drawing.Imaging.ImageFormat]::Png)
+  $g.Dispose(); $bmp.Dispose()
+} catch {
+  Set-Content -Path ($env:E2E_SHOT + '.log') -Value $_.Exception.Message
+  exit 1
+}
 `], { env: { ...process.env, E2E_SHOT: file }, detached: true, stdio: 'ignore', windowsHide: true });
   child.unref();
-  await new Promise(resolve => setTimeout(resolve, 1200));
+  await new Promise(resolve => setTimeout(resolve, 500));
 }
 
 async function pageDump(page) {
@@ -360,6 +366,7 @@ function requireApp(name) {
     }
   });
 
+  await new Promise(resolve => setTimeout(resolve, 3000));
   server.kill();
   fs.writeFileSync(resultsFile, JSON.stringify({ scenarios }, null, 2));
   const failed = scenarios.filter(item => !item.pass);
