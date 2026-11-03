@@ -492,10 +492,24 @@ try {
   }
   $hoverOk = $hoverName -match 'Hover ' -and $hoverName -notmatch 'Hover idle' -and $hoverName -match 'cursor pointer'
   Add-Scenario 'Real mouse moves for 10 seconds change hover and cursor' $hoverOk $hoverName
-  Click-Name 'Interview' | Out-Null
-  Start-Sleep -Milliseconds 400
-  $filtered = Find-Element 'Filter interview'
-  Add-Scenario 'Filter click changes the visible state' ([bool]$filtered) ''
+  $interview = $null
+  foreach ($candidate in @(Find-All 'Interview')) {
+    if ($candidate.Current.Name -eq 'Interview') { $interview = $candidate; break }
+  }
+  if (-not $interview) { throw 'Interview filter missing' }
+  Click-Element $interview
+  $filtered = $null
+  $filterUntil = (Get-Date).AddSeconds(3)
+  while ((Get-Date) -lt $filterUntil -and -not $filtered) {
+    $filtered = Find-Element 'Filter interview'
+    if (-not $filtered) { Start-Sleep -Milliseconds 200 }
+  }
+  $filterDetail = ''
+  if (-not $filtered) {
+    $current = Find-Element 'Filter '
+    $filterDetail = if ($current) { $current.Current.Name } else { 'filter label missing' }
+  }
+  Add-Scenario 'Filter click changes the visible state' ([bool]$filtered) $filterDetail
   $hung = $false
   foreach ($log in @($env:SONORA_BOOT_LOG)) {
     if ($log -and (Test-Path $log) -and (Select-String -Path $log -Pattern 'unresponsive' -Quiet)) { $hung = $true }
