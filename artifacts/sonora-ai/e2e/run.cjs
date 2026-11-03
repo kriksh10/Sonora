@@ -291,8 +291,8 @@ function requireApp(name) {
       if (state.ignoringMouse) throw new Error('Gap passed through before click-through was enabled');
       await click(page, page.locator('summary[aria-label="Window settings"]'));
       const clickThroughBox = page.getByRole('checkbox', { name: 'Click through the overlay' });
-      await clickThroughBox.scrollIntoViewIfNeeded();
-      await click(page, clickThroughBox);
+      await clickThroughBox.click();
+      await page.waitForFunction(async () => (await window.sonoraDesktop.e2eFlags()).clickThrough);
       await click(page, page.locator('summary[aria-label="Window settings"]'));
       const gap = await page.evaluate(({ x, top, bottom }) => {
         for (let y = top + 1; y < bottom; y += 1) {
@@ -316,8 +316,8 @@ function requireApp(name) {
       state = await page.evaluate(() => window.sonoraDesktop.e2eFlags());
       if (state.ignoringMouse) throw new Error('Button stayed click-through');
       await click(page, page.locator('summary[aria-label="Window settings"]'));
-      await clickThroughBox.scrollIntoViewIfNeeded();
-      await click(page, clickThroughBox);
+      await clickThroughBox.click();
+      await page.waitForFunction(async () => !(await window.sonoraDesktop.e2eFlags()).clickThrough);
       await click(page, page.locator('summary[aria-label="Window settings"]'));
     });
 
