@@ -23,14 +23,14 @@ export function overlayPointerCaptures(target: EventTarget | null): boolean {
   return Boolean(target.closest(SURFACE));
 }
 
-/** Prefer the spoken line the candidate can see, then whatever they typed. */
+/** Typed chat wins. An empty box uses the line being heard, then the last heard line. */
 export function liveAnswerQuestion(input: {
   typed?: string;
   latest?: string;
   interim?: string;
   spoken?: string;
 }) {
-  for (const value of [input.typed, input.latest, input.interim, input.spoken]) {
+  for (const value of [input.typed, input.interim, input.spoken, input.latest]) {
     const text = value?.trim() ?? "";
     if (/[\p{L}\p{N}]/u.test(text)) return text;
   }

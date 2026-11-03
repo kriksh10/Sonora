@@ -39,7 +39,8 @@ test('clicks on glass and buttons stay in Sonora; empty gaps do not', () => {
 });
 
 test('Answer uses the live transcript when the chat box is empty', () => {
-  assert.equal(liveAnswerQuestion({ typed: '', latest: '', interim: 'how does auth', spoken: 'older line' }), 'how does auth');
+  assert.equal(liveAnswerQuestion({ typed: '', latest: 'already asked', interim: 'how does auth', spoken: 'older line' }), 'how does auth');
+  assert.equal(liveAnswerQuestion({ typed: '', latest: 'already asked', spoken: 'What is a queue?' }), 'What is a queue?');
   assert.equal(liveAnswerQuestion({ typed: '  typed question ', spoken: 'heard' }), 'typed question');
   assert.equal(liveAnswerQuestion({ spoken: 'Tell me about scaling' }), 'Tell me about scaling');
   assert.equal(liveAnswerQuestion({ typed: '???', spoken: '' }), '');

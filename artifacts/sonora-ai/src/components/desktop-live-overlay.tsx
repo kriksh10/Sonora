@@ -118,7 +118,8 @@ export default function DesktopLiveOverlay(props: {
             <h3>Answer: {headline}</h3>
             {props.answer ? <SafeMarkdown text={props.answer} /> : <p>Ask, or let Auto Answer respond when the interviewer finishes.</p>}
           </div>
-          {(props.error || props.notice) && <p role="status">{props.error || props.notice}</p>}
+          {props.error && <p role="alert">{props.error}</p>}
+          {props.notice && <p role="status">{props.notice}</p>}
           <footer className="dp-foot">
             <span>Answer · {props.duration}</span>
             <span className="spacer" />

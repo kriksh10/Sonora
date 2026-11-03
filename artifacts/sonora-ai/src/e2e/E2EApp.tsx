@@ -96,9 +96,9 @@ export default function E2EApp() {
     if (listening) { setListening(false); setNotice("Audio transcription stopped."); return; }
     try {
       const response = await fetch(`/api/sessions/${selected.id}/live-audio`, { credentials: "include" });
-      if (response.status === 503) setNotice("Speechmatics unavailable. Using Gemini fallback for transcription.");
+      if (response.status === 503) { setError(""); setNotice("Speechmatics unavailable. Using Gemini fallback for transcription."); }
       else if (!response.ok) setError("Live transcription could not start.");
-      else setNotice("Listening. Speechmatics is connected.");
+      else { setError(""); setNotice("Listening. Speechmatics is connected."); }
       setListening(true);
     } catch {
       setError("Network offline. Sonora is still open; retry when you are connected.");
@@ -172,7 +172,7 @@ export default function E2EApp() {
             onSearch={setSearch}
             onCreate={() => { setFormError(""); setCreateOpen(true); }}
             onMock={() => { setFilter("mock"); setFormError(""); setCreateOpen(true); }}
-            onJoin={session => { setSelectedId(session.id); setLive(true); setEntries([]); setAnswer(""); setHistory([]); setError(""); setNotice(""); }}
+            onJoin={session => { setSelectedId(session.id); setLive(true); setEntries([]); setAnswer(""); setHistory([]); setQuestion(""); setLatest(""); setError(""); setNotice(""); }}
             onView={session => setSelectedId(session.id)}
             selected={selected}
             creditText="12 credits left"

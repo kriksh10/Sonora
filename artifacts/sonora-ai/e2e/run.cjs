@@ -4,7 +4,7 @@ const { spawn } = require('node:child_process');
 const { _electron: electron } = require('playwright');
 
 const root = path.resolve(__dirname, '../../..');
-const dist = path.join(root, 'artifacts/sonora-ai/dist');
+const dist = path.join(root, 'artifacts/sonora-ai/dist/public');
 const shots = path.join(root, 'generated-artifacts/e2e-screenshots');
 const resultsFile = path.join(shots, 'results.json');
 const port = Number(process.env.E2E_PORT || 4173);
@@ -117,8 +117,14 @@ async function setMode(mode) {
   if (!response.ok) throw new Error(`Could not set mock mode ${mode}`);
 }
 
+function requireApp(name) {
+  if (scenarios.some(item => item.name.startsWith('launch:') && item.pass)) return;
+  throw new Error(`${name} skipped because the packaged window did not show the signed-out screen.`);
+}
+
 (async () => {
   fs.mkdirSync(shots, { recursive: true });
+  if (!fs.existsSync(path.join(dist, 'index.html'))) throw new Error(`E2E renderer is missing ${path.join(dist, 'index.html')}`);
   server = await startServer();
   const errors = [];
   let app;
@@ -141,6 +147,7 @@ async function setMode(mode) {
     });
 
     await scenario('signed-out state and sign-in', async () => {
+      requireApp('signed-out state and sign-in');
       if (await page.getByRole('button', { name: 'Call Sessions' }).count()) throw new Error('Sessions visible before sign-in');
       await click(page, page.getByTestId('button-sign-in'));
       await page.getByRole('heading', { name: 'Call Sessions' }).waitFor();
@@ -148,6 +155,7 @@ async function setMode(mode) {
     });
 
     await scenario('home empty state and every sidebar action', async () => {
+      requireApp('home empty state and every sidebar action');
       await page.getByText('No active sessions.').waitFor();
       for (const name of ['Resumes', 'Documents', 'Call Sessions']) await click(page, page.getByRole('button', { name }));
       await click(page, page.getByRole('button', { name: 'Dark' }));
@@ -156,6 +164,7 @@ async function setMode(mode) {
     });
 
     await scenario('Create Session invalid, cancel, then valid', async () => {
+      requireApp('Create Session invalid, cancel, then valid');
       await click(page, page.getByRole('button', { name: 'Create session' }).first());
       await page.getByRole('dialog', { name: 'Create session' }).waitFor();
       await click(page, page.getByRole('button', { name: 'Create session' }).last());
@@ -170,38 +179,40 @@ async function setMode(mode) {
     });
 
     await scenario('live Listen, transcript, Answer, history, Clear, Screenshot, Chat, menu, End', async () => {
+      requireApp('live Listen, transcript, Answer, history, Clear, Screenshot, Chat, menu, End');
       await click(page, page.getByRole('button', { name: 'Start' }));
-      await page.getByRole('button', { name: 'Listen' }).waitFor();
-      await click(page, page.getByRole('button', { name: 'Listen' }));
+      await page.getByRole('button', { name: 'Listen', exact: true }).waitFor();
+      await click(page, page.getByRole('button', { name: 'Listen', exact: true }));
       await page.getByText('Speechmatics is connected').waitFor();
       await page.evaluate(() => window.dispatchEvent(new CustomEvent('sonora-e2e-transcript', { detail: { text: 'How does caching work?' } })));
       await click(page, answerButton(page));
-      await page.getByText('Heard: How does caching work?').waitFor();
-      await page.getByLabel('Question').waitFor({ state: 'detached' }).catch(() => {});
+      await page.getByText('Heard: How does caching work?', { exact: true }).waitFor();
       await click(page, page.getByRole('button', { name: 'Chat' }));
-      await page.getByLabel('Question').fill('Typed from chat');
+      await page.getByLabel('Question', { exact: true }).fill('Typed from chat');
       await click(page, answerButton(page));
-      await page.getByText('Heard: Typed from chat').waitFor();
+      await page.getByText('Heard: Typed from chat', { exact: true }).waitFor();
       await page.evaluate(() => window.dispatchEvent(new CustomEvent('sonora-e2e-transcript', { detail: { text: 'Explain indexes' } })));
       await click(page, page.getByRole('button', { name: 'Expand transcript' }));
       await click(page, page.getByRole('button', { name: 'Explain indexes' }));
-      await page.getByText('Heard: Explain indexes').waitFor();
+      await page.getByText('Heard: Explain indexes', { exact: true }).waitFor();
       await click(page, page.getByRole('button', { name: 'Previous answer' }));
-      await page.getByText('Heard: Typed from chat').waitFor();
+      await page.getByText('Heard: Typed from chat', { exact: true }).waitFor();
       await click(page, page.getByRole('button', { name: 'Next answer' }));
-      await page.getByText('Heard: Explain indexes').waitFor();
+      await page.getByText('Heard: Explain indexes', { exact: true }).waitFor();
       await click(page, page.getByRole('button', { name: 'Clear', exact: true }).first());
       await click(page, page.getByRole('button', { name: 'Screenshot' }));
       await page.getByText('Screenshot attached.').waitFor();
+      await click(page, page.getByRole('button', { name: 'Chat' }));
       await click(page, page.locator('summary[aria-label="Overlay menu"]'));
       await click(page, page.getByRole('button', { name: 'Answer settings' }));
-      await page.getByText('Answer settings').waitFor();
+      await page.getByRole('status').filter({ hasText: 'Answer settings' }).waitFor();
       await shot(app, page, '04-live.png');
       await click(page, page.getByRole('button', { name: 'End' }));
       await page.getByRole('heading', { name: 'Call Sessions' }).waitFor();
     });
 
     await scenario('answer errors stay visible and the app stays usable', async () => {
+      requireApp('answer errors stay visible and the app stays usable');
       await click(page, page.getByRole('button', { name: 'Start' }));
       for (const [mode, text] of [['401', 'Sign-in expired'], ['500', 'Answer service failed'], ['timeout', 'timed out'], ['offline', 'Network offline']]) {
         await setMode(mode);
@@ -210,16 +221,17 @@ async function setMode(mode) {
         await page.getByText(new RegExp(text, 'i')).first().waitFor();
       }
       await setMode('speechmatics');
-      await click(page, page.getByRole('button', { name: 'Listen' }));
-      await page.getByText('Using Gemini fallback').waitFor();
+      await click(page, page.getByRole('button', { name: 'Listen', exact: true }));
+      await page.getByRole('status').filter({ hasText: 'Using Gemini fallback' }).waitFor();
       await setMode('ok');
       await page.evaluate(() => window.dispatchEvent(new CustomEvent('sonora-e2e-transcript', { detail: { text: 'What is a queue?' } })));
       await click(page, answerButton(page));
-      await page.getByText('Heard: What is a queue?').waitFor();
+      await page.getByText('Heard: What is a queue?', { exact: true }).waitFor();
       await click(page, page.getByRole('button', { name: 'End' }));
     });
 
     await scenario('glass, sidebar, transcript, and edges keep focus; gaps pass through only when enabled', async () => {
+      requireApp('glass, sidebar, transcript, and edges keep focus; gaps pass through only when enabled');
       const side = await page.locator('.dp-side').boundingBox();
       await page.mouse.move(side.x + 20, side.y + 90);
       await page.waitForTimeout(80);
@@ -256,6 +268,7 @@ async function setMode(mode) {
     });
 
     await scenario('pin, blur, opacity, resize, and restart', async () => {
+      requireApp('pin, blur, opacity, resize, and restart');
       const before = await page.evaluate(() => window.sonoraDesktop.e2eFlags());
       await click(page, page.getByRole('button', { name: 'Keep on top' }));
       let state = await page.evaluate(() => window.sonoraDesktop.e2eFlags());
@@ -288,6 +301,7 @@ async function setMode(mode) {
   }
 
   await scenario('restart clamps off-screen bounds and keeps opacity', async () => {
+    requireApp('restart clamps off-screen bounds and keeps opacity');
     const prefs = path.join(userData, 'window-preferences.json');
     const saved = fs.existsSync(prefs) ? JSON.parse(fs.readFileSync(prefs, 'utf8')) : {};
     saved.bounds = { x: 50000, y: 50000, width: 900, height: 640 };
