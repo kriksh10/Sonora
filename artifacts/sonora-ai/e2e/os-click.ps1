@@ -147,7 +147,7 @@ function Invoke-ClickProbe([string]$Label, [IntPtr]$Window) {
   [SonoraInput]::GetWindowRect($Window, [ref]$rect) | Out-Null
   $width = $rect.Right - $rect.Left
   $height = $rect.Bottom - $rect.Top
-  Write-Host "$Label hwnd=$Window rect=$($rect.Left),$($rect.Top) ${width}x${height}"
+  Write-Host "$Label hwnd=$Window title='$([SonoraInput]::Title($Window))' rect=$($rect.Left),$($rect.Top) ${width}x${height}"
   $outsideX = [Math]::Max(8, $rect.Left - 30)
   $outsideY = [Math]::Min([System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height - 20, $rect.Bottom + 40)
   if ($outsideY -le $rect.Bottom -and $outsideY -ge $rect.Top) { $outsideY = [Math]::Max(8, $rect.Top - 20) }
