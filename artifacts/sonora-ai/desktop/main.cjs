@@ -475,7 +475,10 @@ function createWindow() {
       else { quitting = true; app.quit(); }
     }
   });
-  win.webContents.on('did-finish-load', () => bootLog(`did-finish-load ${win.webContents.getURL()}`));
+  win.webContents.on('did-finish-load', () => {
+    try { app.setAccessibilitySupportEnabled(true); } catch (error) { bootLog(`accessibility ${error}`); }
+    bootLog(`did-finish-load ${win.webContents.getURL()}`);
+  });
   configurePermissions();
   win.once('ready-to-show', show);
   void loadService();
@@ -516,7 +519,12 @@ if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on('second-instance', show);
   app.whenReady().then(async () => {
-    try { app.setAccessibilitySupportEnabled?.(true); } catch { /* older runtimes omit this */ }
+    try {
+      app.setAccessibilitySupportEnabled(true);
+      if (process.env?.SONORA_BOOT_LOG) fs.appendFileSync(process.env.SONORA_BOOT_LOG, 'accessibility=on\n');
+    } catch (error) {
+      if (process.env?.SONORA_BOOT_LOG) fs.appendFileSync(process.env.SONORA_BOOT_LOG, `accessibility=${error}\n`);
+    }
     try {
       const bundled = JSON.parse(fs.readFileSync(path.join(__dirname, 'runtime-config.json'), 'utf8'));
       localE2E = e2e || bundled.e2e === true;

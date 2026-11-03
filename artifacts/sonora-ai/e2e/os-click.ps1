@@ -149,10 +149,23 @@ Start-Sleep -Seconds 1
 $scenarios = New-Object System.Collections.Generic.List[object]
 $script:blockedHost = $null
 function Get-SonoraAutomation {
-  $procId = (Get-Process | Where-Object { $_.ProcessName -like 'Sonora*' } | Select-Object -First 1).Id
-  if (-not $procId) { return $null }
-  $cond = New-Object System.Windows.Automation.PropertyCondition ([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $procId)
-  return [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children, $cond)
+  $ids = @(Get-Process | Where-Object { $_.ProcessName -like 'Sonora*' } | Select-Object -ExpandProperty Id)
+  if ($ids.Count -eq 0) { return $null }
+  $best = $null
+  $bestCount = -1
+  $windows = 0
+  foreach ($procId in $ids) {
+    $cond = New-Object System.Windows.Automation.PropertyCondition ([System.Windows.Automation.AutomationElement]::ProcessIdProperty, [int]$procId)
+    $wins = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $cond)
+    $windows += $wins.Count
+    for ($i = 0; $i -lt $wins.Count; $i++) {
+      $w = $wins.Item($i)
+      $desc = $w.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+      if ($desc.Count -gt $bestCount) { $bestCount = $desc.Count; $best = $w }
+    }
+  }
+  Write-Host "UIA processWindows=$windows descendants=$bestCount"
+  return $best
 }
 function Add-Scenario([string]$Name, [bool]$Pass, [string]$Detail) {
   $script:scenarios.Add([ordered]@{ name = $Name; pass = $Pass; detail = $Detail }) | Out-Null
