@@ -3,6 +3,7 @@ import { EyeOff, GripHorizontal, Pin, Settings2, ShieldCheck, Square } from "luc
 import DesktopMaintenance from "@/components/desktop-maintenance";
 import DesktopHotkeysSheet from "@/components/desktop-hotkeys-sheet";
 import { createBackgroundOpacity } from "@/lib/background-opacity";
+import { overlayPointerCaptures } from "@/lib/overlay-hit-test";
 
 type DesktopState = Awaited<ReturnType<NonNullable<Window["sonoraDesktop"]>["getState"]>>;
 
@@ -62,17 +63,21 @@ export default function DesktopVisibilityControls() {
   }, [bridge]);
 
   useEffect(() => {
-    if (!bridge?.setControlsHover) return;
-    let hover = false;
-    const onMove = (event: MouseEvent) => {
-      const target = event.target instanceof Element ? event.target : null;
-      const next = Boolean(target?.closest(".sonora-overlay-controls, button, a, input, textarea, select, summary, label"));
-      if (next === hover) return;
-      hover = next;
-      void bridge.setControlsHover?.(next);
+    if (!bridge?.setPointerCapture && !bridge?.setControlsHover) return;
+    let capture = false;
+    const sync = (event: MouseEvent) => {
+      const next = overlayPointerCaptures(event.target);
+      if (next === capture && event.type !== "mousedown") return;
+      capture = next;
+      if (bridge.setPointerCapture) bridge.setPointerCapture(next);
+      else void bridge.setControlsHover?.(next);
     };
-    window.addEventListener("mousemove", onMove);
-    return () => window.removeEventListener("mousemove", onMove);
+    window.addEventListener("mousemove", sync);
+    window.addEventListener("mousedown", sync, true);
+    return () => {
+      window.removeEventListener("mousemove", sync);
+      window.removeEventListener("mousedown", sync, true);
+    };
   }, [bridge]);
 
   useLayoutEffect(() => {

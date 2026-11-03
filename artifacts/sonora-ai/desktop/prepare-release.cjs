@@ -35,8 +35,8 @@ async function checkHostedService(value = process.env.SONORA_RELEASE_URL, fetche
   return serviceUrl;
 }
 
-async function prepare({ arch = process.arch } = {}) {
-  const serviceUrl = await checkHostedService();
+async function prepare({ arch = process.arch, skipServiceCheck = false } = {}) {
+  const serviceUrl = skipServiceCheck ? validateServiceUrl(process.env.SONORA_RELEASE_URL) : await checkHostedService();
   const packageJson = require('../package.json');
   const binaryName = process.platform === 'win32' ? 'sonora-audio.exe' : 'sonora-audio';
   const nativeBinary = path.join(root, 'generated-artifacts/native', `${process.platform}-${arch}`, binaryName);

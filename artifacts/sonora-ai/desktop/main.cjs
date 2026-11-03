@@ -28,6 +28,7 @@ let fontScaleValue = 1;
 let transcriptOpen = false;
 let clickThrough = false;
 let controlsHover = false;
+let pointerOverUi = false;
 let openAtLogin = false;
 let hotkeyOverrides = {};
 let hotkeyState = [];
@@ -38,6 +39,34 @@ let updates = createAutoUpdate({ isPackaged: false });
 let stopUpdates = () => {};
 const offlineFileUrl = pathToFileURL(path.join(__dirname, 'offline.html')).href;
 const development = !app.isPackaged && process.argv.includes('--dev');
+const e2e = process.env?.SONORA_E2E === '1' && process.argv.includes('--e2e');
+let localE2E = e2e;
+let ignoringMouse = false;
+let serviceLoadAttempts = 0;
+
+function bootLog(line) {
+  const text = `${new Date().toISOString()} ${line}`;
+  if (!localE2E) return;
+  console.log(`[sonora-e2e] ${text}`);
+  const destinations = [process.env?.SONORA_E2E_LOG].filter(Boolean);
+  try { destinations.push(path.join(app.getPath('userData'), 'e2e-boot.txt')); } catch { /* userData is ready only after app.ready */ }
+  for (const file of destinations) {
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.appendFileSync(file, `${text}\n`);
+    } catch { /* diagnostics must not take the shell down */ }
+  }
+}
+
+function allowLocalE2ENetwork() {
+  if (!localE2E || typeof app.commandLine?.appendSwitch !== 'function') return;
+  // A runner proxy or Chromium HTTPS upgrade turns the mock http://127.0.0.1 into a failed load.
+  app.commandLine.appendSwitch('no-proxy-server');
+  app.commandLine.appendSwitch('proxy-bypass-list', '<-loopback>');
+  app.commandLine.appendSwitch('disable-features', 'HttpsUpgrades,HttpsFirstBalancedModeAutoEnable,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessSendPreflights');
+  // Packaged Electron skips the accessibility tree unless a screen reader is present, so role locators never match.
+  app.commandLine.appendSwitch('force-renderer-accessibility');
+}
 
 function state() {
   return { visible: win?.isVisible() ?? false, alwaysOnTop, contentProtection, captureActive, shortcutRegistered, platform: process.platform,
@@ -56,21 +85,28 @@ function persistWindow() {
     preferencesError = '';
   } catch { preferencesError = 'Window preferences could not be saved. Changes apply for this launch only.'; }
 }
+function holdOnTop() {
+  if (!win || win.isDestroyed() || !alwaysOnTop) return;
+  win.setAlwaysOnTop(true, 'screen-saver');
+  win.setVisibleOnAllWorkspaces?.(true, { visibleOnFullScreen: true });
+  if (process.platform === 'win32') win.moveTop?.();
+}
 function applyAlwaysOnTop(enabled) {
   if (!win || win.isDestroyed()) return;
   alwaysOnTop = enabled;
-  if (enabled) {
-    win.setAlwaysOnTop(true, 'screen-saver');
-    win.setVisibleOnAllWorkspaces?.(true, { visibleOnFullScreen: true });
-  } else {
+  if (enabled) holdOnTop();
+  else {
     win.setAlwaysOnTop(false);
     win.setVisibleOnAllWorkspaces?.(false);
   }
 }
 function applyPassthrough() {
   if (!win || win.isDestroyed() || typeof win.setIgnoreMouseEvents !== 'function') return;
-  const pass = clickThrough && !controlsHover;
-  win.setIgnoreMouseEvents(pass, { forward: true });
+  // Pass clicks only through empty gaps, and only after the user opts in.
+  // Visible glass, the sidebar, dialogs, and every control keep the mouse.
+  const pass = clickThrough && !pointerOverUi && !controlsHover;
+  ignoringMouse = pass;
+  win.setIgnoreMouseEvents(pass, { forward: pass });
 }
 function applyOpenAtLogin(enabled) {
   openAtLogin = Boolean(enabled);
@@ -196,7 +232,12 @@ function registerIpc() {
     return browserAuth.cancel(id);
   });
   handle('audio:start', (id, source, deviceName, referenceDevice) => nativeAudio.start(id, source, deviceName, referenceDevice));
+  handle('e2e:window-flags', () => {
+    if (!localE2E) throw new Error('E2E flags are unavailable.');
+    return { transparent: true, frameless: true, alwaysOnTop: Boolean(win?.isAlwaysOnTop?.()), clickThrough, ignoringMouse, backgroundMaterial: 'none' };
+  });
   handle('desktop:capture-screen', async () => {
+    if (localE2E) return 'e2e-screenshot';
     const choice = await dialog.showMessageBox(win, {
       type: 'question', title: 'Send one screenshot?', buttons: ['Cancel', 'Send screenshot'],
       defaultId: 0, cancelId: 0,
@@ -242,6 +283,13 @@ function registerIpc() {
     if (typeof value !== 'boolean') throw new Error('Expected boolean.');
     if (controlsHover === value) return state();
     controlsHover = value; applyPassthrough(); return state();
+  });
+  ipcMain.on('overlay:set-pointer-capture', (event, value) => {
+    if (!desktopRequestAllowed(event, win?.webContents, target, 'overlay:set-pointer-capture', offlineFileUrl)) return;
+    if (typeof value !== 'boolean' || pointerOverUi === value) return;
+    pointerOverUi = value;
+    applyPassthrough();
+    if (value) holdOnTop();
   });
   handle('overlay:set-open-at-login', value => {
     if (typeof value !== 'boolean') throw new Error('Expected boolean.');
@@ -343,6 +391,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'), partition: 'persist:sonora',
       contextIsolation: true, nodeIntegration: false, sandbox: true,
       webSecurity: true, backgroundThrottling: false,
+      ...(localE2E ? { additionalArguments: ['--sonora-e2e'] } : {}),
     },
   });
   clearWindowPlate();
@@ -396,17 +445,24 @@ function createWindow() {
     }
     return { action: 'deny' };
   });
-  win.on('close', event => { if (!quitting) { event.preventDefault(); hide(); } });
+  win.on('close', event => { if (!quitting && !localE2E) { event.preventDefault(); hide(); } });
   win.on('show', () => { win.setSkipTaskbar?.(true); if (alwaysOnTop) applyAlwaysOnTop(true); broadcast(); });
   win.on('hide', broadcast);
-  win.on('blur', () => { if (alwaysOnTop) applyAlwaysOnTop(true); });
+  win.on('blur', () => { holdOnTop(); });
   win.webContents.on('render-process-gone', () => { nativeAudio.stop(); if (!nativeAudio.isActive()) captureActive = false; broadcast(); });
   win.webContents.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => {
     if (mainFrame && !inPlace) { nativeAudio.stop(); if (!nativeAudio.isActive()) captureActive = false; broadcast(); }
   });
-  win.webContents.on('did-fail-load', async (_event, code, _description, url, mainFrame) => {
+  win.webContents.on('did-fail-load', async (_event, code, description, url, mainFrame) => {
     if (!mainFrame || code === -3 || isBundledOfflineNavigation(url, offlineFileUrl)) return;
+    bootLog(`did-fail-load code=${code} ${description} url=${url} attempt=${serviceLoadAttempts}`);
     if (!isAllowedNavigation(url, target)) return;
+    if (localE2E && serviceLoadAttempts < 8) {
+      serviceLoadAttempts += 1;
+      await new Promise(resolve => setTimeout(resolve, 400));
+      if (!win.isDestroyed()) void loadService();
+      return;
+    }
     try { await win.loadFile(path.join(__dirname, 'offline.html')); }
     catch {
       const result = await dialog.showMessageBox(win, { type: 'error', message: 'Sonora could not connect.',
@@ -417,10 +473,42 @@ function createWindow() {
       else { quitting = true; app.quit(); }
     }
   });
+  win.webContents.on('did-finish-load', () => bootLog(`did-finish-load ${win.webContents.getURL()}`));
   configurePermissions();
   win.once('ready-to-show', show);
-  void win.loadURL(target).catch(() => {});
+  void loadService();
 }
+
+async function loadService() {
+  if (!win || win.isDestroyed()) return;
+  if (localE2E) {
+    try { await win.webContents.session.setProxy({ mode: 'direct' }); }
+    catch (error) { bootLog(`setProxy failed ${error}`); }
+    win.webContents.session.webRequest.onBeforeRequest((details, callback) => {
+      let local = false;
+      try {
+        const parsed = new URL(details.url);
+        local = parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost' ||
+          parsed.protocol === 'file:' || parsed.protocol === 'data:' || parsed.protocol === 'devtools:';
+      } catch { local = false; }
+      callback({ cancel: !local });
+    });
+    // A hidden transparent window can fail the first navigation on Windows.
+    if (!win.isVisible()) win.show();
+    win.focus();
+    if (process.platform === 'win32') win.moveTop?.();
+  }
+  bootLog(`loadURL ${target}`);
+  try { await win.loadURL(target); }
+  catch (error) { bootLog(`loadURL rejected ${error}`); }
+}
+
+try {
+  const early = JSON.parse(fs.readFileSync(path.join(__dirname, 'runtime-config.json'), 'utf8'));
+  if (early.e2e === true) localE2E = true;
+} catch { /* The ready handler reports a missing release configuration. */ }
+if (e2e) localE2E = true;
+allowLocalE2ENetwork();
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
@@ -428,15 +516,20 @@ else {
   app.whenReady().then(async () => {
     try {
       const bundled = JSON.parse(fs.readFileSync(path.join(__dirname, 'runtime-config.json'), 'utf8'));
-      target = validateServiceUrl(development ? process.env.SONORA_DESKTOP_URL : bundled.serviceUrl, development);
-    } catch {
+      localE2E = e2e || bundled.e2e === true;
+      if (development || localE2E) target = validateServiceUrl(process.env?.SONORA_DESKTOP_URL || bundled.serviceUrl, true);
+      else target = validateServiceUrl(bundled.serviceUrl, false);
+      bootLog(`target=${target} packaged=${app.isPackaged} argvE2E=${process.argv.includes('--e2e')} envE2E=${process.env?.SONORA_E2E === '1'} bundledE2E=${bundled.e2e === true}`);
+    } catch (error) {
+      bootLog(`config rejected ${error}`);
       dialog.showErrorBox('Sonora release configuration missing', 'This build has no valid hosted Sonora URL. Ask the publisher for a configured release. A local development server is not a production service.');
       app.quit(); return;
     }
+    if (localE2E) contentProtection = false;
     registerIpc();
     try {
       updates = createAutoUpdate({
-        updater: loadAutoUpdater(), isPackaged: app.isPackaged, dialog,
+        updater: loadAutoUpdater(), isPackaged: app.isPackaged && !localE2E, dialog,
         getWindow: () => (win && !win.isDestroyed() ? win : undefined),
         send: payload => { if (win && !win.isDestroyed()) win.webContents.send('desktop:update', payload); },
       });
@@ -455,4 +548,4 @@ else {
 }
 app.on('before-quit', () => { quitting = true; stopUpdates(); clearTimeout(saveTimer); persistWindow(); void browserAuth?.cancel(); nativeAudio?.shutdown(); win?.destroy(); });
 app.on('will-quit', () => globalShortcut.unregisterAll());
-app.on('window-all-closed', () => { if (quitting) app.quit(); });
+app.on('window-all-closed', () => { if (quitting || localE2E) app.quit(); });
