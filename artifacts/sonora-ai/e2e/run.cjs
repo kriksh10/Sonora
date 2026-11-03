@@ -57,9 +57,21 @@ try {
   Set-Content -Path ($env:E2E_SHOT + '.log') -Value $_.Exception.Message
   exit 1
 }
-`], { env: { ...process.env, E2E_SHOT: file }, detached: true, stdio: 'ignore', windowsHide: true });
-  child.unref();
-  await new Promise(resolve => setTimeout(resolve, 500));
+`], { env: { ...process.env, E2E_SHOT: file }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  let log = '';
+  child.stdout.on('data', chunk => { log += chunk; });
+  child.stderr.on('data', chunk => { log += chunk; });
+  await new Promise(resolve => {
+    const timer = setTimeout(() => resolve(), 4000);
+    child.on('exit', code => { log += `\nexit ${code}\n`; clearTimeout(timer); resolve(); });
+    child.on('error', error => { log += `\n${error}\n`; clearTimeout(timer); resolve(); });
+  });
+  if (!fs.existsSync(file) && log.trim()) fs.writeFileSync(`${file}.log`, log);
+  if (child.exitCode === null) {
+    child.stdout.destroy();
+    child.stderr.destroy();
+    child.unref();
+  }
 }
 
 async function pageDump(page) {
