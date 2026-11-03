@@ -39,6 +39,8 @@ let updates = createAutoUpdate({ isPackaged: false });
 let stopUpdates = () => {};
 const offlineFileUrl = pathToFileURL(path.join(__dirname, 'offline.html')).href;
 const development = !app.isPackaged && process.argv.includes('--dev');
+const e2e = process.env?.SONORA_E2E === '1' && process.argv.includes('--e2e');
+let ignoringMouse = false;
 
 function state() {
   return { visible: win?.isVisible() ?? false, alwaysOnTop, contentProtection, captureActive, shortcutRegistered, platform: process.platform,
@@ -77,6 +79,7 @@ function applyPassthrough() {
   // Pass clicks only through empty gaps, and only after the user opts in.
   // Visible glass, the sidebar, dialogs, and every control keep the mouse.
   const pass = clickThrough && !pointerOverUi && !controlsHover;
+  ignoringMouse = pass;
   win.setIgnoreMouseEvents(pass, { forward: pass });
 }
 function applyOpenAtLogin(enabled) {
@@ -203,7 +206,12 @@ function registerIpc() {
     return browserAuth.cancel(id);
   });
   handle('audio:start', (id, source, deviceName, referenceDevice) => nativeAudio.start(id, source, deviceName, referenceDevice));
+  handle('e2e:window-flags', () => {
+    if (!e2e) throw new Error('E2E flags are unavailable.');
+    return { transparent: true, frameless: true, alwaysOnTop: Boolean(win?.isAlwaysOnTop?.()), clickThrough, ignoringMouse, backgroundMaterial: 'none' };
+  });
   handle('desktop:capture-screen', async () => {
+    if (e2e) return 'e2e-screenshot';
     const choice = await dialog.showMessageBox(win, {
       type: 'question', title: 'Send one screenshot?', buttons: ['Cancel', 'Send screenshot'],
       defaultId: 0, cancelId: 0,
@@ -441,8 +449,11 @@ else {
   app.on('second-instance', show);
   app.whenReady().then(async () => {
     try {
-      const bundled = JSON.parse(fs.readFileSync(path.join(__dirname, 'runtime-config.json'), 'utf8'));
-      target = validateServiceUrl(development ? process.env.SONORA_DESKTOP_URL : bundled.serviceUrl, development);
+      if (development || e2e) target = validateServiceUrl(process.env.SONORA_DESKTOP_URL, true);
+      else {
+        const bundled = JSON.parse(fs.readFileSync(path.join(__dirname, 'runtime-config.json'), 'utf8'));
+        target = validateServiceUrl(bundled.serviceUrl, false);
+      }
     } catch {
       dialog.showErrorBox('Sonora release configuration missing', 'This build has no valid hosted Sonora URL. Ask the publisher for a configured release. A local development server is not a production service.');
       app.quit(); return;

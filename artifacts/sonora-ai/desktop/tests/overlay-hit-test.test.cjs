@@ -53,6 +53,7 @@ test('packaged shell keeps visible UI clickable and stays above other windows', 
   assert.match(main, /const pass = clickThrough && !pointerOverUi && !controlsHover/);
   assert.match(main, /setIgnoreMouseEvents\(pass, \{ forward: pass \}\)/);
   assert.match(main, /overlay:set-pointer-capture/);
+  assert.match(main, /process\.env\?\.SONORA_E2E === '1' && process\.argv\.includes\('--e2e'\)/);
   assert.match(main, /win\.on\('blur', \(\) => \{ holdOnTop\(\); \}\)/);
   assert.match(preload, /sendSync\('overlay:set-pointer-capture'/);
   assert.match(css, /-webkit-app-region: no-drag/);

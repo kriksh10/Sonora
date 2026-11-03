@@ -1,0 +1,285 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const { spawn } = require('node:child_process');
+const { _electron: electron } = require('playwright');
+
+const root = path.resolve(__dirname, '../../..');
+const dist = path.join(root, 'artifacts/sonora-ai/dist');
+const shots = path.join(root, 'generated-artifacts/e2e-screenshots');
+const resultsFile = path.join(shots, 'results.json');
+const port = Number(process.env.E2E_PORT || 4173);
+const serviceUrl = `http://127.0.0.1:${port}/`;
+const userData = path.join(root, 'generated-artifacts/e2e-user-data');
+const scenarios = [];
+let server;
+
+function exePath() {
+  const unpacked = path.join(root, 'generated-artifacts/installers/win-unpacked');
+  const hit = fs.readdirSync(unpacked).find(name => name.toLowerCase().endsWith('.exe') && !name.toLowerCase().includes('unins'));
+  if (!hit) throw new Error(`Packaged exe not found in ${unpacked}`);
+  return path.join(unpacked, hit);
+}
+
+async function click(page, locator) {
+  const box = await locator.boundingBox();
+  if (!box) throw new Error(`No clickable box for ${locator}`);
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.waitForTimeout(80);
+  await page.mouse.click(x, y);
+}
+
+async function flags(app) {
+  return app.evaluate(({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    return { focused: win.isFocused(), alwaysOnTop: win.isAlwaysOnTop(), visible: win.isVisible() };
+  });
+}
+
+async function scenario(name, fn) {
+  try {
+    await fn();
+    scenarios.push({ name, pass: true });
+    console.log(`PASS ${name}`);
+  } catch (error) {
+    scenarios.push({ name, pass: false, error: error instanceof Error ? error.message : String(error) });
+    console.error(`FAIL ${name}: ${error instanceof Error ? error.stack : error}`);
+  }
+}
+
+function startServer() {
+  const child = spawn(process.execPath, [path.join(__dirname, 'server.mjs'), dist], {
+    env: { ...process.env, E2E_PORT: String(port) }, stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let log = '';
+  child.stdout.on('data', chunk => { log += chunk; });
+  child.stderr.on('data', chunk => { log += chunk; });
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Mock server did not start.\n${log}`)), 10000);
+    child.stdout.on('data', () => {
+      if (log.includes('e2e mock listening')) { clearTimeout(timer); resolve(child); }
+    });
+    child.on('exit', code => reject(new Error(`Mock server exited ${code}\n${log}`)));
+  });
+}
+
+async function launch(appPath) {
+  fs.mkdirSync(userData, { recursive: true });
+  const app = await electron.launch({
+    executablePath: appPath,
+    args: ['--e2e', `--user-data-dir=${userData}`],
+    timeout: 90000,
+    env: { ...process.env, SONORA_E2E: '1', SONORA_DESKTOP_URL: serviceUrl },
+  });
+  const page = await app.firstWindow({ timeout: 90000 });
+  page.setDefaultTimeout(15000);
+  return { app, page };
+}
+
+async function setMode(mode) {
+  const response = await fetch(`${serviceUrl}api/e2e/mode`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode }) });
+  if (!response.ok) throw new Error(`Could not set mock mode ${mode}`);
+}
+
+(async () => {
+  fs.mkdirSync(shots, { recursive: true });
+  server = await startServer();
+  const errors = [];
+  let app;
+  let page;
+  try {
+    ({ app, page } = await launch(exePath()));
+    page.on('pageerror', error => errors.push(error.message));
+    page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+
+    await scenario('launch: visible, frameless, transparent, always on top, no console errors', async () => {
+      await page.getByRole('heading', { name: 'You are signed out' }).waitFor();
+      const windowFlags = await page.evaluate(() => window.sonoraDesktop.e2eFlags());
+      const live = await flags(app);
+      if (!live.visible || !live.alwaysOnTop || !live.focused) throw new Error(JSON.stringify(live));
+      if (!windowFlags.transparent || !windowFlags.frameless || windowFlags.backgroundMaterial !== 'none' || windowFlags.ignoringMouse) throw new Error(JSON.stringify(windowFlags));
+      const noisy = errors.filter(line => !/favicon|Download the React DevTools/i.test(line));
+      if (noisy.length) throw new Error(noisy.join('\n'));
+      await page.screenshot({ path: path.join(shots, '01-signed-out.png') });
+    });
+
+    await scenario('signed-out state and sign-in', async () => {
+      if (await page.getByRole('button', { name: 'Call Sessions' }).count()) throw new Error('Sessions visible before sign-in');
+      await click(page, page.getByTestId('button-sign-in'));
+      await page.getByRole('heading', { name: 'Call Sessions' }).waitFor();
+      await page.screenshot({ path: path.join(shots, '02-home.png') });
+    });
+
+    await scenario('home empty state and every sidebar action', async () => {
+      await page.getByText('No active sessions.').waitFor();
+      for (const name of ['Resumes', 'Documents', 'Call Sessions']) await click(page, page.getByRole('button', { name }));
+      await click(page, page.getByRole('button', { name: 'Dark' }));
+      await click(page, page.getByRole('button', { name: 'Light' }));
+      if (!await page.getByRole('link', { name: 'Upgrade' }).count()) throw new Error('Upgrade missing');
+    });
+
+    await scenario('Create Session invalid, cancel, then valid', async () => {
+      await click(page, page.getByRole('button', { name: 'Create session' }).first());
+      await page.getByRole('dialog', { name: 'Create session' }).waitFor();
+      await click(page, page.getByRole('button', { name: 'Create session' }).last());
+      await page.getByRole('alert').filter({ hasText: 'Add a company' }).waitFor();
+      await click(page, page.getByRole('button', { name: 'Cancel' }));
+      if (await page.getByRole('dialog', { name: 'Create session' }).count()) throw new Error('Dialog stayed open');
+      await click(page, page.getByRole('button', { name: 'Mock Interview' }));
+      await page.getByLabel('Company').fill('Northwind');
+      await click(page, page.getByRole('button', { name: 'Create session' }).last());
+      await page.getByText('Northwind interview').waitFor();
+      await page.screenshot({ path: path.join(shots, '03-session-created.png') });
+    });
+
+    await scenario('live Listen, transcript, Answer, history, Clear, Screenshot, Chat, menu, End', async () => {
+      await click(page, page.getByRole('button', { name: 'Start' }));
+      await page.getByRole('button', { name: 'Listen' }).waitFor();
+      await click(page, page.getByRole('button', { name: 'Listen' }));
+      await page.getByText('Speechmatics is connected').waitFor();
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent('sonora-e2e-transcript', { detail: { text: 'How does caching work?' } })));
+      await click(page, page.getByRole('button', { name: /Answer/ }));
+      await page.getByText('Heard: How does caching work?').waitFor();
+      await page.getByLabel('Question').waitFor({ state: 'detached' }).catch(() => {});
+      await click(page, page.getByRole('button', { name: 'Chat' }));
+      await page.getByLabel('Question').fill('Typed from chat');
+      await click(page, page.getByRole('button', { name: /Answer/ }));
+      await page.getByText('Heard: Typed from chat').waitFor();
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent('sonora-e2e-transcript', { detail: { text: 'Explain indexes' } })));
+      await click(page, page.getByRole('button', { name: 'Expand transcript' }));
+      await click(page, page.getByRole('button', { name: 'Explain indexes' }));
+      await page.getByText('Heard: Explain indexes').waitFor();
+      await click(page, page.getByRole('button', { name: 'Previous answer' }));
+      await page.getByText('Heard: Typed from chat').waitFor();
+      await click(page, page.getByRole('button', { name: 'Next answer' }));
+      await page.getByText('Heard: Explain indexes').waitFor();
+      await click(page, page.getByRole('button', { name: 'Clear', exact: true }).first());
+      await click(page, page.getByRole('button', { name: 'Screenshot' }));
+      await page.getByText('Screenshot attached.').waitFor();
+      await click(page, page.locator('summary[aria-label="Overlay menu"]'));
+      await click(page, page.getByRole('button', { name: 'Answer settings' }));
+      await page.getByText('Answer settings').waitFor();
+      await click(page, page.getByRole('button', { name: 'End' }));
+      await page.getByRole('heading', { name: 'Call Sessions' }).waitFor();
+      await page.screenshot({ path: path.join(shots, '04-live.png') });
+    });
+
+    await scenario('answer errors stay visible and the app stays usable', async () => {
+      await click(page, page.getByRole('button', { name: 'Start' }));
+      for (const [mode, text] of [['401', 'Sign-in expired'], ['500', 'Answer service failed'], ['timeout', 'timed out'], ['offline', 'Network offline']]) {
+        await setMode(mode);
+        await page.evaluate(() => window.dispatchEvent(new CustomEvent('sonora-e2e-transcript', { detail: { text: 'How does retry work?' } })));
+        await click(page, page.getByRole('button', { name: /Answer/ }));
+        await page.getByText(new RegExp(text, 'i')).first().waitFor();
+      }
+      await setMode('speechmatics');
+      await click(page, page.getByRole('button', { name: 'Listen' }));
+      await page.getByText('Using Gemini fallback').waitFor();
+      await setMode('ok');
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent('sonora-e2e-transcript', { detail: { text: 'What is a queue?' } })));
+      await click(page, page.getByRole('button', { name: /Answer/ }));
+      await page.getByText('Heard: What is a queue?').waitFor();
+      await click(page, page.getByRole('button', { name: 'End' }));
+    });
+
+    await scenario('glass, sidebar, transcript, and edges keep focus; gaps pass through only when enabled', async () => {
+      const side = await page.locator('.dp-side').boundingBox();
+      await page.mouse.move(side.x + 20, side.y + 90);
+      await page.waitForTimeout(80);
+      await page.mouse.click(side.x + 20, side.y + 90);
+      let state = await page.evaluate(() => window.sonoraDesktop.e2eFlags());
+      if (state.ignoringMouse) throw new Error('Sidebar click enabled click-through');
+      await click(page, page.getByRole('button', { name: 'Start' }));
+      const card = await page.locator('.dp-card').boundingBox();
+      await page.mouse.move(card.x + 8, card.y + 8);
+      await page.waitForTimeout(100);
+      await page.mouse.click(card.x + 8, card.y + 8);
+      state = await page.evaluate(() => window.sonoraDesktop.e2eFlags());
+      let live = await flags(app);
+      if (state.ignoringMouse || !live.focused || !live.alwaysOnTop) throw new Error(`Glass click lost the window ${JSON.stringify({ state, live })}`);
+      const bar = await page.locator('.dp-bar').boundingBox();
+      const strip = await page.locator('.dp-strip').boundingBox();
+      const gapY = bar.y + bar.height + Math.max(2, (strip.y - (bar.y + bar.height)) / 2);
+      await page.mouse.move(bar.x + 30, gapY);
+      await page.waitForTimeout(100);
+      state = await page.evaluate(() => window.sonoraDesktop.e2eFlags());
+      if (state.ignoringMouse) throw new Error('Gap passed through before click-through was enabled');
+      await click(page, page.locator('summary[aria-label="Window settings"]'));
+      await click(page, page.getByLabel('Click through the overlay'));
+      await page.mouse.move(bar.x + 30, gapY);
+      await page.waitForTimeout(150);
+      state = await page.evaluate(() => window.sonoraDesktop.e2eFlags());
+      if (!state.ignoringMouse || !state.clickThrough) throw new Error(`Gap did not pass through ${JSON.stringify(state)}`);
+      await page.mouse.move(bar.x + Math.min(80, bar.width / 3), bar.y + bar.height / 2);
+      await page.waitForTimeout(150);
+      state = await page.evaluate(() => window.sonoraDesktop.e2eFlags());
+      if (state.ignoringMouse) throw new Error('Button stayed click-through');
+      await click(page, page.getByLabel('Click through the overlay'));
+    });
+
+    await scenario('pin, blur, opacity, resize, and restart', async () => {
+      const before = await page.evaluate(() => window.sonoraDesktop.e2eFlags());
+      await click(page, page.getByRole('button', { name: 'Keep on top' }));
+      let state = await page.evaluate(() => window.sonoraDesktop.e2eFlags());
+      if (state.alwaysOnTop) throw new Error('Unpin left the window on top');
+      await click(page, page.getByRole('button', { name: 'Keep on top' }));
+      await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].blur());
+      await page.waitForTimeout(300);
+      state = await page.evaluate(() => window.sonoraDesktop.e2eFlags());
+      if (!state.alwaysOnTop || !before.alwaysOnTop) throw new Error('Blur dropped the pinned window');
+      const slider = page.getByLabel('Overlay opacity');
+      const box = await slider.boundingBox();
+      for (const [ratio, label] of [[0.02, 'min'], [0.5, 'mid'], [0.98, 'max']]) {
+        await page.mouse.click(box.x + box.width * ratio, box.y + box.height / 2);
+        await page.waitForTimeout(100);
+        const value = Number(await slider.inputValue());
+        if (label === 'min' && value > 30) throw new Error(`Min slider stayed ${value}`);
+        if (label === 'max' && value < 80) throw new Error(`Max slider stayed ${value}`);
+      }
+      await page.evaluate(() => document.documentElement.style.setProperty('--sonora-background-opacity', '0'));
+      await click(page, page.getByRole('button', { name: 'Keep on top' }));
+      await page.evaluate(() => document.documentElement.style.setProperty('--sonora-background-opacity', '1'));
+      await click(page, page.getByRole('button', { name: 'Keep on top' }));
+      await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setBounds({ x: 30, y: 30, width: 1020, height: 700 }));
+      await page.waitForTimeout(500);
+      await page.screenshot({ path: path.join(shots, '05-resized.png') });
+    });
+  } finally {
+    if (app) await app.close().catch(() => {});
+  }
+
+  await scenario('restart clamps off-screen bounds and keeps opacity', async () => {
+    const prefs = path.join(userData, 'window-preferences.json');
+    const saved = fs.existsSync(prefs) ? JSON.parse(fs.readFileSync(prefs, 'utf8')) : {};
+    saved.bounds = { x: 50000, y: 50000, width: 900, height: 640 };
+    saved.opacityVersion = 2;
+    saved.backgroundOpacity = saved.backgroundOpacity || 1;
+    fs.writeFileSync(prefs, JSON.stringify(saved));
+    const relaunched = await launch(exePath());
+    try {
+      const bounds = await relaunched.app.evaluate(({ BrowserWindow, screen }) => {
+        const win = BrowserWindow.getAllWindows()[0];
+        const area = screen.getPrimaryDisplay().workArea;
+        const box = win.getBounds();
+        return { box, area, inside: box.x >= area.x - 20 && box.x < area.x + area.width };
+      });
+      if (!bounds.inside) throw new Error(`Off-screen window survived restart ${JSON.stringify(bounds)}`);
+      await relaunched.page.screenshot({ path: path.join(shots, '06-restart.png') });
+    } finally {
+      await relaunched.app.close().catch(() => {});
+    }
+  });
+
+  server.kill();
+  fs.writeFileSync(resultsFile, JSON.stringify({ scenarios }, null, 2));
+  const failed = scenarios.filter(item => !item.pass);
+  console.log(JSON.stringify(scenarios, null, 2));
+  process.exitCode = failed.length ? 1 : 0;
+})().catch(error => {
+  server?.kill();
+  console.error(error);
+  fs.mkdirSync(shots, { recursive: true });
+  fs.writeFileSync(resultsFile, JSON.stringify({ scenarios, fatal: String(error) }, null, 2));
+  process.exitCode = 1;
+});

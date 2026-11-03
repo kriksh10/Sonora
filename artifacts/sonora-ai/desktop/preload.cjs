@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('sonoraDesktop', {
   setClickThrough: value => ipcRenderer.invoke('overlay:set-click-through', Boolean(value)),
   setControlsHover: value => ipcRenderer.invoke('overlay:set-controls-hover', Boolean(value)),
   setPointerCapture: value => ipcRenderer.sendSync('overlay:set-pointer-capture', Boolean(value)),
+  e2eFlags: () => ipcRenderer.invoke('e2e:window-flags'),
   setOpenAtLogin: value => ipcRenderer.invoke('overlay:set-open-at-login', Boolean(value)),
   setHotkeys: value => ipcRenderer.invoke('overlay:set-hotkeys', value),
   resetHotkeys: () => ipcRenderer.invoke('overlay:reset-hotkeys'),

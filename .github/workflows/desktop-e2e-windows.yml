@@ -1,0 +1,51 @@
+name: Sonora Windows packaged end-to-end
+on:
+  pull_request:
+    branches: [replit-sync]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-e2e:
+    name: Packaged Windows exe
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.26.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: dtolnay/rust-toolchain@1.91.0
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Build native audio helper
+        run: pnpm --filter @workspace/sonora-ai run desktop:build-native x64
+        env:
+          CARGO_TARGET_DIR: generated-artifacts/native-target
+      - name: Build the e2e renderer
+        run: pnpm --filter @workspace/sonora-ai run build
+        env:
+          PORT: "4173"
+          BASE_PATH: /
+          VITE_SONORA_E2E: "1"
+          VITE_CLERK_PUBLISHABLE_KEY: pk_test_e2e
+      - name: Package the Windows app directory
+        run: node artifacts/sonora-ai/desktop/package-e2e.cjs
+        env:
+          SONORA_RELEASE_URL: https://sonora.example/
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Playwright against the packaged exe
+        run: node artifacts/sonora-ai/e2e/run.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-e2e-screenshots
+          path: |
+            generated-artifacts/e2e-screenshots/**
+          if-no-files-found: warn
+          retention-days: 14
