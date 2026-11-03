@@ -488,15 +488,21 @@ try {
   Save-Screen '03-session.png'
 
   function Set-Slider([double]$Ratio) {
+    [SonoraInput]::RaiseWithoutFocus($hwnd) | Out-Null
     $el = Find-Element 'Overlay opacity'
     if (-not $el) { throw 'Overlay opacity slider missing' }
     $r = $el.Current.BoundingRectangle
     $x = [int]($r.X + [Math]::Max(4, ($r.Width - 8) * $Ratio))
     $y = [int]($r.Y + $r.Height / 2)
-    $before = Click-Count
-    [SonoraInput]::Click($x, $y)
-    Start-Sleep -Milliseconds 300
-    if ((Click-Count) -gt $before) { throw "Slider click passed through at ratio $Ratio" }
+    foreach ($attempt in 1..2) {
+      $before = Click-Count
+      [SonoraInput]::Click($x, $y)
+      Start-Sleep -Milliseconds 300
+      if ((Click-Count) -eq $before) { return }
+      [SonoraInput]::RaiseWithoutFocus($hwnd) | Out-Null
+      Start-Sleep -Milliseconds 150
+    }
+    throw "Slider click passed through at ratio $Ratio"
   }
   function Click-Panel {
     $el = Find-Largest 'Call Sessions'

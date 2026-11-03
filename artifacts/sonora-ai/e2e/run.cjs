@@ -293,7 +293,6 @@ function requireApp(name) {
       const clickThroughBox = page.getByRole('checkbox', { name: 'Click through the overlay' });
       await clickThroughBox.click();
       await page.waitForFunction(async () => (await window.sonoraDesktop.e2eFlags()).clickThrough);
-      await page.locator('summary[aria-label="Window settings"]').click();
       const gap = await page.evaluate(({ x, top, bottom }) => {
         for (let y = top + 1; y < bottom; y += 1) {
           const el = document.elementFromPoint(x, y);
