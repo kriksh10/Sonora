@@ -137,7 +137,7 @@ export default function E2EApp() {
   return (
     <>
       <DesktopVisibilityControls />
-      <p id="sonora-last-click" aria-label={lastClick} style={{ position: "absolute", width: 1, height: 1, overflow: "hidden" }}>{lastClick}</p>
+      <p id="sonora-last-click" aria-label={`Last click ${lastClick}`} style={{ position: "absolute", width: 1, height: 1, overflow: "hidden" }}>{lastClick}</p>
       <main className="sonora-workspace dp-app text-[#e7e8eb]">
         {!signedIn ? (
           <section className="dp-glass dp-card" aria-label="Signed out">

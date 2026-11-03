@@ -367,27 +367,6 @@ try {
   $passedThrough = $probe.inside -gt 0
   $detail = $probe.detail
 
-  if (-not $passedThrough -and -not $Full) {
-    Write-Host 'PHASE offline-prep'
-    Write-Host 'Loaded surface swallowed the grid. Retrying the installed offline page, whose backdrop is fully transparent.'
-    Stop-Sonora
-    Start-Sleep -Seconds 1
-    Clear-SonoraCache
-    Block-SonoraNetwork $Exe
-    if (-not $script:blockedHost) { Write-Host 'PHASE skip-offline no host' }
-    else {
-      $offline = Start-Sonora @('--force-renderer-accessibility')
-      $hwnd = $offline.hwnd
-      $title = Wait-Title $hwnd 'offline' 25
-      Start-Sleep -Seconds 2
-      Write-Host "offline title='$title'"
-      $probe = Invoke-ClickProbe 'offline-transparent' $hwnd
-      Save-Screen '01c-offline.png'
-      $detail = "surface swallowed clicks; offline $($probe.detail)"
-      $passedThrough = $probe.inside -gt 0
-    }
-  }
-
   if (-not $Full) {
     if ($probe.calibration -lt 1) {
       Add-Scenario 'OS clicks on the installed window do not reach the app behind' $false "SendInput missed the catcher. $detail"
@@ -398,7 +377,7 @@ try {
       throw "Reproduced: real OS clicks passed through the installed v1.0.3 window while click-through was off. $detail"
     }
     Add-Scenario 'OS clicks on the installed window do not reach the app behind' $false "Not reproduced: $detail"
-    throw "Not reproduced: installed v1.0.3 swallowed every OS click on this runner, including the transparent offline backdrop. $detail"
+    throw "Not reproduced: installed v1.0.3 swallowed every OS click on this runner. $detail"
   }
   if ($probe.calibration -lt 1) {
     Add-Scenario 'OS clicks on the installed window do not reach the app behind' $false "SendInput missed the catcher. $detail"
