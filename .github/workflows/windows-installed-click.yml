@@ -64,6 +64,7 @@ jobs:
           if (-not $exe) { throw "Sonora AI.exe was not installed" }
           Set-Content -Path installed-exe.txt -Value $exe.FullName
           Write-Host "Installed $($exe.FullName)"
+          node -e "const a=require('@electron/asar'); console.log(a.extractFile(process.argv[1],'runtime-config.json').toString())" "$($exe.DirectoryName)\resources\app.asar"
       - name: Record the desktop
         shell: pwsh
         run: |

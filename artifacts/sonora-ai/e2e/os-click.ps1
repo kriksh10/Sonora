@@ -13,6 +13,8 @@ Add-Type -AssemblyName UIAutomationTypes
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $OutDir = (Resolve-Path $OutDir).Path
+$env:ELECTRON_ENABLE_LOGGING = '1'
+$env:ELECTRON_LOG_FILE = Join-Path $OutDir 'electron.log'
 $clickFile = Join-Path $OutDir 'catcher-clicks.txt'
 $shotDir = $OutDir
 if (Test-Path $clickFile) { Remove-Item $clickFile -Force }
@@ -109,6 +111,12 @@ $catcher = Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v
 Start-Sleep -Seconds 1
 
 $scenarios = New-Object System.Collections.Generic.List[object]
+function Get-SonoraAutomation {
+  $procId = (Get-Process | Where-Object { $_.ProcessName -like 'Sonora*' } | Select-Object -First 1).Id
+  if (-not $procId) { return $null }
+  $cond = New-Object System.Windows.Automation.PropertyCondition ([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $procId)
+  return [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children, $cond)
+}
 function Add-Scenario([string]$Name, [bool]$Pass, [string]$Detail) {
   $script:scenarios.Add([ordered]@{ name = $Name; pass = $Pass; detail = $Detail }) | Out-Null
   if ($Pass) { Write-Host "PASS $Name" } else { Write-Host "FAIL $Name $Detail" }
@@ -225,12 +233,6 @@ try {
   }
   if ($passedThrough -or $probe.calibration -lt 1) { throw "Glass is still click-through or the click probe is invalid. $detail" }
 
-  function Get-SonoraAutomation {
-    $procId = (Get-Process | Where-Object { $_.ProcessName -like 'Sonora*' } | Select-Object -First 1).Id
-    if (-not $procId) { return $null }
-    $cond = New-Object System.Windows.Automation.PropertyCondition ([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $procId)
-    return [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children, $cond)
-  }
   function Find-All([string]$Name) {
     $root = Get-SonoraAutomation
     if (-not $root) { return @() }
@@ -260,8 +262,24 @@ try {
     return $el
   }
 
+  $signIn = $null
+  $waitUntil = (Get-Date).AddSeconds(25)
+  while ((Get-Date) -lt $waitUntil -and -not $signIn) {
+    $signIn = Find-Element 'Sign in'
+    if (-not $signIn) { Start-Sleep -Milliseconds 500 }
+  }
+  if (-not $signIn) {
+    $root = Get-SonoraAutomation
+    $names = @()
+    if ($root) {
+      $all = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+      for ($i = 0; $i -lt [Math]::Min(40, $all.Count); $i++) { if ($all.Item($i).Current.Name) { $names += $all.Item($i).Current.Name } }
+    }
+    Add-Scenario 'Sign in with an OS click' $false ("UI: " + ($names -join ' | '))
+    throw "Installed window has no Sign in control. UI: $($names -join ' | ')"
+  }
   if (Find-Element 'Hide from screen sharing (best effort)') { Click-Name 'Hide from screen sharing (best effort)' | Out-Null }
-  Click-Name 'Sign in' | Out-Null
+  Click-Element $signIn
   Start-Sleep -Milliseconds 500
   $signed = Find-Element 'Call Sessions'
   Add-Scenario 'Sign in with an OS click' ([bool]$signed) ''
