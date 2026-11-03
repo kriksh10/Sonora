@@ -168,7 +168,7 @@ try {
   $prefDir = Join-Path $env:APPDATA 'Sonora AI'
   New-Item -ItemType Directory -Force -Path $prefDir | Out-Null
   Set-Content -Path (Join-Path $prefDir 'window-preferences.json') -Value '{"backgroundOpacity":0.15,"opacityVersion":2,"clickThrough":false}' -Encoding utf8
-  $proc = Start-Process -FilePath $Exe -PassThru
+  $proc = Start-Process -FilePath $Exe -ArgumentList '--force-renderer-accessibility' -PassThru
   $hwnd = [IntPtr]::Zero
   $deadline = (Get-Date).AddSeconds(90)
   while ((Get-Date) -lt $deadline) {
@@ -178,6 +178,18 @@ try {
   }
   if ($hwnd -eq [IntPtr]::Zero) { throw 'Sonora window did not appear.' }
   Start-Sleep -Seconds 8
+  try {
+    $uiRoot = Get-SonoraAutomation
+    if ($uiRoot) {
+      $all = $uiRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+      $names = @()
+      for ($i = 0; $i -lt [Math]::Min(25, $all.Count); $i++) {
+        $n = $all.Item($i).Current.Name
+        if ($n) { $names += $n }
+      }
+      Write-Host ("UI names: " + ($names -join ' | '))
+    }
+  } catch { Write-Host "UI dump failed: $_" }
   Save-Screen '00-before-click.png'
   $probe = Invoke-ClickProbe 'default' $hwnd
   Save-Screen '01-after-os-clicks.png'
@@ -186,7 +198,7 @@ try {
   if (-not $passedThrough -and -not $Full) {
     Get-Process -Name 'Sonora*' -ErrorAction SilentlyContinue | Stop-Process -Force
     Start-Sleep -Seconds 1
-    $proc2 = Start-Process -FilePath $Exe -ArgumentList '--disable-gpu' -PassThru
+    $proc2 = Start-Process -FilePath $Exe -ArgumentList '--disable-gpu','--force-renderer-accessibility' -PassThru
     $hwnd2 = [IntPtr]::Zero
     $deadline = (Get-Date).AddSeconds(60)
     while ((Get-Date) -lt $deadline) {
@@ -248,7 +260,7 @@ try {
     return $el
   }
 
-  Click-Name 'Hide from screen sharing (best effort)' | Out-Null
+  if (Find-Element 'Hide from screen sharing (best effort)') { Click-Name 'Hide from screen sharing (best effort)' | Out-Null }
   Click-Name 'Sign in' | Out-Null
   Start-Sleep -Milliseconds 500
   $signed = Find-Element 'Call Sessions'
@@ -345,7 +357,7 @@ try {
 
   Get-Process -Name 'Sonora*' -ErrorAction SilentlyContinue | Stop-Process -Force
   Start-Sleep -Seconds 1
-  $again = Start-Process -FilePath $Exe -PassThru
+  $again = Start-Process -FilePath $Exe -ArgumentList '--force-renderer-accessibility' -PassThru
   $hwnd2 = [IntPtr]::Zero
   $deadline = (Get-Date).AddSeconds(60)
   while ((Get-Date) -lt $deadline) {

@@ -42,7 +42,7 @@ jobs:
             "-y","-f","gdigrab","-framerate","8","-draw_mouse","1","-i","desktop",
             "-movflags","frag_keyframe+empty_moov","-pix_fmt","yuv420p",
             "generated-artifacts/os-click-proof/desktop.mp4"
-          ) -WindowStyle Hidden
+          ) -WindowStyle Hidden -RedirectStandardError "generated-artifacts/os-click-proof/ffmpeg-err.txt"
       - name: OS-level clicks against the installed v1.0.3 app
         shell: pwsh
         run: |
