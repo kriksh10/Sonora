@@ -39,7 +39,6 @@ let updates = createAutoUpdate({ isPackaged: false });
 let stopUpdates = () => {};
 const offlineFileUrl = pathToFileURL(path.join(__dirname, 'offline.html')).href;
 const development = !app.isPackaged && process.argv.includes('--dev');
-app.setAccessibilitySupportEnabled?.(true);
 const e2e = process.env?.SONORA_E2E === '1' && process.argv.includes('--e2e');
 let localE2E = e2e;
 let ignoringMouse = false;
