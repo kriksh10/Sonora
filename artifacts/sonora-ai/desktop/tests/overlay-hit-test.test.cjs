@@ -61,6 +61,7 @@ test('packaged shell keeps visible UI clickable and stays above other windows', 
   assert.match(main, /setProxy\(\{ mode: 'direct' \}\)/);
   assert.match(main, /win\.on\('blur', \(\) => \{ holdOnTop\(\); \}\)/);
   assert.match(preload, /sendSync\('overlay:set-pointer-capture'/);
+  assert.match(preload, /--sonora-e2e/);
   assert.match(css, /-webkit-app-region: no-drag/);
   assert.match(css, /background: rgba\(0, 0, 0, \.02\)/);
   assert.match(overlay, /liveAnswerQuestion/);

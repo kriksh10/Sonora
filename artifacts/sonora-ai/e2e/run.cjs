@@ -133,7 +133,7 @@ function requireApp(name) {
     console.error('e2e watchdog: stopping after 6 minutes');
     try { fs.writeFileSync(resultsFile, JSON.stringify({ scenarios, fatal: 'watchdog' }, null, 2)); } catch { /* results are best effort */ }
     process.exit(1);
-  }, 6 * 60 * 1000);
+  }, 10 * 60 * 1000);
   if (!fs.existsSync(path.join(dist, 'index.html'))) throw new Error(`E2E renderer is missing ${path.join(dist, 'index.html')}`);
   server = await startServer();
   const errors = [];

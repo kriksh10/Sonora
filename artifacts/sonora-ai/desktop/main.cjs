@@ -391,6 +391,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'), partition: 'persist:sonora',
       contextIsolation: true, nodeIntegration: false, sandbox: true,
       webSecurity: true, backgroundThrottling: false,
+      ...(localE2E ? { additionalArguments: ['--sonora-e2e'] } : {}),
     },
   });
   clearWindowPlate();
