@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const { _electron: electron } = require('playwright');
 
 const root = path.resolve(__dirname, '../../..');
@@ -32,20 +32,26 @@ async function click(page, locator) {
   await page.mouse.click(x, y);
 }
 
-async function shot(app, page, name) {
+function shot(name) {
   const file = path.join(shots, name);
-  // A fully transparent window never finishes a compositor capture on the Windows runner.
-  await app.evaluate(({ BrowserWindow }) => {
-    const win = BrowserWindow.getAllWindows().find(item => !item.isDestroyed());
-    win.setBackgroundColor('#1e1e1e');
-  });
-  try {
-    await page.screenshot({ path: file, timeout: 10000, animations: 'disabled' });
-  } finally {
-    await app.evaluate(({ BrowserWindow }) => {
-      const win = BrowserWindow.getAllWindows().find(item => !item.isDestroyed());
-      win.setBackgroundColor('#00000000');
-    }).catch(() => {});
+  // Playwright's page.screenshot and webContents.capturePage never finish on a
+  // transparent Electron window and leave the test session stuck.
+  if (process.platform !== 'win32') {
+    fs.writeFileSync(`${file}.txt`, 'Desktop capture runs on the Windows runner.');
+    return;
+  }
+  const result = spawnSync('powershell', ['-NoProfile', '-Command', `
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+$bmp = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+$g = [System.Drawing.Graphics]::FromImage($bmp)
+$g.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+$bmp.Save($env:E2E_SHOT, [System.Drawing.Imaging.ImageFormat]::Png)
+$g.Dispose(); $bmp.Dispose()
+`], { timeout: 15000, env: { ...process.env, E2E_SHOT: file } });
+  if (result.error || result.status) {
+    fs.writeFileSync(`${file}.txt`, `${result.error || ''}\n${result.stderr || ''}`);
   }
 }
 
@@ -155,7 +161,7 @@ function requireApp(name) {
       if (!windowFlags.transparent || !windowFlags.frameless || windowFlags.backgroundMaterial !== 'none' || windowFlags.ignoringMouse) throw new Error(JSON.stringify(windowFlags));
       const noisy = errors.filter(line => !/favicon|Download the React DevTools|fonts\.(google|gstatic)/i.test(line));
       if (noisy.length) throw new Error(noisy.join('\n'));
-      await shot(app, page, '01-signed-out.png');
+      shot('01-signed-out.png');
     });
 
     await scenario('signed-out state and sign-in', async () => {
@@ -163,7 +169,7 @@ function requireApp(name) {
       if (await page.getByRole('button', { name: 'Call Sessions' }).count()) throw new Error('Sessions visible before sign-in');
       await click(page, page.getByTestId('button-sign-in'));
       await page.getByRole('heading', { name: 'Call Sessions' }).waitFor();
-      await shot(app, page, '02-home.png');
+      shot('02-home.png');
     });
 
     await scenario('home empty state and every sidebar action', async () => {
@@ -187,7 +193,7 @@ function requireApp(name) {
       await page.getByLabel('Company').fill('Northwind');
       await click(page, page.getByRole('button', { name: 'Create session' }).last());
       await page.getByText('Northwind interview').waitFor();
-      await shot(app, page, '03-session-created.png');
+      shot('03-session-created.png');
     });
 
     await scenario('live Listen, transcript, Answer, history, Clear, Screenshot, Chat, menu, End', async () => {
@@ -218,7 +224,7 @@ function requireApp(name) {
       await click(page, page.locator('summary[aria-label="Overlay menu"]'));
       await click(page, page.getByRole('button', { name: 'Answer settings' }));
       await page.getByRole('status').filter({ hasText: 'Answer settings' }).waitFor();
-      await shot(app, page, '04-live.png');
+      shot('04-live.png');
       await click(page, page.getByRole('button', { name: 'End' }));
       await page.getByRole('heading', { name: 'Call Sessions' }).waitFor();
     });
@@ -305,7 +311,7 @@ function requireApp(name) {
       await click(page, page.getByRole('button', { name: 'Keep on top' }));
       await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setBounds({ x: 30, y: 30, width: 1020, height: 700 }));
       await page.waitForTimeout(500);
-      await shot(app, page, '05-resized.png');
+      shot('05-resized.png');
     });
   } finally {
     if (app) await app.close().catch(() => {});
@@ -333,7 +339,7 @@ function requireApp(name) {
       if (!bounds.inside) throw new Error(`Off-screen window survived restart ${JSON.stringify(bounds)}`);
       const restored = await relaunched.page.evaluate(() => window.sonoraDesktop.getState());
       if (Math.abs(restored.backgroundOpacity - saved.backgroundOpacity) > 0.02) throw new Error(`Opacity was not restored ${JSON.stringify(restored)}`);
-      await shot(relaunched.app, relaunched.page, '06-restart.png');
+      shot('06-restart.png');
     } finally {
       await relaunched.app.close().catch(() => {});
     }
