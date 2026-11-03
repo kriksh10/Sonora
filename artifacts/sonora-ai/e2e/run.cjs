@@ -34,21 +34,19 @@ async function click(page, locator) {
 
 async function shot(app, page, name) {
   const file = path.join(shots, name);
+  // A fully transparent window never finishes a compositor capture on the Windows runner.
+  await app.evaluate(({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows().find(item => !item.isDestroyed());
+    win.setBackgroundColor('#1e1e1e');
+  });
   try {
-    const png = await Promise.race([
-      app.evaluate(async ({ BrowserWindow }) => {
-        const win = BrowserWindow.getAllWindows().find(item => !item.isDestroyed());
-        const image = await win.webContents.capturePage();
-        return image.toPNG().toString('base64');
-      }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('capturePage timed out')), 8000)),
-    ]);
-    fs.writeFileSync(file, Buffer.from(png, 'base64'));
-    return;
-  } catch (error) {
-    console.error(`capturePage failed for ${name}: ${error instanceof Error ? error.message : error}`);
+    await page.screenshot({ path: file, timeout: 10000, animations: 'disabled' });
+  } finally {
+    await app.evaluate(({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows().find(item => !item.isDestroyed());
+      win.setBackgroundColor('#00000000');
+    }).catch(() => {});
   }
-  await page.screenshot({ path: file, timeout: 8000, animations: 'disabled' });
 }
 
 async function pageDump(page) {
