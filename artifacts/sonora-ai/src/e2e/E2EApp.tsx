@@ -152,8 +152,8 @@ export default function E2EApp() {
             onScreenshot={() => void (async () => {
               const image = await window.sonoraDesktop?.captureScreen?.();
               if (!image) { setError("Screenshot was not captured."); return; }
-              setNotice("Screenshot attached.");
               await ask(latest || question || "Explain what is visible in this screenshot.");
+              setNotice("Screenshot attached.");
             })()}
             onPreferences={() => setNotice("Answer settings")}
             onReadiness={() => setNotice("Readiness")}

@@ -10,6 +10,8 @@ const { prepare } = require('./prepare-release.cjs');
   fs.writeFileSync(path.join(stage, 'runtime-config.json'), JSON.stringify({
     serviceUrl: 'http://127.0.0.1:4173/', e2e: true,
   }, null, 2));
+  const stagedConfig = fs.readFileSync(path.join(stage, 'runtime-config.json'), 'utf8');
+  console.log(`Staged runtime-config.json ${stagedConfig}`);
   const result = spawnSync(process.execPath, [
     require.resolve('electron-builder/out/cli/cli.js'),
     '--projectDir', path.resolve(__dirname, '../../../generated-artifacts/desktop-app'),
@@ -18,5 +20,12 @@ const { prepare } = require('./prepare-release.cjs');
     '-c.win.signAndEditExecutable=false',
   ], { stdio: 'inherit', env: { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: 'false' } });
   if (result.error) throw result.error;
-  process.exitCode = result.status ?? 1;
+  if ((result.status ?? 1) !== 0) { process.exitCode = result.status ?? 1; return; }
+  const asar = require('@electron/asar');
+  const archive = path.resolve(__dirname, '../../../generated-artifacts/installers/win-unpacked/resources/app.asar');
+  const packed = JSON.parse(asar.extractFile(archive, 'runtime-config.json').toString('utf8'));
+  console.log(`Packed runtime-config.json ${JSON.stringify(packed)}`);
+  if (packed.e2e !== true || packed.serviceUrl !== 'http://127.0.0.1:4173/') {
+    throw new Error(`Packaged runtime-config does not point at the mock server: ${JSON.stringify(packed)}`);
+  }
 })().catch(error => { console.error(error.message); process.exitCode = 1; });

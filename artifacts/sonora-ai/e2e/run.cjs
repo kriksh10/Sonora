@@ -20,6 +20,8 @@ function exePath() {
   return path.join(unpacked, hit);
 }
 
+const answerButton = page => page.getByRole('button', { name: 'Answer Ctrl+Enter' });
+
 async function click(page, locator) {
   const box = await locator.boundingBox();
   if (!box) throw new Error(`No clickable box for ${locator}`);
@@ -28,6 +30,34 @@ async function click(page, locator) {
   await page.mouse.move(x, y);
   await page.waitForTimeout(80);
   await page.mouse.click(x, y);
+}
+
+async function shot(app, page, name) {
+  const file = path.join(shots, name);
+  try {
+    const png = await Promise.race([
+      app.evaluate(async ({ BrowserWindow }) => {
+        const win = BrowserWindow.getAllWindows().find(item => !item.isDestroyed());
+        const image = await win.webContents.capturePage();
+        return image.toPNG().toString('base64');
+      }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('capturePage timed out')), 8000)),
+    ]);
+    fs.writeFileSync(file, Buffer.from(png, 'base64'));
+    return;
+  } catch (error) {
+    console.error(`capturePage failed for ${name}: ${error instanceof Error ? error.message : error}`);
+  }
+  await page.screenshot({ path: file, timeout: 8000, animations: 'disabled' });
+}
+
+async function pageDump(page) {
+  const bootFile = path.join(userData, 'e2e-boot.txt');
+  const external = path.join(shots, 'boot.txt');
+  const boot = [bootFile, external].filter(file => fs.existsSync(file)).map(file => fs.readFileSync(file, 'utf8')).join('\n');
+  let body = '';
+  try { body = await page.locator('body').innerText({ timeout: 3000 }); } catch (error) { body = String(error); }
+  return `url=${page.url()}\nboot:\n${boot || '(no boot log)'}\nbody:\n${body.slice(0, 800)}`;
 }
 
 async function flags(app) {
@@ -53,8 +83,8 @@ function startServer() {
     env: { ...process.env, E2E_PORT: String(port) }, stdio: ['ignore', 'pipe', 'pipe'],
   });
   let log = '';
-  child.stdout.on('data', chunk => { log += chunk; });
-  child.stderr.on('data', chunk => { log += chunk; });
+  child.stdout.on('data', chunk => { log += chunk; process.stdout.write(`[mock] ${chunk}`); });
+  child.stderr.on('data', chunk => { log += chunk; process.stderr.write(`[mock] ${chunk}`); });
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`Mock server did not start.\n${log}`)), 10000);
     child.stdout.on('data', () => {
@@ -70,11 +100,15 @@ async function launch(appPath) {
     executablePath: appPath,
     args: ['--e2e', `--user-data-dir=${userData}`],
     timeout: 90000,
-    env: { ...process.env, SONORA_E2E: '1', SONORA_DESKTOP_URL: serviceUrl },
+    env: { ...process.env, SONORA_E2E: '1', SONORA_DESKTOP_URL: serviceUrl, SONORA_E2E_LOG: path.join(shots, 'boot.txt') },
   });
+  const child = app.process();
+  child.stdout?.on('data', chunk => process.stdout.write(`[electron] ${chunk}`));
+  child.stderr?.on('data', chunk => process.stderr.write(`[electron] ${chunk}`));
   const page = await app.firstWindow({ timeout: 90000 });
   page.setDefaultTimeout(20000);
   await page.route(/fonts\.(googleapis|gstatic)\.com/, route => route.abort()).catch(() => {});
+  console.log(await pageDump(page));
   return { app, page };
 }
 
@@ -95,21 +129,22 @@ async function setMode(mode) {
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
 
     await scenario('launch: visible, frameless, transparent, always on top, no console errors', async () => {
+      if (page.url().includes('offline.html')) throw new Error(`Packaged app opened the offline page.\n${await pageDump(page)}`);
       await page.getByRole('heading', { name: 'You are signed out' }).waitFor();
       const windowFlags = await page.evaluate(() => window.sonoraDesktop.e2eFlags());
       const live = await flags(app);
       if (!live.visible || !live.alwaysOnTop || !live.focused) throw new Error(JSON.stringify(live));
       if (!windowFlags.transparent || !windowFlags.frameless || windowFlags.backgroundMaterial !== 'none' || windowFlags.ignoringMouse) throw new Error(JSON.stringify(windowFlags));
-      const noisy = errors.filter(line => !/favicon|Download the React DevTools/i.test(line));
+      const noisy = errors.filter(line => !/favicon|Download the React DevTools|fonts\.google/i.test(line));
       if (noisy.length) throw new Error(noisy.join('\n'));
-      await page.screenshot({ path: path.join(shots, '01-signed-out.png') });
+      await shot(app, page, '01-signed-out.png');
     });
 
     await scenario('signed-out state and sign-in', async () => {
       if (await page.getByRole('button', { name: 'Call Sessions' }).count()) throw new Error('Sessions visible before sign-in');
       await click(page, page.getByTestId('button-sign-in'));
       await page.getByRole('heading', { name: 'Call Sessions' }).waitFor();
-      await page.screenshot({ path: path.join(shots, '02-home.png') });
+      await shot(app, page, '02-home.png');
     });
 
     await scenario('home empty state and every sidebar action', async () => {
@@ -131,7 +166,7 @@ async function setMode(mode) {
       await page.getByLabel('Company').fill('Northwind');
       await click(page, page.getByRole('button', { name: 'Create session' }).last());
       await page.getByText('Northwind interview').waitFor();
-      await page.screenshot({ path: path.join(shots, '03-session-created.png') });
+      await shot(app, page, '03-session-created.png');
     });
 
     await scenario('live Listen, transcript, Answer, history, Clear, Screenshot, Chat, menu, End', async () => {
@@ -140,12 +175,12 @@ async function setMode(mode) {
       await click(page, page.getByRole('button', { name: 'Listen' }));
       await page.getByText('Speechmatics is connected').waitFor();
       await page.evaluate(() => window.dispatchEvent(new CustomEvent('sonora-e2e-transcript', { detail: { text: 'How does caching work?' } })));
-      await click(page, page.getByRole('button', { name: /Answer/ }));
+      await click(page, answerButton(page));
       await page.getByText('Heard: How does caching work?').waitFor();
       await page.getByLabel('Question').waitFor({ state: 'detached' }).catch(() => {});
       await click(page, page.getByRole('button', { name: 'Chat' }));
       await page.getByLabel('Question').fill('Typed from chat');
-      await click(page, page.getByRole('button', { name: /Answer/ }));
+      await click(page, answerButton(page));
       await page.getByText('Heard: Typed from chat').waitFor();
       await page.evaluate(() => window.dispatchEvent(new CustomEvent('sonora-e2e-transcript', { detail: { text: 'Explain indexes' } })));
       await click(page, page.getByRole('button', { name: 'Expand transcript' }));
@@ -161,9 +196,9 @@ async function setMode(mode) {
       await click(page, page.locator('summary[aria-label="Overlay menu"]'));
       await click(page, page.getByRole('button', { name: 'Answer settings' }));
       await page.getByText('Answer settings').waitFor();
+      await shot(app, page, '04-live.png');
       await click(page, page.getByRole('button', { name: 'End' }));
       await page.getByRole('heading', { name: 'Call Sessions' }).waitFor();
-      await page.screenshot({ path: path.join(shots, '04-live.png') });
     });
 
     await scenario('answer errors stay visible and the app stays usable', async () => {
@@ -171,7 +206,7 @@ async function setMode(mode) {
       for (const [mode, text] of [['401', 'Sign-in expired'], ['500', 'Answer service failed'], ['timeout', 'timed out'], ['offline', 'Network offline']]) {
         await setMode(mode);
         await page.evaluate(() => window.dispatchEvent(new CustomEvent('sonora-e2e-transcript', { detail: { text: 'How does retry work?' } })));
-        await click(page, page.getByRole('button', { name: /Answer/ }));
+        await click(page, answerButton(page));
         await page.getByText(new RegExp(text, 'i')).first().waitFor();
       }
       await setMode('speechmatics');
@@ -179,7 +214,7 @@ async function setMode(mode) {
       await page.getByText('Using Gemini fallback').waitFor();
       await setMode('ok');
       await page.evaluate(() => window.dispatchEvent(new CustomEvent('sonora-e2e-transcript', { detail: { text: 'What is a queue?' } })));
-      await click(page, page.getByRole('button', { name: /Answer/ }));
+      await click(page, answerButton(page));
       await page.getByText('Heard: What is a queue?').waitFor();
       await click(page, page.getByRole('button', { name: 'End' }));
     });
@@ -217,6 +252,7 @@ async function setMode(mode) {
       state = await page.evaluate(() => window.sonoraDesktop.e2eFlags());
       if (state.ignoringMouse) throw new Error('Button stayed click-through');
       await click(page, page.getByLabel('Click through the overlay'));
+      await click(page, page.locator('summary[aria-label="Window settings"]'));
     });
 
     await scenario('pin, blur, opacity, resize, and restart', async () => {
@@ -244,10 +280,11 @@ async function setMode(mode) {
       await click(page, page.getByRole('button', { name: 'Keep on top' }));
       await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setBounds({ x: 30, y: 30, width: 1020, height: 700 }));
       await page.waitForTimeout(500);
-      await page.screenshot({ path: path.join(shots, '05-resized.png') });
+      await shot(app, page, '05-resized.png');
     });
   } finally {
     if (app) await app.close().catch(() => {});
+    await new Promise(resolve => setTimeout(resolve, 500));
   }
 
   await scenario('restart clamps off-screen bounds and keeps opacity', async () => {
@@ -259,14 +296,18 @@ async function setMode(mode) {
     fs.writeFileSync(prefs, JSON.stringify(saved));
     const relaunched = await launch(exePath());
     try {
+      if (relaunched.page.url().includes('offline.html')) throw new Error(`Restart opened the offline page.\n${await pageDump(relaunched.page)}`);
+      await relaunched.page.getByRole('heading', { name: 'You are signed out' }).waitFor();
       const bounds = await relaunched.app.evaluate(({ BrowserWindow, screen }) => {
         const win = BrowserWindow.getAllWindows()[0];
         const area = screen.getPrimaryDisplay().workArea;
         const box = win.getBounds();
-        return { box, area, inside: box.x >= area.x - 20 && box.x < area.x + area.width };
+        return { box, area, inside: box.x >= area.x - 20 && box.x < area.x + area.width && box.y >= area.y - 20 && box.y < area.y + area.height };
       });
       if (!bounds.inside) throw new Error(`Off-screen window survived restart ${JSON.stringify(bounds)}`);
-      await relaunched.page.screenshot({ path: path.join(shots, '06-restart.png') });
+      const restored = await relaunched.page.evaluate(() => window.sonoraDesktop.getState());
+      if (Math.abs(restored.backgroundOpacity - saved.backgroundOpacity) > 0.02) throw new Error(`Opacity was not restored ${JSON.stringify(restored)}`);
+      await shot(relaunched.app, relaunched.page, '06-restart.png');
     } finally {
       await relaunched.app.close().catch(() => {});
     }

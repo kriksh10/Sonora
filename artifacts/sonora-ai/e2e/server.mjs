@@ -29,6 +29,9 @@ function readBody(req) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', 'http://127.0.0.1');
+  console.log(`${req.method} ${url.pathname}`);
+  req.on('error', () => {});
+  res.on('error', () => {});
   const cookie = req.headers.cookie || '';
   const authed = signedIn && cookie.includes('sonora_e2e=1');
   try {
@@ -63,7 +66,7 @@ const server = http.createServer(async (req, res) => {
     if (answer && req.method === 'POST') {
       if (mode === '401') return send(res, 401, { error: 'Sign-in expired. Reconnect by signing in again; your current answer stays visible.' });
       if (mode === '500') return send(res, 500, { error: 'Answer service failed.' });
-      if (mode === 'offline') { req.socket.destroy(); return; }
+      if (mode === 'offline') { req.socket.on('error', () => {}); req.socket.destroy(); return; }
       if (mode === 'timeout') return;
       const body = await readBody(req);
       return send(res, 200, { answer: `Heard: ${body.question}`, model: 'e2e' });
@@ -81,6 +84,14 @@ const server = http.createServer(async (req, res) => {
     const resolved = fs.existsSync(filePath) && fs.statSync(filePath).isFile() ? filePath : path.join(dist, 'index.html');
     const ext = path.extname(resolved);
     const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json' };
+    if (ext === '.html' || ext === '.css') {
+      const text = fs.readFileSync(resolved, 'utf8')
+        .replace(/@import\s+url\((['"]?)https:\/\/fonts\.googleapis\.com[^)]+\)\1;?/g, '')
+        .replace(/<link[^>]+fonts\.(googleapis|gstatic)\.com[^>]*>/gi, '');
+      res.writeHead(200, { 'Content-Type': types[ext] || 'text/plain', 'Cache-Control': 'no-store' });
+      res.end(text);
+      return;
+    }
     res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream' });
     fs.createReadStream(resolved).pipe(res);
   } catch (error) {
@@ -88,6 +99,7 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+server.on('clientError', () => {});
 server.listen(port, '127.0.0.1', () => {
   console.log(`e2e mock listening on http://127.0.0.1:${port}`);
 });
