@@ -74,7 +74,7 @@ const server = http.createServer(async (req, res) => {
     const live = url.pathname.match(/^\/api\/sessions\/([^/]+)\/live-audio$/);
     if (live) {
       if (mode === 'speechmatics') return send(res, 503, { error: 'Speechmatics unavailable' });
-      return send(res, 200, { ok: true });
+      return send(res, 200, { ok: true, transcript: 'How does caching work?' });
     }
     if (url.pathname === '/api/billing/balance') return send(res, 200, { balance: 12, freeRemaining: 10, unlimitedUntil: null, bypass: false, checkout: false });
     if (url.pathname === '/api/answer-preferences/defaults') return send(res, 200, { format: 'full_script', length: 'balanced', tone: 'simple', starMethod: false, fillerWords: false });

@@ -70,7 +70,7 @@ function allowLocalE2ENetwork() {
 
 function state() {
   return { visible: win?.isVisible() ?? false, alwaysOnTop, contentProtection, captureActive, shortcutRegistered, platform: process.platform,
-    audioProtocol: 2, nativeAudioProtocol: 2, version: app.getVersion(), backgroundOpacity, backgroundOpacityMin: 0.15, preferencesError,
+    audioProtocol: 2, nativeAudioProtocol: 2, version: app.getVersion(), backgroundOpacity, backgroundOpacityMin: 0, preferencesError,
     fontScale: fontScaleValue, transcriptOpen, clickThrough, openAtLogin, hotkeys: hotkeySummary(hotkeyState),
     update: updates.status() };
 }
@@ -102,9 +102,9 @@ function applyAlwaysOnTop(enabled) {
 }
 function applyPassthrough() {
   if (!win || win.isDestroyed() || typeof win.setIgnoreMouseEvents !== 'function') return;
-  // Pass clicks only through empty gaps, and only after the user opts in.
-  // Visible glass, the sidebar, dialogs, and every control keep the mouse.
-  const pass = clickThrough && !pointerOverUi && !controlsHover;
+  // Ignore is off unless the user explicitly turned click-through on.
+  // A transparent pixel is still a hit target; Windows only passes it through when ignore is on.
+  const pass = clickThrough === true && !pointerOverUi && !controlsHover;
   ignoringMouse = pass;
   win.setIgnoreMouseEvents(pass, { forward: pass });
 }
@@ -145,10 +145,12 @@ function broadcast() {
   if (win && !win.isDestroyed()) win.webContents.send('overlay:state-changed', state());
   updateTray();
 }
+const HIT_FLOOR = '#01000000';
 function clearWindowPlate() {
   if (!win || win.isDestroyed()) return;
-  win.setBackgroundColor?.('#00000000');
-  // Windows 11 otherwise composites Mica/acrylic, which paints an opaque plate and white edges.
+  // Alpha 0 makes Windows treat the whole layered window as click-through.
+  // 1/255 is invisible and is still a hit target.
+  win.setBackgroundColor?.(HIT_FLOOR);
   if (process.platform === 'win32') win.setBackgroundMaterial?.('none');
 }
 function show() {
@@ -385,15 +387,15 @@ function createWindow() {
     minWidth: Math.min(390, bounds.width), minHeight: Math.min(620, bounds.height), show: false,
     // thickFrame, rounded corners, and Win11 Mica paint an opaque backing behind a frameless window.
     frame: false, thickFrame: false, roundedCorners: false,
-    transparent: true, backgroundColor: '#00000000', backgroundMaterial: 'none', resizable: true, alwaysOnTop: true,
+    transparent: true, backgroundColor: HIT_FLOOR, backgroundMaterial: 'none', resizable: true, alwaysOnTop: true,
     skipTaskbar: true, hasShadow: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'), partition: 'persist:sonora',
       contextIsolation: true, nodeIntegration: false, sandbox: true,
       webSecurity: true, backgroundThrottling: false,
-      ...(localE2E ? { additionalArguments: ['--sonora-e2e'] } : {}),
     },
   });
+  win.setIgnoreMouseEvents(false);
   clearWindowPlate();
   if (migrateOpacity) persistWindow();
   applyAlwaysOnTop(alwaysOnTop);

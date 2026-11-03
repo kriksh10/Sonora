@@ -17,7 +17,7 @@ html.sonora-desktop .sonora-workspace.dp-app {
   app-region: no-drag;
 }
 .dp-glass {
-  background: rgba(30, 30, 30, var(--sonora-background-opacity, .72));
+  background: rgba(30, 30, 30, var(--sonora-panel-opacity, .72));
   -webkit-backdrop-filter: blur(18px) saturate(1.35);
   backdrop-filter: blur(18px) saturate(1.35);
   border: 1px solid rgba(255, 255, 255, .14);
@@ -30,7 +30,7 @@ html.sonora-desktop .sonora-workspace.dp-app {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: rgba(0, 0, 0, .02);
+  background: rgba(0, 0, 0, 0.04);
   pointer-events: none;
 }
 .dp-app { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 12px; box-sizing: border-box; }

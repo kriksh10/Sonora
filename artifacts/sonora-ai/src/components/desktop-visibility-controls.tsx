@@ -62,10 +62,15 @@ export default function DesktopVisibilityControls() {
     };
   }, [bridge]);
 
+  const clickThrough = useRef(false);
+  useEffect(() => { clickThrough.current = !!state?.clickThrough; }, [state]);
   useEffect(() => {
     if (!bridge?.setPointerCapture && !bridge?.setControlsHover) return;
     let capture = false;
     const sync = (event: MouseEvent) => {
+      // Installed builds only report the pointer while click-through is on.
+      // Otherwise the window stays clickable and no ignore flag is touched.
+      if (!clickThrough.current) return;
       const next = overlayPointerCaptures(event.target);
       if (next === capture && event.type !== "mousedown") return;
       capture = next;
@@ -135,7 +140,7 @@ export default function DesktopVisibilityControls() {
                 onChange={event => opacityControl.current?.set(Number(event.target.value) / 100)}
                 className="sonora-slim-slider mt-3 w-full" />
             </label>
-            <p id="sonora-opacity-help" className="mt-2">{minimumOpacity}% is nearly clear; 100% is opaque. Dialogs, inputs, cards, and this menu use the same opacity. The words stay solid.</p>
+            <p id="sonora-opacity-help" className="mt-2">{minimumOpacity}% is the slider floor. Panels never paint below 4% so Windows still treats them as a click target. 100% is opaque. Dialogs, inputs, cards, and this menu use the same opacity. The words stay solid.</p>
             {typeof bridge.setBackgroundOpacity === "function" && state && minimumOpacity === 45 &&
               <p className="mt-2 text-amber-200">This older shell supports 45–100%. Rebuild and install version 0.3.1 or newer for the 15% setting.</p>}
             {typeof bridge.setBackgroundOpacity === "function"

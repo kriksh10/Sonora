@@ -174,31 +174,46 @@ try {
   }
   if ($caught.Count -gt 0 -or -not $stayed) { throw "Glass is still click-through. $detail" }
 
-  function Find-Element([string]$Name) {
-    $root = [System.Windows.Automation.AutomationElement]::RootElement
-    $cond = New-Object System.Windows.Automation.PropertyCondition ([System.Windows.Automation.AutomationElement]::NameProperty, $Name)
-    return $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond)
+  function Get-SonoraAutomation {
+    $procId = (Get-Process | Where-Object { $_.ProcessName -like 'Sonora*' } | Select-Object -First 1).Id
+    if (-not $procId) { return $null }
+    $cond = New-Object System.Windows.Automation.PropertyCondition ([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $procId)
+    return [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children, $cond)
   }
-  function Click-Name([string]$Name) {
-    $el = Find-Element $Name
-    if (-not $el) { throw "No UI element named $Name" }
+  function Find-All([string]$Name) {
+    $root = Get-SonoraAutomation
+    if (-not $root) { return @() }
+    $cond = New-Object System.Windows.Automation.PropertyCondition ([System.Windows.Automation.AutomationElement]::NameProperty, $Name)
+    $all = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $cond)
+    $items = @()
+    for ($i = 0; $i -lt $all.Count; $i++) { $items += $all.Item($i) }
+    return $items
+  }
+  function Find-Element([string]$Name) {
+    $items = @(Find-All $Name)
+    if ($items.Count -eq 0) { return $null }
+    return $items[0]
+  }
+  function Click-Element($el) {
+    if (-not $el) { throw 'No UI element to click' }
     $r = $el.Current.BoundingRectangle
-    $x = [int]($r.X + $r.Width / 2)
-    $y = [int]($r.Y + $r.Height / 2)
-    [SonoraInput]::Click($x, $y)
-    Start-Sleep -Milliseconds 350
+    if ($r.Width -lt 1 -or $r.Height -lt 1) { throw 'Element has no on-screen box' }
+    [SonoraInput]::Click([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2))
+    Start-Sleep -Milliseconds 400
+  }
+  function Click-Name([string]$Name, [switch]$Last) {
+    $items = @(Find-All $Name)
+    if ($items.Count -eq 0) { throw "No UI element named $Name" }
+    $el = if ($Last) { $items[$items.Count - 1] } else { $items[0] }
+    Click-Element $el
     return $el
   }
-  function Last-Click {
-    $el = Find-Element 'Last click'
-    if (-not $el) { return '' }
-    return [string]$el.Current.Name
-  }
 
+  Click-Name 'Hide from screen sharing (best effort)' | Out-Null
   Click-Name 'Sign in' | Out-Null
   Start-Sleep -Milliseconds 500
   $signed = Find-Element 'Call Sessions'
-  Add-Scenario 'Sign in with an OS click' ([bool]$signed) "last=$(Last-Click)"
+  Add-Scenario 'Sign in with an OS click' ([bool]$signed) ''
   Save-Screen '02-signed-in.png'
 
   $names = @('Create session','Resumes','Documents','Call Sessions','Mock Interview','Dark','Light','Upgrade')
@@ -220,7 +235,7 @@ try {
   else {
     $company.SetFocus()
     [System.Windows.Forms.SendKeys]::SendWait('Northwind')
-    Click-Name 'Create session' | Out-Null
+    Click-Name 'Create session' -Last | Out-Null
     Start-Sleep -Milliseconds 400
     Add-Scenario 'Create Session valid input' ([bool](Find-Element 'Northwind interview')) ''
   }

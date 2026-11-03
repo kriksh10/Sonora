@@ -12,11 +12,12 @@ const { prepare } = require('./prepare-release.cjs');
   }, null, 2));
   const stagedConfig = fs.readFileSync(path.join(stage, 'runtime-config.json'), 'utf8');
   console.log(`Staged runtime-config.json ${stagedConfig}`);
+  const nsis = process.env.SONORA_E2E_NSIS === '1';
   const result = spawnSync(process.execPath, [
     require.resolve('electron-builder/out/cli/cli.js'),
     '--projectDir', path.resolve(__dirname, '../../../generated-artifacts/desktop-app'),
     '--config', path.join(__dirname, 'electron-builder.cjs'),
-    '--win', '--x64', '--dir', '--publish', 'never',
+    '--win', '--x64', ...(nsis ? [] : ['--dir']), '--publish', 'never',
     '-c.win.signAndEditExecutable=false',
   ], { stdio: 'inherit', env: { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: 'false' } });
   if (result.error) throw result.error;

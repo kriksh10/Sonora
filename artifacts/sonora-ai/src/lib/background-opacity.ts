@@ -10,7 +10,7 @@ export function createBackgroundOpacity(options: {
   let revision = 0;
   let saving = false;
   let disposed = false;
-  const valid = (value: number) => Number.isFinite(value) && value >= 0.15 && value <= 1;
+  const valid = (value: number) => Number.isFinite(value) && value >= 0 && value <= 1;
 
   async function flush() {
     saving = true;
