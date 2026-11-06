@@ -13,6 +13,7 @@ function fixture(platform = 'win32') {
   const window = {
     isDestroyed: () => false, isVisible: () => visible,
     show: () => { visible = true; }, focus() {}, hide: () => { visible = false; },
+    setAlwaysOnTop(value) { this.top = value; }, top: false,
     setContentProtection: value => { protections.push(value); },
     webContents: { send: (...args) => sends.push(args) },
   };
@@ -41,6 +42,18 @@ test('tray capture exclusion and native state stay synchronized', () => {
   assert.equal(f.menu().find(item => item.label?.startsWith('Hide from screen sharing')).checked, false);
   assert.equal(f.sends.at(-1)[1].contentProtection, false);
   assert.throws(() => vm.runInContext('setContentProtection("yes")', f.context), /Expected boolean/);
+});
+
+test('hide releases screen-saver always-on-top before the window disappears and show puts it back', () => {
+  const f = fixture();
+  vm.runInContext('alwaysOnTop = true; hide();', f.context);
+  assert.equal(f.window.top, false);
+  assert.equal(f.window.isVisible(), false);
+  vm.runInContext('holdOnTop();', f.context);
+  assert.equal(f.window.top, false);
+  f.menu().find(item => item.label === 'Show Sonora').click();
+  assert.equal(f.window.isVisible(), true);
+  assert.equal(f.window.top, true);
 });
 
 test('hide and tray restore preserve active audio and keep Stop available', () => {

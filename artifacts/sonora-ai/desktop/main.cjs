@@ -85,7 +85,7 @@ function persistWindow() {
   } catch { preferencesError = 'Window preferences could not be saved. Changes apply for this launch only.'; }
 }
 function holdOnTop() {
-  if (!win || win.isDestroyed() || !alwaysOnTop) return;
+  if (!win || win.isDestroyed() || !alwaysOnTop || !win.isVisible()) return;
   win.setAlwaysOnTop(true, 'screen-saver');
   win.setVisibleOnAllWorkspaces?.(true, { visibleOnFullScreen: true });
   if (process.platform === 'win32') win.moveTop?.();
@@ -157,10 +157,15 @@ function show() {
   clearWindowPlate();
   win.show();
   win.focus();
+  if (alwaysOnTop) holdOnTop();
   broadcast();
 }
 function hide() {
-  win?.hide();
+  if (!win || win.isDestroyed() || !win.isVisible()) return;
+  // Windows leaves a screen-saver-level always-on-top window visible if hide()
+  // runs while that level is still set. Drop the level, keep the preference.
+  win.setAlwaysOnTop(false);
+  win.hide();
   broadcast();
 }
 function toggle() { if (win?.isVisible()) hide(); else show(); }

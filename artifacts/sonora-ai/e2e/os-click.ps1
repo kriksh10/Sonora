@@ -646,6 +646,23 @@ try {
   }
   Save-Screen '05-live.png'
 
+  Click-Name 'Hide Sonora' | Out-Null
+  Start-Sleep -Milliseconds 700
+  $hidden = -not [SonoraInput]::IsWindowVisible($hwnd)
+  Start-Sleep -Milliseconds 800
+  $stayedHidden = -not [SonoraInput]::IsWindowVisible($hwnd)
+  Add-Scenario 'Eye hides the Sonora window and it stays hidden' ($hidden -and $stayedHidden) "hidden=$hidden stayed=$stayedHidden"
+  Save-Screen '05b-hidden.png'
+  Start-Process -FilePath $Exe -ArgumentList '--force-renderer-accessibility' | Out-Null
+  $shown = $false
+  $showUntil = (Get-Date).AddSeconds(15)
+  while ((Get-Date) -lt $showUntil) {
+    if ([SonoraInput]::IsWindowVisible($hwnd)) { $shown = $true; break }
+    Start-Sleep -Milliseconds 300
+  }
+  Add-Scenario 'Opening Sonora again shows the hidden window' $shown ''
+  Save-Screen '05c-shown.png'
+
   Stop-Sonora
   Start-Sleep -Seconds 1
   $again = Start-Sonora @('--force-renderer-accessibility')

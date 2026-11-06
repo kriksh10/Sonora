@@ -97,7 +97,16 @@ export function createDesktopAudio(options: Options): AudioCapture {
   let fallback = false, rawPcmSeen = false;
   const ring = new Float32Array(128000);
   let ringUsed = 0, ringCursor = 0, totalSamples = 0, finalizedSamples = 0;
-  let liveText = "", liveSpeaker = "", firstWordAt = 0, questionEndAt = 0;
+  let liveText = "", lastPartial = "", liveSpeaker = "", firstWordAt = 0, questionEndAt = 0;
+  let commitTimer: ReturnType<typeof setTimeout> | undefined;
+  const shownText = () => {
+    const base = liveText.trim();
+    const partial = lastPartial.trim();
+    if (!partial) return base;
+    if (!base || partial.startsWith(base)) return partial;
+    if (base.endsWith(partial) || base.includes(partial)) return base;
+    return `${base} ${partial}`.trim();
+  };
   let speechSeen = false, quietSamples = 0, energy = 0, analyzed = 0, lastVoiceAt = 0;
   let sendBuffer = new Float32Array(320), sendUsed = 0;
   let turnTimer: ReturnType<typeof setTimeout> | undefined;
@@ -108,29 +117,37 @@ export function createDesktopAudio(options: Options): AudioCapture {
   });
   const overlapWav = createWavOverlap();
   const finishLiveTurn = () => {
-    if (stopped || fallback || !liveText.trim()) return;
+    clearTimeout(commitTimer);
+    if (stopped || fallback) return;
+    const text = shownText();
+    if (!text) return;
     clearTimeout(turnTimer);
     const ended = questionEndAt || lastVoiceAt || performance.now();
     options.onQuestionEnd?.(ended);
     diagnose("latency", `Speechmatics · question end → first transcript word: ${Math.round(firstWordAt - ended)}ms (negative means live words arrived before question end).`);
-    options.onText(liveText.trim(), { source: options.source, capturedAt: new Date().toISOString(), endOfTurn: true, ...(liveSpeaker ? { speakerLabel: liveSpeaker } : {}) });
-    liveText = ""; liveSpeaker = ""; firstWordAt = 0;
+    options.onText(text, { source: options.source, capturedAt: new Date().toISOString(), endOfTurn: true, ...(liveSpeaker ? { speakerLabel: liveSpeaker } : {}) });
+    liveText = ""; lastPartial = ""; liveSpeaker = ""; firstWordAt = 0;
     options.onPartial?.("");
   };
+  const commitIfStillOpen = () => { if (!stopped && !fallback && shownText()) finishLiveTurn(); };
   const live = createLiveTranscription({
     sessionId: options.sessionId, source: options.source, roundNumber: options.roundNumber,
     onUpdate(update) {
       if (stopped || fallback) return;
       if ((update.partial || update.text) && !firstWordAt) firstWordAt = performance.now();
+      if (update.partial !== undefined) lastPartial = update.partial;
       if (update.final && update.text) {
-        liveText = `${liveText} ${update.text}`.trim();
+        const next = update.text.trim();
+        const base = liveText.trim();
+        liveText = !base || next.startsWith(base) ? next : (base.endsWith(next) || base.includes(next) ? base : `${base} ${next}`.trim());
+        lastPartial = "";
         liveSpeaker = update.speaker || liveSpeaker;
         if (typeof update.endTime === "number") finalizedSamples = Math.max(finalizedSamples, Math.round(update.endTime * 16000));
         if (questionEndAt && !speechSeen) {
           clearTimeout(turnTimer); turnTimer = setTimeout(finishLiveTurn, 100);
         }
       }
-      if (update.partial !== undefined || update.text) options.onPartial?.(`${liveText} ${update.partial ?? ""}`.trim());
+      if (update.partial !== undefined || update.text) options.onPartial?.(shownText());
       if (update.endOfTurn) finishLiveTurn();
     },
     onFallback(reason) {
@@ -138,6 +155,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
       fallback = true;
       options.onQuestionEnd?.(Number.NaN);
       clearTimeout(turnTimer);
+      clearTimeout(commitTimer);
       diagnose("path", `Gemini clip fallback · ${reason}. Continuous capture retained.`);
       options.onNotice("Live transcription unavailable; using overlapping Gemini clips. Answers may take longer.");
       options.onPartial?.("");
@@ -175,11 +193,13 @@ export function createDesktopAudio(options: Options): AudioCapture {
         if (Math.sqrt(energy / analyzed) >= .003) { speechSeen = true; quietSamples = 0; questionEndAt = 0; lastVoiceAt = performance.now(); clearTimeout(turnTimer); }
         else if (speechSeen) {
           quietSamples += analyzed;
-          if (quietSamples >= 9600) {
+            if (quietSamples >= 9600) {
             speechSeen = false; questionEndAt = performance.now() - 600;
             options.onQuestionEnd?.(questionEndAt);
             diagnose("question-end", "600ms of quiet; requesting a finalized Speechmatics utterance.");
             live.endTurn();
+            clearTimeout(commitTimer);
+            commitTimer = setTimeout(commitIfStillOpen, 800);
           }
         }
         analyzed = 0; energy = 0;
@@ -205,7 +225,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
     if (continuous.pendingMs()) diagnose("dropped", `Capture stopped with ${continuous.pendingMs()}ms of unfinished new audio.`);
     if (sentences.pendingWords()) diagnose("dropped", `Capture stopped with ${sentences.pendingWords()} words awaiting sentence completion.`);
     stopped = true;
-    live.stop(); clearTimeout(turnTimer);
+    live.stop(); clearTimeout(turnTimer); clearTimeout(commitTimer);
     abort.abort();
     pending = [];
     unsubscribeNative?.();
@@ -375,9 +395,14 @@ export function createDesktopAudio(options: Options): AudioCapture {
             }
             else if (event.type === "silence") {
               if (!nativePcmSeen) notePause();
+              else if (shownText()) {
+                live.endTurn();
+                clearTimeout(commitTimer);
+                commitTimer = setTimeout(commitIfStillOpen, 800);
+              }
               if (event.prolonged) options.onNotice(options.source === "system"
-              ? "No call speech for 18 seconds. Confirm Meet’s speaker/headset matches Meeting output. Check the Call meter while remote speech plays."
-              : "No microphone speech for 18 seconds. Check the microphone source, volume, and OS permission.");
+              ? "Call audio has been quiet for 18 seconds. Words already recognized stay on screen. Auto Answer follows call audio unless microphone answers are also on. If the other person is speaking and this stays quiet, set Meet’s speaker to the same device as Meeting output."
+              : "Microphone has been quiet for 18 seconds. Words already recognized stay on screen. Check the selected microphone if speech is missing.");
             }
             else if (event.type === "status") {
               options.onLevel?.(event.peak ?? 0, (event.sampleAgeMs ?? 0) > 2000 ? "No audio samples yet · check source" : (event.peak ?? 0) > 0.003 ? "Audio activity" : "Silent samples");

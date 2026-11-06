@@ -216,6 +216,18 @@ test('remote fragments assemble across chunks, duplicate turns are suppressed, r
   assert.equal(q.sent.length, 1);
 });
 
+test('the same spoken interviewer line is auto-answered after the turn ends', async () => {
+  const q = questions();
+  q.router.push('What is the difference between a process and a thread', 'interviewer', true);
+  q.flush();
+  await Promise.resolve(); await Promise.resolve();
+  assert.deepEqual(q.sent, ['What is the difference between a process and a thread']);
+  q.router.push('proposed in.', 'interviewer', true);
+  q.flush();
+  assert.equal(q.sent.length, 1);
+  assert.match(q.notices.at(-1), /no question detected/);
+});
+
 test('a pause asks the finished interviewer turn without question-shaped wording', async () => {
   const q = questions();
   q.router.push('I want to hear how you handled the outage last quarter', 'interviewer', true);
