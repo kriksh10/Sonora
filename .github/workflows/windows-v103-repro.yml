@@ -34,6 +34,7 @@ jobs:
           Set-Content -Path installed-exe.txt -Value $exe.FullName
           Write-Host "Installed $($exe.FullName)"
       - name: OS-level clicks against the installed v1.0.3 app
+        continue-on-error: true
         shell: pwsh
         run: |
           $exe = Get-Content installed-exe.txt

@@ -38,6 +38,7 @@ export default function E2EApp() {
   const [formError, setFormError] = useState("");
   const [theme, setTheme] = useState<SonoraTheme>(() => readSonoraTheme());
   const [lastClick, setLastClick] = useState("idle");
+  const [hoverLabel, setHoverLabel] = useState("Hover idle");
   const [audioSource, setAudioSource] = useState<"microphone" | "system" | "both">("system");
   const selected = sessions.find(session => session.id === selectedId) ?? null;
   const visible = sessions.filter(session => (filter === "all" || session.sessionType === filter) &&
@@ -50,8 +51,20 @@ export default function E2EApp() {
       const name = control?.getAttribute("aria-label") || control?.textContent || "panel";
       setLastClick(name.replace(/\s+/g, " ").trim().slice(0, 80) || "panel");
     };
+    const onMove = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const control = target?.closest("button, a, summary, input, label");
+      const name = (control?.getAttribute("aria-label") || control?.textContent || "panel").replace(/\s+/g, " ").trim().slice(0, 40);
+      const cursor = control ? getComputedStyle(control).cursor : "auto";
+      const next = `Hover ${name || "panel"} cursor ${cursor}`;
+      setHoverLabel(current => current === next ? current : next);
+    };
     window.addEventListener("click", onClick, true);
-    return () => window.removeEventListener("click", onClick, true);
+    window.addEventListener("mousemove", onMove);
+    return () => {
+      window.removeEventListener("click", onClick, true);
+      window.removeEventListener("mousemove", onMove);
+    };
   }, []);
 
   useEffect(() => {
@@ -138,6 +151,8 @@ export default function E2EApp() {
     <>
       <DesktopVisibilityControls />
       <p id="sonora-last-click" aria-label={`Last click ${lastClick}`} style={{ position: "absolute", width: 1, height: 1, overflow: "hidden" }}>{lastClick}</p>
+      <p id="sonora-hover" aria-label={hoverLabel} style={{ position: "absolute", width: 1, height: 1, overflow: "hidden" }}>{hoverLabel}</p>
+      <p id="sonora-filter" aria-label={`Filter ${filter}`} style={{ position: "absolute", width: 1, height: 1, overflow: "hidden" }}>{filter}</p>
       <main className="sonora-workspace dp-app text-[#e7e8eb]">
         {!signedIn ? (
           <section className="dp-glass dp-card" aria-label="Signed out">

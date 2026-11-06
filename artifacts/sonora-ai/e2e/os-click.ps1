@@ -73,6 +73,18 @@ public static class SonoraInput {
     return "0x" + style.ToString("X") + " " + string.Join(",", parts);
   }
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
+  public static void Move(int x, int y) {
+    int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    int vw = Math.Max(1, GetSystemMetrics(SM_CXVIRTUALSCREEN));
+    int vh = Math.Max(1, GetSystemMetrics(SM_CYVIRTUALSCREEN));
+    int ax = (int)Math.Round((x - vx) * 65535.0 / Math.Max(1, vw - 1));
+    int ay = (int)Math.Round((y - vy) * 65535.0 / Math.Max(1, vh - 1));
+    INPUT[] inputs = new INPUT[1];
+    inputs[0].type = 0; inputs[0].mi.dx = ax; inputs[0].mi.dy = ay; inputs[0].mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
+    uint sent = SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
+    if (sent != 1) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+  }
   public static void Click(int x, int y) {
     int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
     int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
@@ -450,6 +462,63 @@ try {
   Add-Scenario 'Sign in with an OS click' ([bool]$signed) ''
   Save-Screen '02-signed-in.png'
   if (-not $signed) { throw 'Sign-in click did not open Call Sessions.' }
+
+  $sweepRect = New-Object SonoraInput+RECT
+  [SonoraInput]::GetWindowRect($hwnd, [ref]$sweepRect) | Out-Null
+  $sweepUntil = (Get-Date).AddSeconds(11)
+  $sweepY = $sweepRect.Top + 70
+  $sweepDir = 1
+  while ((Get-Date) -lt $sweepUntil) {
+    for ($sweepX = $sweepRect.Left + 24; $sweepX -lt ($sweepRect.Right - 24); $sweepX += 48) {
+      [SonoraInput]::Move($sweepX, $sweepY)
+      Start-Sleep -Milliseconds 35
+    }
+    $sweepY += 42 * $sweepDir
+    if ($sweepY -gt ($sweepRect.Bottom - 36)) { $sweepDir = -1; $sweepY = $sweepRect.Bottom - 36 }
+    if ($sweepY -lt ($sweepRect.Top + 48)) { $sweepDir = 1; $sweepY = $sweepRect.Top + 48 }
+  }
+  $resumes = Find-Element 'Resumes'
+  $hoverName = ''
+  $hoverUntil = (Get-Date).AddSeconds(3)
+  while ((Get-Date) -lt $hoverUntil) {
+    if ($resumes) {
+      $rr = $resumes.Current.BoundingRectangle
+      [SonoraInput]::Move([int]($rr.X + $rr.Width / 2), [int]($rr.Y + $rr.Height / 2))
+    }
+    Start-Sleep -Milliseconds 250
+    $hover = Find-Element 'Hover'
+    if ($hover) { $hoverName = $hover.Current.Name }
+    if ($hoverName -match 'cursor pointer' -and $hoverName -notmatch 'Hover idle') { break }
+  }
+  $hoverOk = $hoverName -match 'Hover ' -and $hoverName -notmatch 'Hover idle' -and $hoverName -match 'cursor pointer'
+  Add-Scenario 'Real mouse moves for 10 seconds change hover and cursor' $hoverOk $hoverName
+  $interview = $null
+  foreach ($candidate in @(Find-All 'Interview')) {
+    if ($candidate.Current.Name -eq 'Interview') { $interview = $candidate; break }
+  }
+  if (-not $interview) { throw 'Interview filter missing' }
+  Click-Element $interview
+  $filtered = $null
+  $filterUntil = (Get-Date).AddSeconds(3)
+  while ((Get-Date) -lt $filterUntil -and -not $filtered) {
+    $filtered = Find-Element 'Filter interview'
+    if (-not $filtered) { Start-Sleep -Milliseconds 200 }
+  }
+  $filterDetail = ''
+  if (-not $filtered) {
+    $current = Find-Element 'Filter '
+    $filterDetail = if ($current) { $current.Current.Name } else { 'filter label missing' }
+  }
+  Add-Scenario 'Filter click changes the visible state' ([bool]$filtered) $filterDetail
+  $hung = $false
+  foreach ($log in @($env:SONORA_BOOT_LOG)) {
+    if ($log -and (Test-Path $log) -and (Select-String -Path $log -Pattern 'unresponsive' -Quiet)) { $hung = $true }
+  }
+  Get-ChildItem $env:APPDATA, $env:LOCALAPPDATA -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'sonora' } | ForEach-Object {
+    $boot = Join-Path $_.FullName 'e2e-boot.txt'
+    if ((Test-Path $boot) -and (Select-String -Path $boot -Pattern 'unresponsive' -Quiet)) { $script:hung = $true }
+  }
+  Add-Scenario 'Renderer never goes unresponsive' (-not $hung) ''
 
   $names = @('Resumes', 'Documents', 'Call Sessions', 'Dark', 'Light', 'Upgrade')
   $missing = @()
