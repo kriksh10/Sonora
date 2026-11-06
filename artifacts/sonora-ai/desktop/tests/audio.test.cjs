@@ -373,3 +373,68 @@ test('Speechmatics primary streams native PCM, pushes partials without polling a
   assert.ok(diagnostics.some(e => e.detail.includes('Gemini clip fallback')));
   capture.stop();
 });
+
+const SPOKEN = 'What is the difference between a process and a thread';
+
+function speechCapture(handlers) {
+  let ws;
+  class Socket {
+    static OPEN = 1;
+    readyState = 1; bufferedAmount = 0;
+    constructor() { ws = this; setImmediate(() => this.onmessage?.({ data: '{"ready":true}' })); }
+    send() {}
+    close() { this.readyState = 3; this.onclose?.(); }
+  }
+  const f = nativeHarness({
+    WebSocket: Socket, URL,
+    fetch: async () => ({ ok: true, status: 200, json: async () => ({ ticket: 'test' }) }),
+  });
+  f.harness.context.window.location = { href: 'http://test/' };
+  const capture = f.harness.context.subject.createDesktopAudio({
+    source: 'system', sessionId: 'spoken', onError(error) { throw error; }, ...handlers,
+  });
+  return { f, get ws() { return ws; }, capture };
+}
+
+test('the same spoken line is kept when only a partial arrives before the turn ends', async () => {
+  const texts = [], partials = [];
+  const session = speechCapture({ onText: text => texts.push(text), onPartial: text => partials.push(text), onNotice() {} });
+  await session.capture.start();
+  const frame = Buffer.alloc(640);
+  for (let i = 0; i < 320; i++) frame.writeInt16LE(1600, i * 2);
+  session.f.emit({ type: 'pcm', audio: frame.toString('base64') });
+  session.ws.onmessage({ data: JSON.stringify({ partial: 'What is the difference' }) });
+  session.ws.onmessage({ data: JSON.stringify({ partial: SPOKEN }) });
+  session.ws.onmessage({ data: '{"endOfTurn":true}' });
+  assert.deepEqual(texts, [SPOKEN]);
+  assert.equal(partials.at(-1), '');
+  session.capture.stop();
+});
+
+test('a later final replaces the partial instead of repeating the spoken line', async () => {
+  const texts = [];
+  const session = speechCapture({ onText: text => texts.push(text), onPartial() {}, onNotice() {} });
+  await session.capture.start();
+  session.f.emit({ type: 'pcm', audio: Buffer.alloc(640).toString('base64') });
+  session.ws.onmessage({ data: JSON.stringify({ partial: 'What is the difference' }) });
+  session.ws.onmessage({ data: JSON.stringify({ final: true, text: SPOKEN, partial: '' }) });
+  session.ws.onmessage({ data: '{"endOfTurn":true}' });
+  assert.deepEqual(texts, [SPOKEN]);
+  session.capture.stop();
+});
+
+test('prolonged quiet commits the recognized line instead of leaving only a partial', async () => {
+  const texts = [], notices = [];
+  const session = speechCapture({
+    onText: text => texts.push(text), onPartial() {}, onNotice: text => notices.push(text),
+  });
+  await session.capture.start();
+  session.f.emit({ type: 'pcm', audio: Buffer.alloc(640).toString('base64') });
+  session.ws.onmessage({ data: JSON.stringify({ partial: SPOKEN }) });
+  session.f.emit({ type: 'silence', prolonged: true });
+  await new Promise(resolve => setTimeout(resolve, 900));
+  assert.deepEqual(texts, [SPOKEN]);
+  assert.match(notices.at(-1), /quiet for 18 seconds/);
+  assert.match(notices.at(-1), /Words already recognized stay on screen/);
+  session.capture.stop();
+});

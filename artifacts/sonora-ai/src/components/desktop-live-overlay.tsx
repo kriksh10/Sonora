@@ -34,6 +34,8 @@ export default function DesktopLiveOverlay(props: {
   onAudioSourceChange: (value: AudioSource) => void;
   autoAnswer: boolean;
   onAutoAnswerChange?: (value: boolean) => void;
+  microphoneAuto?: boolean;
+  onMicrophoneAutoChange?: (value: boolean) => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [chat, setChat] = useState(false);
@@ -78,6 +80,12 @@ export default function DesktopLiveOverlay(props: {
               </select>
             </label>
             {props.onAutoAnswerChange && <button type="button" className="dp-pill" onClick={() => props.onAutoAnswerChange?.(!props.autoAnswer)}>Auto Answer {props.autoAnswer ? "on" : "off"}</button>}
+            {props.onMicrophoneAutoChange && (props.audioSource === "both" || props.audioSource === "microphone") && (
+              <button type="button" className="dp-pill" aria-pressed={!!props.microphoneAuto} onClick={() => props.onMicrophoneAutoChange?.(!props.microphoneAuto)}>
+                Microphone answers {props.microphoneAuto ? "on" : "off"}
+              </button>
+            )}
+            <p style={{ margin: "8px 0 0" }}>Auto Answer uses call audio. Microphone answers also reply to the mic, which can include your own voice.</p>
             <button type="button" className="dp-pill" onClick={props.onPreferences}>Answer settings</button>
             {props.onReadiness && <button type="button" className="dp-pill" onClick={props.onReadiness}>Readiness</button>}
             <button type="button" className="dp-pill" onClick={props.onClearAnswers}>Clear answers</button>

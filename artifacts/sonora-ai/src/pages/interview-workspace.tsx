@@ -1095,6 +1095,8 @@ export default function InterviewWorkspace() {
           onAudioSourceChange={setAudioSource}
           autoAnswer={!!selected.autoAnswer}
           onAutoAnswerChange={value => void updateLiveSettings("autoAnswer", value)}
+          microphoneAuto={microphoneAuto}
+          onMicrophoneAutoChange={value => { questionsRef.current?.reset(); setMicrophoneAuto(value); }}
         />
       ) : window.sonoraDesktop ? (
         <DesktopSessions

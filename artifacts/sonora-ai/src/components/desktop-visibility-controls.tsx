@@ -99,6 +99,7 @@ export default function DesktopVisibilityControls() {
           className={`sonora-window-action ${state?.contentProtection ? "text-emerald-300" : ""}`}
           onClick={() => void run(() => bridge.setContentProtection(!state?.contentProtection))}><ShieldCheck size={14} /></button>
         <button type="button" disabled={!state || pending} className="sonora-window-action" aria-label="Hide Sonora"
+          title="Hide the Sonora window. Audio keeps running. Show it again from the tray icon. This is not the screen-share shield."
           onClick={() => void run(() => bridge.hide())}><EyeOff size={14} /></button>
         <label className="sonora-opacity-inline" title={`Overlay opacity ${Math.round(backgroundOpacity * 100)}%`}>
           <input aria-label="Overlay opacity" type="range" min={minimumOpacity} max="100" step="5"
@@ -139,7 +140,7 @@ export default function DesktopVisibilityControls() {
                 onChange={event => void run(() => bridge.setClickThrough!(event.target.checked))} />
               Click through the overlay
             </label>
-            <p className="mt-1">Clicks pass through the answer text. Hovering the controls, buttons, or text fields turns click-through off so you can use them.</p>
+            <p className="mt-1">Click through sends clicks to the app behind Sonora until you turn it off. The eye hides this window. The shield only asks other apps not to capture it.</p>
             <label className="mt-3 flex items-center gap-2 text-xs font-semibold">
               <input type="checkbox" aria-label="Show transcript panel" checked={!!state?.transcriptOpen} disabled={!state || !bridge.setTranscriptOpen}
                 onChange={event => void run(() => bridge.setTranscriptOpen!(event.target.checked))} />
