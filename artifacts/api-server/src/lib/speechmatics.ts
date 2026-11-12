@@ -107,7 +107,9 @@ export async function openSpeechStream(language: string, terms: string[]): Promi
         audio_format: { type: "raw", encoding: "pcm_s16le", sample_rate: 16000 },
         transcription_config: {
           language: speechmaticsLanguage(language),
-          model: "standard",
+          // Realtime Enhanced is $0.80 per audio hour. Both mode opens one stream per source.
+          operating_point: "enhanced",
+          model: "enhanced",
           enable_partials: true,
           max_delay: 0.7,
           max_delay_mode: "fixed",

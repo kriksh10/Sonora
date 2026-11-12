@@ -34,6 +34,12 @@ function note(line) {
   }
 }
 
+function serverOperatingPoint() {
+  const source = fs.readFileSync(path.resolve(__dirname, '../../api-server/src/lib/speechmatics.ts'), 'utf8');
+  const match = source.match(/operating_point:\s*"([^"]+)"/);
+  return match ? match[1] : 'missing';
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', 'http://127.0.0.1');
   note(`${req.method} ${url.pathname}`);
@@ -93,10 +99,12 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       if (body.stop === true) return send(res, 200, { stopped: true });
       if (mode === 'speechmatics') return send(res, 503, { error: 'Speechmatics unavailable' });
+      note(`operating_point ${serverOperatingPoint()} source ${body.source || 'unspecified'}`);
       return send(res, 200, { ok: true, transcript: 'How does caching work?' });
     }
     if (live) {
       if (mode === 'speechmatics') return send(res, 503, { error: 'Speechmatics unavailable' });
+      note(`operating_point ${serverOperatingPoint()} source listen`);
       return send(res, 200, { ok: true, transcript: 'How does caching work?' });
     }
     if (url.pathname === '/api/billing/balance') return send(res, 200, { balance: 12, freeRemaining: 10, unlimitedUntil: null, bypass: false, checkout: false });

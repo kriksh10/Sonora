@@ -751,7 +751,11 @@ try {
   }
   Click-Exact 'Listen' | Out-Null
   $listening = Wait-Named 'Listening. Speechmatics is connected.' 8
-  Add-Scenario 'Control: Listen starts transcription' ([bool]$listening) ''
+  $enhanced = $false
+  if ($env:SONORA_MOCK_LOG -and (Test-Path $env:SONORA_MOCK_LOG)) {
+    $enhanced = [bool](Select-String -Path $env:SONORA_MOCK_LOG -Pattern 'operating_point enhanced' -Quiet)
+  }
+  Add-Scenario 'Control: Listen starts transcription' ([bool]($listening -and $enhanced)) "enhanced=$enhanced"
   Click-Exact 'Pause' | Out-Null
   $pausedNote = Wait-Named 'Listening paused' 4
   $sessionStillOpen = [bool](Find-VisibleButton 'End session')
