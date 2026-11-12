@@ -404,6 +404,8 @@ function createWindow() {
     // thickFrame, rounded corners, and Win11 Mica paint an opaque backing behind a frameless window.
     frame: false, thickFrame: false, roundedCorners: false,
     transparent: true, backgroundColor: HIT_FLOOR, backgroundMaterial: 'none', resizable: true, alwaysOnTop: true,
+    // toolbar sets WS_EX_TOOLWINDOW on Windows, so the window stays out of the taskbar, Alt+Tab, and Task View.
+    ...(process.platform === 'win32' ? { type: 'toolbar' } : {}),
     title: '\u2060', skipTaskbar: true, hasShadow: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'), partition: 'persist:sonora',

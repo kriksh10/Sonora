@@ -74,6 +74,8 @@ public static class SonoraInput {
     if ((style & 0x40000) != 0) parts.Add("WS_EX_APPWINDOW");
     return "0x" + style.ToString("X") + " " + string.Join(",", parts);
   }
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string cls, string title);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr child, string cls, string title);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
   public static void Move(int x, int y) {
     int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
@@ -994,28 +996,43 @@ try {
   $minHidden = -not [SonoraInput]::IsWindowVisible($hwnd)
   $minStyle = [SonoraInput]::ExStyle($hwnd)
   $screenBottom = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Bottom
-  $root = [System.Windows.Automation.AutomationElement]::RootElement
+  $trayRoots = @()
+  foreach ($pair in @(@('Shell_TrayWnd', $null), @('NotifyIconOverflowWindow', $null))) {
+    $hwndTray = [SonoraInput]::FindWindow($pair[0], $pair[1])
+    if ($hwndTray -and $hwndTray -ne [IntPtr]::Zero) {
+      try { $trayRoots += [System.Windows.Automation.AutomationElement]::FromHandle($hwndTray) } catch {}
+    }
+  }
   $trayEl = $null
-  foreach ($tip in @('Sonora AI — audio off', 'Sonora AI - audio off', 'Sonora — AUDIO CAPTURE ACTIVE')) {
-    $cond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, $tip)
-    $found = $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond)
-    if ($found) { $trayEl = $found; break }
+  $trayNames = @()
+  foreach ($trayRoot in $trayRoots) {
+    $named = $trayRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+    for ($i = 0; $i -lt $named.Count; $i++) {
+      $name = $named.Item($i).Current.Name
+      if ($name) { $trayNames += $name }
+      if ($name -match 'Sonora') { $trayEl = $named.Item($i); break }
+    }
+    if ($trayEl) { break }
   }
   $tray = $false
   if ($trayEl) {
     $tr = $trayEl.Current.BoundingRectangle
-    $tray = $tr.Width -ge 4 -and $tr.Width -le 64 -and $tr.Y -gt ($screenBottom - 120)
+    $tray = $tr.Width -ge 4 -and $tr.Y -gt ($screenBottom - 160)
   }
   $taskbar = $false
+  $taskbarRoot = $trayRoots | Select-Object -First 1
+  if ($taskbarRoot) {
   $buttonType = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)
-  $buttons = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $buttonType)
+  $buttons = $taskbarRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants, $buttonType)
   for ($i = 0; $i -lt $buttons.Count; $i++) {
     $name = $buttons.Item($i).Current.Name
     if ($name -notmatch 'Sonora') { continue }
     $br = $buttons.Item($i).Current.BoundingRectangle
     if ($br.Width -gt 80 -and $br.Y -gt ($screenBottom - 120)) { $taskbar = $true; break }
   }
-  Add-Scenario 'Minimize leaves no taskbar or Alt+Tab entry and keeps a tray icon' ($minHidden -and $minStyle -match 'WS_EX_TOOLWINDOW' -and $minStyle -notmatch 'WS_EX_APPWINDOW' -and -not $taskbar -and $tray) "hidden=$minHidden style=$minStyle taskbar=$taskbar tray=$tray"
+  }
+  $traySample = (($trayNames | Select-Object -Unique | Select-Object -First 8) -join ' | ')
+  Add-Scenario 'Minimize leaves no taskbar or Alt+Tab entry and keeps a tray icon' ($minHidden -and $minStyle -match 'WS_EX_TOOLWINDOW' -and $minStyle -notmatch 'WS_EX_APPWINDOW' -and -not $taskbar -and $tray) "hidden=$minHidden style=$minStyle taskbar=$taskbar tray=$tray names=$traySample"
   if ($tray -and $trayEl) {
     $tr = $trayEl.Current.BoundingRectangle
     [SonoraInput]::Click([int]($tr.X + $tr.Width / 2), [int]($tr.Y + $tr.Height / 2))

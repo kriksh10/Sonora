@@ -87,6 +87,7 @@ test('minimize and the restore hotkey hide to the tray without a taskbar window'
   assert.match(main, /win\.on\('minimize', \(\) => minimizeToTray\(\)\)/);
   assert.match(main, /tray\.on\('click', toggle\)/);
   assert.match(main, /skipTaskbar: true/);
+  assert.match(main, /type: 'toolbar'/);
   assert.match(main, /page-title-updated/);
 });
 
