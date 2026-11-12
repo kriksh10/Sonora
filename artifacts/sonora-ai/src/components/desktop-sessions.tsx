@@ -73,7 +73,7 @@ export default function DesktopSessions(props: {
       <td>{lengthLabel(session, props.now)}</td>
       <td>{session.startedAt ? credits(session) : "—"}</td>
       <td>{new Date(session.createdAt).toLocaleDateString()}</td>
-      <td><span className={`dp-chip ${session.status === "active" ? "live" : session.status === "ended" ? "ended" : "ready"}`}>{session.status === "active" ? "Live" : session.status === "ended" ? "Ended" : "Ready"}</span></td>
+      <td><span className={`dp-chip ${session.status === "active" ? "live" : session.status === "ended" ? "ended" : "ready"}`} aria-label={session.status === "ended" ? "Session ended" : undefined}>{session.status === "active" ? "Live" : session.status === "ended" ? "Ended" : "Ready"}</span></td>
       <td>
         {session.status === "ended"
           ? <button className="dp-row-btn" onClick={() => { props.onView(session); setPanel("transcript"); }}>View transcript</button>
@@ -103,8 +103,8 @@ export default function DesktopSessions(props: {
             <a href={props.upgradeHref}>Upgrade</a>
           </div>
           <div className="dp-tabs" style={{ margin: 0 }}>
-            <button type="button" className={props.theme === "dark" ? "is-active" : ""} onClick={() => props.onTheme("dark")}>Dark</button>
-            <button type="button" className={props.theme === "light" ? "is-active" : ""} onClick={() => props.onTheme("light")}>Light</button>
+            <button type="button" aria-pressed={props.theme === "dark"} aria-label={props.theme === "dark" ? "Dark selected" : "Dark"} className={props.theme === "dark" ? "is-active" : ""} onClick={() => props.onTheme("dark")}>Dark</button>
+            <button type="button" aria-pressed={props.theme === "light"} aria-label={props.theme === "light" ? "Light selected" : "Light"} className={props.theme === "light" ? "is-active" : ""} onClick={() => props.onTheme("light")}>Light</button>
           </div>
           <div className="dp-user"><span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{props.userEmail || "Signed in"}</span><button type="button" aria-label="Log out" onClick={props.onSignOut}><LogOut size={14} /></button></div>
         </div>}
@@ -155,7 +155,7 @@ export default function DesktopSessions(props: {
                 <tbody>
                   <tr className="dp-group"><td colSpan={7}>Active</td></tr>
                   {active.map(row)}
-                  {active.length === 0 && <tr><td colSpan={7}>No active sessions.</td></tr>}
+                  {active.length === 0 && <tr><td colSpan={7}><p aria-label="No active sessions">No active sessions.</p></td></tr>}
                   <tr className="dp-group"><td colSpan={7}>Past</td></tr>
                   {past.map(row)}
                   {past.length === 0 && <tr><td colSpan={7}>No past sessions.</td></tr>}

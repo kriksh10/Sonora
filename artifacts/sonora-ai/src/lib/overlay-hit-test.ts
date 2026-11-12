@@ -4,6 +4,7 @@ const SURFACE = [
   ".dp-dialog",
   ".dp-backdrop",
   ".dp-menu-pop",
+  ".dp-select",
   ".dp-chat",
   ".sonora-window-bar",
   ".sonora-window-popover",
@@ -16,6 +17,8 @@ const SURFACE = [
   "summary",
   "label",
   "[role='button']",
+  "[role='listbox']",
+  "[role='option']",
 ].join(",");
 
 export function overlayPointerCaptures(target: EventTarget | null): boolean {

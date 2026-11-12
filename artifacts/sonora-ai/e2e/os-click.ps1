@@ -425,6 +425,8 @@ try {
   }
   function Click-Element($el) {
     if (-not $el) { throw 'No UI element to click' }
+    try { $el.GetCurrentPattern([System.Windows.Automation.ScrollItemPattern]::Pattern).ScrollIntoView() } catch {}
+    Start-Sleep -Milliseconds 120
     $r = $el.Current.BoundingRectangle
     if ($r.Width -lt 1 -or $r.Height -lt 1) { throw "Element $($el.Current.Name) has no on-screen box" }
     $before = Click-Count
@@ -556,6 +558,101 @@ try {
   }
   Save-Screen '03-session.png'
 
+  function Wait-Named([string]$Name, [int]$Seconds = 6) {
+    $until = (Get-Date).AddSeconds($Seconds)
+    $found = $null
+    while ((Get-Date) -lt $until -and -not $found) {
+      $found = Find-Element $Name
+      if (-not $found) { Start-Sleep -Milliseconds 250 }
+    }
+    return $found
+  }
+  function Find-Exact([string]$Name) {
+    foreach ($el in @(Find-All $Name)) { if ($el.Current.Name -eq $Name) { return $el } }
+    return $null
+  }
+  # The click recorder is a 1x1 paragraph. After End its text is exactly
+  # "End session" even though the live bar has unmounted. Only an on-screen button counts.
+  function Test-OnScreenButton($el) {
+    if (-not $el) { return $false }
+    try { if ($el.Current.ControlType.ProgrammaticName -notmatch 'Button') { return $false } } catch { return $false }
+    try { if ($el.Current.IsOffscreen) { return $false } } catch { return $false }
+    $r = $el.Current.BoundingRectangle
+    return ($r.Width -ge 8 -and $r.Height -ge 8)
+  }
+  function Find-VisibleButton([string]$Name) {
+    foreach ($el in @(Find-All $Name)) {
+      if ($el.Current.Name -eq $Name -and (Test-OnScreenButton $el)) { return $el }
+    }
+    return $null
+  }
+  function Describe-Exact([string]$Name) {
+    $notes = @()
+    foreach ($el in @(Find-All $Name)) {
+      if ($el.Current.Name -ne $Name) { continue }
+      $kind = ''
+      try { $kind = $el.Current.ControlType.ProgrammaticName } catch { $kind = 'unknown' }
+      $r = $el.Current.BoundingRectangle
+      $notes += "$kind $([int]$r.Width)x$([int]$r.Height)"
+    }
+    return ($notes -join '; ')
+  }
+  function Click-Exact([string]$Name) {
+    $el = Find-Exact $Name
+    if (-not $el) { throw "No exact UI element named $Name" }
+    Click-Element $el
+    return $el
+  }
+  function Get-Toggle($el) {
+    if (-not $el) { return $null }
+    try { return [string]$el.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Current.ToggleState }
+    catch { return $null }
+  }
+  function Get-Range($el) {
+    if (-not $el) { return $null }
+    try { return [double]$el.GetCurrentPattern([System.Windows.Automation.RangeValuePattern]::Pattern).Current.Value }
+    catch { return $null }
+  }
+  function Find-Slider([string]$Name) {
+    foreach ($el in @(Find-All $Name)) {
+      if ($el.Current.ControlType.ProgrammaticName -match 'Slider') { return $el }
+    }
+    return $null
+  }
+  Click-Exact 'Collapse sidebar' | Out-Null
+  $sidebarBack = Wait-Named 'Expand sidebar' 3
+  Add-Scenario 'Control: Collapse sidebar hides the labels' ([bool]$sidebarBack) ''
+  if ($sidebarBack) { Click-Exact 'Expand sidebar' | Out-Null; Start-Sleep -Milliseconds 200 }
+  $search = Find-Exact 'Search sessions'
+  if (-not $search) { Add-Scenario 'Control: Search filters the session list' $false 'search missing' }
+  else {
+    try { $search.SetFocus() } catch {}
+    Click-Element $search
+    [System.Windows.Forms.SendKeys]::SendWait('zzzz')
+    Start-Sleep -Milliseconds 400
+    $filteredOut = -not (Find-Element 'Northwind interview')
+    Click-Element (Find-Exact 'Search sessions')
+    [System.Windows.Forms.SendKeys]::SendWait('^a{BACKSPACE}')
+    Start-Sleep -Milliseconds 300
+    $restored = [bool](Find-Element 'Northwind interview')
+    Add-Scenario 'Control: Search filters the session list' ($filteredOut -and $restored) "filtered=$filteredOut restored=$restored"
+  }
+  Click-Exact 'Resumes' | Out-Null
+  Add-Scenario 'Control: Resumes opens the saved-resume panel' ([bool](Wait-Named 'Nothing saved yet' 3)) ''
+  Click-Exact 'Documents' | Out-Null
+  Add-Scenario 'Control: Documents opens the saved-document panel' ([bool](Wait-Named 'Nothing saved yet' 3)) ''
+  Click-Exact 'Call Sessions' | Out-Null
+  Add-Scenario 'Control: Call Sessions returns to the session table' ([bool](Wait-Named 'Northwind interview' 3)) ''
+  function Select-Theme([string]$Name) {
+    $plain = Find-Exact $Name
+    if ($plain) { Click-Element $plain; return }
+    if (-not (Find-Exact "$Name selected")) { throw "No theme button named $Name" }
+  }
+  Select-Theme 'Light'
+  Add-Scenario 'Control: Light theme toggle' ([bool](Wait-Named 'Light selected' 3)) ''
+  Select-Theme 'Dark'
+  Add-Scenario 'Control: Dark theme toggle' ([bool](Wait-Named 'Dark selected' 3)) ''
+
   function Set-Slider([double]$Ratio) {
     [SonoraInput]::RaiseWithoutFocus($hwnd) | Out-Null
     $el = Find-Element 'Overlay opacity'
@@ -623,28 +720,208 @@ try {
     }
   }
   Save-Screen '04-slider-matrix.png'
+  $opacityBefore = Get-Range (Find-Slider 'Overlay opacity')
+  Set-Slider 0.2
+  Start-Sleep -Milliseconds 300
+  $opacityAfter = Get-Range (Find-Slider 'Overlay opacity')
+  Add-Scenario 'Control: Opacity slider changes overlay opacity' ($null -ne $opacityBefore -and $null -ne $opacityAfter -and [math]::Abs($opacityAfter - $opacityBefore) -gt 0.5) "before=$opacityBefore after=$opacityAfter"
+  $pinBefore = Get-Toggle (Find-Element 'Keep on top')
+  Click-Exact 'Keep on top' | Out-Null
+  Start-Sleep -Milliseconds 250
+  $pinAfter = Get-Toggle (Find-Element 'Keep on top')
+  Add-Scenario 'Control: Pin toggles keep on top' ($pinBefore -and $pinAfter -and $pinBefore -ne $pinAfter) "before=$pinBefore after=$pinAfter"
+  if ($pinAfter -ne $pinBefore) { Click-Exact 'Keep on top' | Out-Null }
+  $shieldBefore = Get-Toggle (Find-Element 'Hide from screen sharing (best effort)')
+  Click-Exact 'Hide from screen sharing (best effort)' | Out-Null
+  Start-Sleep -Milliseconds 250
+  $shieldAfter = Get-Toggle (Find-Element 'Hide from screen sharing (best effort)')
+  Add-Scenario 'Control: Shield toggles screen-share exclusion' ($shieldBefore -and $shieldAfter -and $shieldBefore -ne $shieldAfter) "before=$shieldBefore after=$shieldAfter"
+  Click-Exact 'Window settings' | Out-Null
+  Start-Sleep -Milliseconds 300
+  Add-Scenario 'Control: Settings opens window options' ([bool](Find-Element 'Click through the overlay')) ''
+  Click-Exact 'Window settings' | Out-Null
 
+  [SonoraInput]::SetForegroundWindow($hwnd) | Out-Null
+  Start-Sleep -Milliseconds 300
   $row = Find-Element 'Northwind interview'
   if ($row) {
-    $start = Find-Element 'Start'
+    $start = Find-Exact 'Start'
     if ($start) { Click-Element $start } else { Click-Element $row }
     Start-Sleep -Milliseconds 500
   }
-  Click-Name 'Listen' | Out-Null
-  Start-Sleep -Milliseconds 600
-  Click-Name 'Answer' | Out-Null
-  $heard = $null
-  $waitUntil = (Get-Date).AddSeconds(8)
-  while ((Get-Date) -lt $waitUntil -and -not $heard) {
-    $heard = Find-Element 'Heard: How does caching work?'
-    if (-not $heard) { Start-Sleep -Milliseconds 400 }
+  Click-Exact 'Listen' | Out-Null
+  $listening = Wait-Named 'Listening. Speechmatics is connected.' 8
+  $enhanced = $false
+  if ($env:SONORA_MOCK_LOG -and (Test-Path $env:SONORA_MOCK_LOG)) {
+    $enhanced = [bool](Select-String -Path $env:SONORA_MOCK_LOG -Pattern 'operating_point enhanced' -Quiet)
   }
-  Add-Scenario 'Live session mocked transcript produces an answer' ([bool]$heard) $(if ($heard) { '' } else { 'answer text missing' })
-  foreach ($name in @('Screenshot', 'Chat', 'Previous answer', 'Next answer', 'Clear', 'End')) {
-    if (Find-Element $name) { Click-Name $name | Out-Null; Add-Scenario "OS click $name" $true '' }
-    else { Add-Scenario "OS click $name" $false 'missing' }
+  Add-Scenario 'Control: Listen starts transcription' ([bool]($listening -and $enhanced)) "enhanced=$enhanced"
+  Click-Exact 'Pause' | Out-Null
+  $pausedNote = Wait-Named 'Listening paused' 4
+  $sessionStillOpen = [bool](Find-VisibleButton 'End session')
+  $stopPosted = $false
+  $stopUntil = (Get-Date).AddSeconds(4)
+  while ((Get-Date) -lt $stopUntil -and -not $stopPosted) {
+    if ($env:SONORA_MOCK_LOG -and (Test-Path $env:SONORA_MOCK_LOG)) {
+      $stopPosted = [bool](Select-String -Path $env:SONORA_MOCK_LOG -Pattern 'POST /api/sessions/.+/live-audio' -Quiet)
+    }
+    if (-not $stopPosted) { Start-Sleep -Milliseconds 200 }
   }
+  Add-Scenario 'Control: Pause closes listening without ending the session' ([bool]($pausedNote -and (Find-Exact 'Resume') -and (Find-Exact 'Listen') -and $sessionStillOpen -and $stopPosted)) "stopPosted=$stopPosted"
+  Save-Screen '05a-paused.png'
+  Click-Exact 'Resume' | Out-Null
+  $resumed = Wait-Named 'Stop listening' 8
+  Add-Scenario 'Control: Resume starts listening again' ([bool]($resumed -and (Find-Exact 'Pause'))) ''
+  Click-Exact 'Stop listening' | Out-Null
+  Add-Scenario 'Control: Stop listening turns transcription off' ([bool](Wait-Named 'Audio transcription stopped' 4)) ''
+  Click-Exact 'Listen' | Out-Null
+  Wait-Named 'How does caching work?' 8 | Out-Null
+  Click-Exact 'Answer' | Out-Null
+  $heard = Wait-Named 'Heard: How does caching work?' 8
+  Add-Scenario 'Control: Answer uses the heard question' ([bool]$heard) $(if ($heard) { '' } else { 'answer text missing' })
+  Click-Exact 'Chat' | Out-Null
+  Start-Sleep -Milliseconds 300
+  $chat = $null
+  foreach ($el in @(Find-All 'Question')) { if ($el.Current.ControlType.ProgrammaticName -match 'Edit') { $chat = $el; break } }
+  Add-Scenario 'Control: Chat opens the question box' ([bool]$chat) ''
+  if ($chat) {
+    Click-Element $chat
+    [System.Windows.Forms.SendKeys]::SendWait('What is an index?')
+    Start-Sleep -Milliseconds 250
+    Click-Exact 'Answer' | Out-Null
+    Add-Scenario 'Control: Chat question is answered' ([bool](Wait-Named 'Heard: What is an index?' 8)) ''
+    Click-Exact 'Previous answer' | Out-Null
+    Add-Scenario 'Control: Previous answer shows the earlier answer' ([bool](Wait-Named 'Heard: How does caching work?' 4)) ''
+    Click-Exact 'Next answer' | Out-Null
+    Add-Scenario 'Control: Next answer shows the later answer' ([bool](Wait-Named 'Heard: What is an index?' 4)) ''
+  } else {
+    Add-Scenario 'Control: Chat question is answered' $false 'chat box missing'
+    Add-Scenario 'Control: Previous answer shows the earlier answer' $false 'chat box missing'
+    Add-Scenario 'Control: Next answer shows the later answer' $false 'chat box missing'
+  }
+  Click-Exact 'Screenshot' | Out-Null
+  $shot = Wait-Named 'Screenshot attached' 6
+  if (-not $shot) { $shot = Find-Element 'Screenshot was not captured' }
+  Add-Scenario 'Control: Screenshot reports the capture result' ([bool]$shot) ''
+  Click-Exact 'Copy question' | Out-Null
+  $copied = Wait-Named 'Copied question:' 3
+  Add-Scenario 'Control: Copy question copies the question text' ([bool]$copied) $(if ($copied) { $copied.Current.Name } else { 'copied text missing' })
+  Click-Exact 'Expand transcript' | Out-Null
+  $tx = Wait-Named 'Collapse transcript' 3
+  Add-Scenario 'Control: Expand transcript opens the transcript' ([bool]$tx) ''
+  if ($tx) { Click-Exact 'Collapse transcript' | Out-Null }
+  Click-Exact 'Helpful' | Out-Null
+  Add-Scenario 'Control: Helpful marks the answer' ([bool](Wait-Named 'Helpful selected' 3)) ''
+  Click-Exact 'Not helpful' | Out-Null
+  Add-Scenario 'Control: Not helpful marks the answer' ([bool](Wait-Named 'Not helpful selected' 3)) ''
+  Click-Exact 'Clear transcript' | Out-Null
+  Add-Scenario 'Control: Clear transcript clears the visible lines' ([bool](Wait-Named 'Visible transcript cleared' 3)) ''
+  Click-Exact 'Clear answer' | Out-Null
+  Add-Scenario 'Control: Clear answer removes the visible answer' ([bool](Wait-Named 'No answer yet' 3)) ''
+  Click-Exact 'Hide answer' | Out-Null
+  $showAgain = Wait-Named 'Show answer' 3
+  Add-Scenario 'Control: Hide answer collapses the answer card' ([bool]$showAgain) ''
+  if ($showAgain) { Click-Exact 'Show answer' | Out-Null }
+  Click-Exact 'Collapse overlay' | Out-Null
+  $expandOverlay = Wait-Named 'Expand overlay' 3
+  Add-Scenario 'Control: Collapse overlay hides the session body' ([bool]$expandOverlay) ''
+  if ($expandOverlay) { Click-Exact 'Expand overlay' | Out-Null }
+  Click-Exact 'Overlay menu' | Out-Null
+  Start-Sleep -Milliseconds 400
+  Click-Name 'Audio source' | Out-Null
+  Start-Sleep -Milliseconds 500
+  Save-Screen '05a-audio-menu.png'
+  $native = @()
+  foreach ($el in @(Find-All 'Audio source')) {
+    if ($el.Current.ControlType.ProgrammaticName -match 'ComboBox') { $native += $el.Current.Name }
+  }
+  Add-Scenario 'Control: Audio picker is not a native Windows select' ($native.Count -eq 0) $(if ($native) { $native -join ', ' } else { 'custom list' })
+  $missing = @()
+  $bottoms = @()
+  foreach ($name in @('Microphone', 'Call audio', 'Both')) {
+    $el = Find-Exact $name
+    if (-not $el) { $missing += $name; continue }
+    $box = $el.Current.BoundingRectangle
+    if ($box.Width -lt 8 -or $box.Height -lt 8) { $missing += "$name has no box"; continue }
+    $bottoms += ($box.Y + $box.Height)
+  }
+  $help = Find-Element 'Microphone answers also reply'
+  $helpDetail = 'help text missing'
+  $helpOk = $false
+  if ($help -and $bottoms.Count -eq 3) {
+    $hr = $help.Current.BoundingRectangle
+    $listBottom = ($bottoms | Measure-Object -Maximum).Maximum
+    $helpOk = $hr.Height -gt 4 -and $hr.Y -ge ($listBottom - 2)
+    $helpDetail = "helpY=$([int]$hr.Y) listBottom=$([int]$listBottom)"
+  }
+  Add-Scenario 'Control: Audio menu shows Microphone, Call audio, and Both without covering the help text' (($missing.Count -eq 0) -and $helpOk) $(if ($missing) { $missing -join ', ' } else { $helpDetail })
+  [SonoraInput]::SetForegroundWindow($hwnd) | Out-Null
+  Start-Sleep -Milliseconds 200
+  [System.Windows.Forms.SendKeys]::SendWait('{DOWN}')
+  Start-Sleep -Milliseconds 400
+  [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+  Start-Sleep -Milliseconds 500
+  $picked = Find-Element 'Audio source, Both'
+  Add-Scenario 'Control: Audio menu keyboard selects Both' ([bool]$picked) $(if ($picked) { $picked.Current.Name } else { 'trigger did not announce Both' })
+  $micAnswers = Wait-Named 'Microphone answers off' 3
+  if ($micAnswers) { Click-Element $micAnswers }
+  Add-Scenario 'Control: Microphone answers toggles' ([bool](Wait-Named 'Microphone answers on' 3)) ''
+  Click-Exact 'Auto Answer on' | Out-Null
+  Add-Scenario 'Control: Auto Answer toggles off' ([bool](Wait-Named 'Auto Answer off' 3)) ''
+  Click-Exact 'Answer settings' | Out-Null
+  $language = Wait-Named 'Call language, English' 4
+  Add-Scenario 'Control: Answer settings opens the language picker' ([bool]$language) ''
+  if ($language) {
+    Click-Name 'Call language' | Out-Null
+    Start-Sleep -Milliseconds 400
+    Save-Screen '05a-language-menu.png'
+    $missingLang = @()
+    foreach ($lang in @('English', 'Spanish', 'French')) { if (-not (Find-Exact $lang)) { $missingLang += $lang } }
+    Add-Scenario 'Control: Call language lists English, Spanish, and French' ($missingLang.Count -eq 0) ($missingLang -join ', ')
+    $spanish = Find-Exact 'Spanish'
+    if ($spanish) { Click-Element $spanish; Start-Sleep -Milliseconds 300 }
+    Add-Scenario 'Control: Call language selects Spanish' ([bool](Find-Element 'Call language, Spanish')) ''
+    if (Find-Exact 'Close') { Click-Exact 'Close' | Out-Null }
+  } else {
+    Add-Scenario 'Control: Call language lists English, Spanish, and French' $false 'picker missing'
+    Add-Scenario 'Control: Call language selects Spanish' $false 'picker missing'
+  }
+  if (-not (Find-Exact 'Readiness')) { Click-Exact 'Overlay menu' | Out-Null; Start-Sleep -Milliseconds 300 }
+  Click-Exact 'Readiness' | Out-Null
+  Add-Scenario 'Control: Readiness opens the pre-interview check' ([bool](Wait-Named 'Pre-interview check' 4)) ''
+  if (Find-Exact 'Close check') { Click-Exact 'Close check' | Out-Null; Start-Sleep -Milliseconds 200 }
+  if (-not (Find-Exact 'Clear answers')) { Click-Exact 'Overlay menu' | Out-Null; Start-Sleep -Milliseconds 300 }
+  Click-Exact 'Clear answers' | Out-Null
+  Add-Scenario 'Control: Clear answers removes the visible answers' ([bool](Wait-Named 'Visible answers cleared' 3)) ''
+  if (-not (Find-Exact 'Back to sessions')) { Click-Exact 'Overlay menu' | Out-Null; Start-Sleep -Milliseconds 300 }
+  Click-Exact 'Back to sessions' | Out-Null
+  $returned = Wait-Named 'Call Sessions' 4
+  Add-Scenario 'Control: Back to sessions leaves without ending' ([bool]($returned -and (Find-Element 'Start') -and -not (Find-VisibleButton 'End session'))) ''
+  $startAgain = Find-Exact 'Start'
+  if ($startAgain) { Click-Element $startAgain; Start-Sleep -Milliseconds 500 }
+  Click-Exact 'End session' | Out-Null
+  $endPosted = $false
+  $leftSession = $false
+  $endUntil = (Get-Date).AddSeconds(8)
+  while ((Get-Date) -lt $endUntil -and -not ($endPosted -and $leftSession)) {
+    if (-not $endPosted -and $env:SONORA_MOCK_LOG -and (Test-Path $env:SONORA_MOCK_LOG)) {
+      $endPosted = [bool](Select-String -Path $env:SONORA_MOCK_LOG -Pattern 'PATCH /api/sessions/.+' -Quiet)
+    }
+    $noActive = [bool](Find-Element 'No active sessions')
+    $stillLive = [bool](Find-VisibleButton 'End session')
+    $leftSession = $noActive -and -not $stillLive
+    if (-not ($endPosted -and $leftSession)) { Start-Sleep -Milliseconds 250 }
+  }
+  Add-Scenario 'Control: End stops the session and returns to the list' ([bool]($endPosted -and $leftSession)) "saved=$endPosted noActive=$noActive stillLive=$stillLive nodes=$(Describe-Exact 'End session')"
+  Save-Screen '05a-ended.png'
   Save-Screen '05-live.png'
+  $logout = Wait-Named 'Log out' 6
+  if ($logout) {
+    Click-Element $logout
+    Add-Scenario 'Control: Log out returns to the sign-in screen' ([bool](Wait-Named 'You are signed out' 6)) ''
+  } else {
+    Add-Scenario 'Control: Log out returns to the sign-in screen' $false 'Log out missing on the session list'
+  }
 
   Click-Name 'Hide Sonora' | Out-Null
   Start-Sleep -Milliseconds 700

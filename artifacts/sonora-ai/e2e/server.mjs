@@ -1,6 +1,9 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
 
 const dist = path.resolve(process.argv[2] || 'dist');
 const port = Number(process.env.E2E_PORT || 4173);
@@ -32,6 +35,12 @@ function note(line) {
   if (process.env.SONORA_MOCK_LOG) {
     try { fs.appendFileSync(process.env.SONORA_MOCK_LOG, line + '\n'); } catch { /* diagnostic only */ }
   }
+}
+
+function serverOperatingPoint() {
+  const source = fs.readFileSync(path.resolve(here, '../../api-server/src/lib/speechmatics.ts'), 'utf8');
+  const match = source.match(/operating_point:\s*"([^"]+)"/);
+  return match ? match[1] : 'missing';
 }
 
 const server = http.createServer(async (req, res) => {
@@ -78,9 +87,27 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       return send(res, 200, { answer: `Heard: ${body.question}`, model: 'e2e' });
     }
+    const ended = url.pathname.match(/^\/api\/sessions\/([^/]+)$/);
+    if (ended && req.method === 'PATCH') {
+      if (!authed) return send(res, 401, { error: 'Sign in first.' });
+      const body = await readBody(req);
+      const session = sessions.find(item => item.id === ended[1]);
+      if (!session) return send(res, 404, { error: 'Session not found.' });
+      if (body.status === 'ended' || body.status === 'active' || body.status === 'ready') session.status = body.status;
+      if (body.status === 'ended') session.endedAt = new Date().toISOString();
+      return send(res, 200, session);
+    }
     const live = url.pathname.match(/^\/api\/sessions\/([^/]+)\/live-audio$/);
+    if (live && req.method === 'POST') {
+      const body = await readBody(req);
+      if (body.stop === true) return send(res, 200, { stopped: true });
+      if (mode === 'speechmatics') return send(res, 503, { error: 'Speechmatics unavailable' });
+      note(`operating_point ${serverOperatingPoint()} source ${body.source || 'unspecified'}`);
+      return send(res, 200, { ok: true, transcript: 'How does caching work?' });
+    }
     if (live) {
       if (mode === 'speechmatics') return send(res, 503, { error: 'Speechmatics unavailable' });
+      note(`operating_point ${serverOperatingPoint()} source listen`);
       return send(res, 200, { ok: true, transcript: 'How does caching work?' });
     }
     if (url.pathname === '/api/billing/balance') return send(res, 200, { balance: 12, freeRemaining: 10, unlimitedUntil: null, bypass: false, checkout: false });

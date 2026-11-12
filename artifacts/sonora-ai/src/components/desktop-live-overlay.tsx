@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ChevronLeft, ChevronRight, Copy, Expand, MoreVertical, ThumbsDown, ThumbsUp, X } from "lucide-react";
 import type { CallSession, TranscriptEntry } from "@workspace/api-client-react";
 import SafeMarkdown from "@/components/safe-markdown";
+import DesktopSelect from "@/components/desktop-select";
 import { liveAnswerQuestion } from "@/lib/overlay-hit-test";
 
 type AudioSource = "microphone" | "system" | "both";
@@ -20,6 +21,8 @@ export default function DesktopLiveOverlay(props: {
   interim: string;
   entries: TranscriptEntry[];
   listening: boolean;
+  paused?: boolean;
+  onPauseToggle?: () => void;
   level: number;
   duration: string;
   notice: string;
@@ -42,8 +45,11 @@ export default function DesktopLiveOverlay(props: {
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [answerOpen, setAnswerOpen] = useState(true);
   const [vote, setVote] = useState<"up" | "down" | null>(null);
+  const [copied, setCopied] = useState("");
   const spoken = [...props.entries].reverse().find(entry => entry.role !== "assistant")?.text || "";
-  const liveWords = props.interim || spoken || (props.listening ? "Listening…" : "Listening is off. Click Listen, or type a question in Chat.");
+  const liveWords = props.paused
+    ? "Paused. Transcription is off until you resume."
+    : props.interim || spoken || (props.listening ? "Listening…" : "Listening is off. Click Listen, or type a question in Chat.");
   const askText = liveAnswerQuestion({ typed: props.question, latest: props.latestQuestion, interim: props.interim, spoken });
   const history = props.assistantAnswers.filter(text => text.trim());
   const at = history.lastIndexOf(props.answer);
@@ -61,10 +67,14 @@ export default function DesktopLiveOverlay(props: {
       <header className="dp-glass dp-bar">
         <span className="dp-dots" aria-hidden="true"><i className={props.listening ? "on" : ""} /><i className={props.error ? "warn" : props.listening ? "on" : ""} /></span>
         <div className="dp-actions">
-          <button type="button" className="dp-pill" onClick={() => ask(askText)}>Answer <kbd>Ctrl+Enter</kbd></button>
-          <button type="button" className="dp-pill" disabled={!props.onScreenshot} onClick={props.onScreenshot}>Screenshot <kbd>Ctrl+Shift+Enter</kbd></button>
+          <button type="button" className="dp-pill" aria-label="Answer" onClick={() => ask(askText)}>Answer <kbd>Ctrl+Enter</kbd></button>
+          <button type="button" className="dp-pill" aria-label="Screenshot" disabled={!props.onScreenshot} onClick={props.onScreenshot}>Screenshot <kbd>Ctrl+Shift+Enter</kbd></button>
           <button type="button" className={`dp-pill ${chat ? "is-active" : ""}`} onClick={() => setChat(value => !value)}>Chat</button>
           <button type="button" className="dp-pill" onClick={props.onToggleAudio}>{props.listening ? "Stop listening" : "Listen"}</button>
+          {props.onPauseToggle && (
+            <button type="button" className={`dp-pill ${props.paused ? "is-paused" : ""}`} aria-pressed={!!props.paused}
+              disabled={!props.listening && !props.paused} onClick={props.onPauseToggle}>{props.paused ? "Resume" : "Pause"}</button>
+          )}
         </div>
         <div className="dp-drag desktop-drag" title="Drag Sonora" />
         <button type="button" className="dp-icon-btn" aria-label={collapsed ? "Expand overlay" : "Collapse overlay"} onClick={() => setCollapsed(value => !value)}><ChevronLeft size={16} /></button>
@@ -72,13 +82,17 @@ export default function DesktopLiveOverlay(props: {
           <summary className="dp-icon-btn" aria-label="Overlay menu"><MoreVertical size={16} /></summary>
           <div className="dp-glass dp-menu-pop">
             <p style={{ margin: 0 }}>Opacity is the slim slider on the Sonora bar. {Math.round(Number(getComputedStyle(document.documentElement).getPropertyValue("--sonora-background-opacity")) * 100) || 40}% now.</p>
-            <label>Audio
-              <select aria-label="Audio source" value={props.audioSource} onChange={event => props.onAudioSourceChange(event.target.value as AudioSource)}>
-                <option value="microphone">Microphone</option>
-                <option value="system">Call audio</option>
-                <option value="both">Both</option>
-              </select>
-            </label>
+            <DesktopSelect
+              legend="Audio"
+              label="Audio source"
+              value={props.audioSource}
+              options={[
+                { value: "microphone", label: "Microphone" },
+                { value: "system", label: "Call audio" },
+                { value: "both", label: "Both" },
+              ]}
+              onChange={value => props.onAudioSourceChange(value as AudioSource)}
+            />
             {props.onAutoAnswerChange && <button type="button" className="dp-pill" onClick={() => props.onAutoAnswerChange?.(!props.autoAnswer)}>Auto Answer {props.autoAnswer ? "on" : "off"}</button>}
             {props.onMicrophoneAutoChange && (props.audioSource === "both" || props.audioSource === "microphone") && (
               <button type="button" className="dp-pill" aria-pressed={!!props.microphoneAuto} onClick={() => props.onMicrophoneAutoChange?.(!props.microphoneAuto)}>
@@ -92,7 +106,7 @@ export default function DesktopLiveOverlay(props: {
             <button type="button" className="dp-pill" onClick={props.onBack}>Back to sessions</button>
           </div>
         </details>
-        <button type="button" className="dp-end" onClick={props.onEnd}>End</button>
+        <button type="button" className="dp-end" aria-label="End session" onClick={props.onEnd}>End</button>
       </header>
       {chat && (
         <form className="dp-glass dp-chat" onSubmit={event => { event.preventDefault(); ask(props.question); }}>
@@ -108,7 +122,7 @@ export default function DesktopLiveOverlay(props: {
               <button type="button" className="dp-line" key={index} onClick={() => ask(entry.text)}>{entry.text}</button>
             ))}</div>
           ) : <button type="button" className="dp-words" onClick={() => ask(spoken || props.interim)}>{liveWords}</button>}
-          <button type="button" className="dp-pill" onClick={props.onClearTranscript}>Clear</button>
+          <button type="button" className="dp-pill" aria-label="Clear transcript" onClick={props.onClearTranscript}>Clear</button>
           <button type="button" className="dp-icon-btn" aria-label={transcriptOpen ? "Collapse transcript" : "Expand transcript"} onClick={() => setTranscriptOpen(value => !value)}><Expand size={14} /></button>
         </section>
       )}
@@ -118,10 +132,11 @@ export default function DesktopLiveOverlay(props: {
             <button type="button" className="dp-icon-btn" aria-label="Previous answer" disabled={!previous} onClick={() => previous && props.onShowAnswer(previous)}><ChevronLeft size={16} /></button>
             <button type="button" className="dp-icon-btn" aria-label="Next answer" disabled={!next} onClick={() => next && props.onShowAnswer(next)}><ChevronRight size={16} /></button>
             <span className="spacer" />
-            <button type="button" className="dp-pill" onClick={props.onClearAnswers}>Clear</button>
+            <button type="button" className="dp-pill" aria-label="Clear answer" onClick={props.onClearAnswers}>Clear</button>
             <button type="button" className="dp-icon-btn" aria-label="Hide answer" onClick={() => setAnswerOpen(false)}><X size={14} /></button>
           </div>
-          <div className="dp-q"><b>Question:</b> {props.latestQuestion || props.question || "Waiting for a question"} <button type="button" aria-label="Copy question" onClick={() => void navigator.clipboard?.writeText(props.latestQuestion || props.question || "")}><Copy size={13} /></button></div>
+          <div className="dp-q"><b>Question:</b> {props.latestQuestion || props.question || "Waiting for a question"} <button type="button" aria-label="Copy question" onClick={() => { const text = props.latestQuestion || props.question || ""; setCopied(text); void navigator.clipboard?.writeText(text).catch(() => {}); }}><Copy size={13} /></button></div>
+          {copied && <p role="status">Copied question: {copied}</p>}
           <div className="dp-answer-scroll" aria-label={props.answer || "Answer pending"}>
             <h3>Answer: {headline}</h3>
             {props.answer ? <SafeMarkdown text={props.answer} /> : <p>Ask, or let Auto Answer respond when the interviewer finishes.</p>}
@@ -131,8 +146,8 @@ export default function DesktopLiveOverlay(props: {
           <footer className="dp-foot">
             <span>Answer · {props.duration}</span>
             <span className="spacer" />
-            <button type="button" className={vote === "up" ? "is-on" : ""} aria-label="Helpful" aria-pressed={vote === "up"} onClick={() => setVote(vote === "up" ? null : "up")}><ThumbsUp size={14} /></button>
-            <button type="button" className={vote === "down" ? "is-on" : ""} aria-label="Not helpful" aria-pressed={vote === "down"} onClick={() => setVote(vote === "down" ? null : "down")}><ThumbsDown size={14} /></button>
+            <button type="button" className={vote === "up" ? "is-on" : ""} aria-label={vote === "up" ? "Helpful selected" : "Helpful"} aria-pressed={vote === "up"} onClick={() => setVote(vote === "up" ? null : "up")}><ThumbsUp size={14} /></button>
+            <button type="button" className={vote === "down" ? "is-on" : ""} aria-label={vote === "down" ? "Not helpful selected" : "Not helpful"} aria-pressed={vote === "down"} onClick={() => setVote(vote === "down" ? null : "down")}><ThumbsDown size={14} /></button>
           </footer>
         </article>
       )}

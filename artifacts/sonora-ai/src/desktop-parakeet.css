@@ -118,14 +118,39 @@ html.sonora-desktop .sonora-workspace.dp-app {
   border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; padding: 0;
 }
 .dp-line { display: block; width: 100%; padding: 4px 0; }
-.dp-end { border: 0; border-radius: 999px; background: #e11d2e; color: #fff; font-weight: 700; padding: 7px 14px; cursor: pointer; }
+.dp-end { flex: none; position: relative; z-index: 2; border: 0; border-radius: 999px; background: #e11d2e; color: #fff; font-weight: 700; padding: 7px 14px; cursor: pointer; -webkit-app-region: no-drag; app-region: no-drag; }
+.dp-pill.is-paused { border-color: #f5c451; color: #ffe7a3; background: rgba(245, 196, 81, .16); }
 .dp-menu { position: relative; }
 .dp-menu summary { list-style: none; }
 .dp-menu summary::-webkit-details-marker { display: none; }
 .dp-menu-pop {
-  position: absolute; right: 0; top: calc(100% + 6px); z-index: 5; width: min(320px, 80vw);
-  padding: 12px; display: grid; gap: 8px;
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 6; width: min(320px, 80vw);
+  padding: 12px; display: grid; gap: 8px; overflow: visible;
 }
+.dp-select { display: grid; gap: 6px; min-width: 0; }
+.dp-select-legend { font-size: 12px; color: rgba(255,255,255,.78); }
+.dp-select-trigger, .dp-select-option { -webkit-app-region: no-drag; app-region: no-drag; }
+.dp-select-trigger {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;
+  border: 1px solid rgba(255,255,255,.16); border-radius: 10px; background: #2a2a2c; color: #f7f7f8;
+  padding: 8px 10px; font: inherit; text-align: left; cursor: pointer;
+}
+.dp-select-trigger:disabled { opacity: .45; cursor: default; }
+.dp-select-trigger svg { flex: none; opacity: .8; }
+.dp-select-trigger[aria-expanded="true"] svg { transform: rotate(180deg); }
+.dp-select-trigger:focus-visible, .dp-select-option:focus-visible { outline: 2px solid #75c853; outline-offset: 2px; }
+.dp-select-list {
+  position: static; display: grid; gap: 2px; margin: 0; padding: 4px;
+  border: 1px solid rgba(255,255,255,.14); border-radius: 10px; background: #1b1b1d; color: #f7f7f8;
+}
+.dp-select-list.is-scroll { max-height: 180px; overflow: auto; }
+.dp-select-option {
+  display: block; width: 100%; border: 0; border-radius: 8px; background: transparent; color: #f7f7f8;
+  padding: 7px 8px; font: inherit; text-align: left; cursor: pointer;
+}
+.dp-select-option:hover, .dp-select-option.is-active { background: #34343a; color: #fff; }
+.dp-select-option[aria-selected="true"] { background: #1f5a32; color: #fff; }
+.dp-select-option.is-active[aria-selected="true"] { background: #257c3c; color: #fff; }
 .dp-menu-pop label, .dp-menu-pop select, .dp-chat textarea {
   font: inherit; color: #fff;
 }

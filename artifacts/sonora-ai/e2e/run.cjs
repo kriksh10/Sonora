@@ -22,9 +22,17 @@ function exePath() {
   return path.join(unpacked, hit);
 }
 
-const answerButton = page => page.getByRole('button', { name: 'Answer Ctrl+Enter' });
+const answerButton = page => page.getByRole('button', { name: 'Answer', exact: true });
+
+async function createReady(page, company) {
+  await click(page, page.getByRole('button', { name: 'Create session' }).first());
+  await page.getByLabel('Company').fill(company);
+  await click(page, page.getByRole('button', { name: 'Create session' }).last());
+  await page.getByRole('button', { name: 'Start', exact: true }).waitFor();
+}
 
 async function click(page, locator) {
+  await locator.scrollIntoViewIfNeeded();
   const box = await locator.boundingBox();
   if (!box) throw new Error(`No clickable box for ${locator}`);
   const x = box.x + box.width / 2;
@@ -235,21 +243,23 @@ function requireApp(name) {
       await page.getByText('Heard: Typed from chat', { exact: true }).waitFor();
       await click(page, page.getByRole('button', { name: 'Next answer' }));
       await page.getByText('Heard: Explain indexes', { exact: true }).waitFor();
-      await click(page, page.getByRole('button', { name: 'Clear', exact: true }).first());
+      await click(page, page.getByRole('button', { name: 'Clear transcript' }));
       await click(page, page.getByRole('button', { name: 'Screenshot' }));
       await page.getByText('Screenshot attached.').waitFor();
       await click(page, page.getByRole('button', { name: 'Chat' }));
       await click(page, page.locator('summary[aria-label="Overlay menu"]'));
       await click(page, page.getByRole('button', { name: 'Answer settings' }));
-      await page.getByRole('status').filter({ hasText: 'Answer settings' }).waitFor();
+      await page.getByRole('dialog', { name: 'Answer settings' }).waitFor();
+      await click(page, page.getByRole('button', { name: 'Close', exact: true }));
       await shot('04-live.png');
-      await click(page, page.getByRole('button', { name: 'End' }));
+      await click(page, page.getByRole('button', { name: 'End session' }));
       await page.getByRole('heading', { name: 'Call Sessions' }).waitFor();
     });
 
     await scenario('answer errors stay visible and the app stays usable', async () => {
       requireApp('answer errors stay visible and the app stays usable');
-      await click(page, page.getByRole('button', { name: 'Start' }));
+      await createReady(page, 'Contoso');
+      await click(page, page.getByRole('button', { name: 'Start', exact: true }));
       for (const [mode, text] of [['401', 'Sign-in expired'], ['500', 'Answer service failed'], ['timeout', 'timed out'], ['offline', 'Network offline']]) {
         await setMode(mode);
         await page.evaluate(() => window.dispatchEvent(new CustomEvent('sonora-e2e-transcript', { detail: { text: 'How does retry work?' } })));
@@ -263,7 +273,7 @@ function requireApp(name) {
       await page.evaluate(() => window.dispatchEvent(new CustomEvent('sonora-e2e-transcript', { detail: { text: 'What is a queue?' } })));
       await click(page, answerButton(page));
       await page.getByText('Heard: What is a queue?', { exact: true }).waitFor();
-      await click(page, page.getByRole('button', { name: 'End' }));
+      await click(page, page.getByRole('button', { name: 'End session' }));
     });
 
     await scenario('glass, sidebar, transcript, and edges keep focus; gaps pass through only when enabled', async () => {
@@ -274,7 +284,8 @@ function requireApp(name) {
       await page.mouse.click(side.x + 20, side.y + 90);
       let state = await page.evaluate(() => window.sonoraDesktop.e2eFlags());
       if (state.ignoringMouse) throw new Error('Sidebar click enabled click-through');
-      await click(page, page.getByRole('button', { name: 'Start' }));
+      await createReady(page, 'Fabrikam');
+      await click(page, page.getByRole('button', { name: 'Start', exact: true }));
       const card = await page.locator('.dp-card').boundingBox();
       await page.mouse.move(card.x + 8, card.y + 8);
       await page.waitForTimeout(100);

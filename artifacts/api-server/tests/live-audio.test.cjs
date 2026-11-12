@@ -12,11 +12,20 @@ new Function("module", "exports", "require", buildSync({
 }).outputFiles[0].text)(validatorsModule, validatorsModule.exports, require);
 
 function fixture(configured = true) {
-  let handler, approved = true, ended = false, controller, closed = 0;
+  let handler, approved = true, ended = false, controller, closed = 0, currentSource = "", authorize;
   const sent = [];
-  const streams = { send: value => sent.push(value), takeFinal: () => ({ text: "Explain the design", speaker: "S1" }), partial: () => "", close: () => closed++ };
+  const opened = [];
+  const streams = {
+    send: value => sent.push(value),
+    takeFinal: () => ({ text: "Explain the design", speaker: "S1" }),
+    partial: () => "",
+    subscribe(listener) { listener({ text: "Explain the design", speaker: "S1", final: true }); return () => {}; },
+    close: () => closed++,
+  };
   const scope = {
-    module: { exports: {} }, Buffer, Date, Map, AbortController, setInterval, clearInterval,
+    module: { exports: {} }, Buffer, Date, Map, AbortController, clearInterval, clearTimeout,
+    setInterval(fn) { authorize = fn; return 1; },
+    setTimeout() { return { unref() {} }; },
     process: { env: configured ? { SPEECHMATICS_API_KEY: "test-fixture-not-a-real-key" } : {} },
     require(name) {
       if (name === "express") return { Router: () => ({ post: (_path, value) => { handler = value; } }) };
@@ -35,7 +44,7 @@ function fixture(configured = true) {
         sessionStillUsable: async () => approved && !ended,
         watchSession: (_id, _user, _round, value) => { controller = value; return () => {}; },
       };
-      if (name === "../lib/speechmatics") return { speechmaticsTerms: () => [], openSpeechStream: async () => streams };
+      if (name === "../lib/speechmatics") return { speechmaticsTerms: () => [], openSpeechStream: async () => { opened.push(currentSource); return streams; } };
       return require(name);
     },
   };
@@ -43,11 +52,12 @@ function fixture(configured = true) {
     loader: "ts", format: "cjs",
   }).code, scope);
   return {
-    sent, get closed() { return closed; },
-    revoke() { approved = false; controller?.abort(); },
+    sent, opened, get closed() { return closed; },
+    revoke() { approved = false; controller?.abort(); return authorize?.(); },
     end() { ended = true; },
     bind: scope.module.exports.bindLiveSocket,
     async request(body, user = "owner") {
+      currentSource = body?.source || "";
       const res = { code: 200, status(code) { this.code = code; return this; }, setHeader() {}, json(data) { this.data = data; } };
       await handler({ body, user, params: { id: "session" } }, res);
       return res;
@@ -63,6 +73,20 @@ test("live audio rejects signed-out, foreign, stale-round and ended requests", a
   assert.equal((await f.request({ source: "other", open: true })).code, 400);
   f.end();
   assert.equal((await f.request({ source: "system", open: true, roundNumber: 2 })).code, 409);
+});
+
+test("microphone, call audio, and both each open their own enhanced stream", async () => {
+  const f = fixture();
+  assert.equal((await f.request({ source: "microphone", open: true, roundNumber: 2 })).code, 200);
+  assert.equal((await f.request({ source: "system", open: true, roundNumber: 2 })).code, 200);
+  assert.deepEqual(f.opened, ["microphone", "system"]);
+  const speech = fs.readFileSync(path.join(__dirname, "../src/lib/speechmatics.ts"), "utf8");
+  const config = speech.slice(speech.indexOf("transcription_config"), speech.indexOf("enable_partials"));
+  assert.match(config, /operating_point: "enhanced"/);
+  assert.match(config, /model: "enhanced"/);
+  assert.match(config, /\$0\.80 per audio hour/);
+  assert.doesNotMatch(speech, /model: "standard"/);
+  assert.doesNotMatch(speech, /operating_point: "standard"/);
 });
 
 test("missing optional live provider returns an explicit Gemini fallback signal", async () => {
@@ -90,7 +114,7 @@ test("socket tickets are one-use and access revocation closes the capture", asyn
   let reusedClosed = false;
   f.bind(opened.data.ticket, { close() { reusedClosed = true; } });
   assert.equal(reusedClosed, true);
-  f.revoke();
+  await f.revoke();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(socketClosed, true);
   assert.ok(f.closed >= 1);

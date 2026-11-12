@@ -155,6 +155,7 @@ export default function InterviewWorkspace() {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [listening, setListening] = useState(false);
+  const [audioPaused, setAudioPaused] = useState(false);
   const [requestingMic, setRequestingMic] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState("");
   const [notice, setNotice] = useState("");
@@ -569,6 +570,7 @@ export default function InterviewWorkspace() {
     launchLiveRef.current = false;
     setListening(false);
     setRequestingMic(false);
+    setAudioPaused(false);
     setInterimTranscript("");
     return () => {
       stopCapture();
@@ -605,20 +607,23 @@ export default function InterviewWorkspace() {
   };
 
   const endSession = async () => {
-    if (!selected) return;
+    const current = selectedSessionRef.current;
     phrasesRef.current?.flush();
     stopCapture();
     answerAbortRef.current?.abort();
+    setAudioPaused(false);
+    setLiveMode(false);
+    if (!current) return;
+    setNotice("Session ended. Listening is off. The transcript stays saved if Save Transcript was on.");
     try {
       await transcriptWritesRef.current;
-      const updated = await api<CallSession>(`/sessions/${selected.id}`, {
+      const updated = await api<CallSession>(`/sessions/${current.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ status: "ended", roundNumber: selected.roundNumber }),
+        body: JSON.stringify({ status: "ended", roundNumber: current.roundNumber }),
       });
       setSessions((items) => items.map((item) => (item.id === updated.id ? updated : item)));
       await apiRequest("/billing/settle", { method: "POST", body: JSON.stringify({ sessionId: updated.id }) });
       setCredits(await loadCreditBalance(access.role, sessions.length));
-      setNotice("Session ended. Notes will appear below. Its transcript is saved if Save Transcript was enabled.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not end the session.");
     }
@@ -682,9 +687,11 @@ export default function InterviewWorkspace() {
     if (!selected) return;
     if (listening || requestingMic) {
       stopCapture();
+      setAudioPaused(false);
       setNotice("Audio transcription stopped. Any incomplete final chunk was discarded.");
       return;
     }
+    setAudioPaused(false);
     if (selected.status === "ended") {
       setError("This session has ended. Create a new session to start microphone transcription.");
       return;
@@ -1081,8 +1088,18 @@ export default function InterviewWorkspace() {
           notice={notice}
           error={error}
           onEnd={() => void endSession()}
-          onBack={() => { stopCapture(); answerAbortRef.current?.abort(); setLiveMode(false); }}
+          onBack={() => { stopCapture(); answerAbortRef.current?.abort(); setAudioPaused(false); setLiveMode(false); }}
           onToggleAudio={() => void toggleMicrophone()}
+          paused={audioPaused}
+          onPauseToggle={() => {
+            if (listening || requestingMic) {
+              stopCapture();
+              setAudioPaused(true);
+              setNotice("Listening paused. The transcription connection is closed, so paused time is not transcribed. The session stays open.");
+              return;
+            }
+            if (audioPaused) { setAudioPaused(false); void toggleMicrophone(); }
+          }}
           onScreenshot={window.sonoraDesktop.captureScreen ? () => void (async () => {
             const image = await window.sonoraDesktop?.captureScreen?.();
             if (!image) return;
