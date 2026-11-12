@@ -1063,6 +1063,7 @@ try {
           if ($name) { $trayNames += $name }
           if ($name -match 'Sonora') { $trayEl = $named.Item($i); break }
         }
+        if (-not $trayEl) { $trayEl = $overflowRoot }
       } catch {}
     }
   }
