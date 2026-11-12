@@ -158,7 +158,7 @@ export default function E2EApp() {
   return (
     <>
       <DesktopVisibilityControls />
-      <p id="sonora-last-click" aria-label={`Last click ${lastClick}`} style={{ position: "absolute", width: 1, height: 1, overflow: "hidden" }}>{lastClick}</p>
+      <p id="sonora-last-click" aria-label={`Last click ${lastClick}`} style={{ position: "absolute", width: 1, height: 1, overflow: "hidden" }} />
       <p id="sonora-hover" aria-label={hoverLabel} style={{ position: "absolute", width: 1, height: 1, overflow: "hidden" }}>{hoverLabel}</p>
       <p id="sonora-filter" aria-label={`Filter ${filter}`} style={{ position: "absolute", width: 1, height: 1, overflow: "hidden" }}>{filter}</p>
       <main className="sonora-workspace dp-app text-[#e7e8eb]">

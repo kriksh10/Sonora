@@ -571,6 +571,32 @@ try {
     foreach ($el in @(Find-All $Name)) { if ($el.Current.Name -eq $Name) { return $el } }
     return $null
   }
+  # The click recorder is a 1x1 paragraph. After End its text is exactly
+  # "End session" even though the live bar has unmounted. Only an on-screen button counts.
+  function Test-OnScreenButton($el) {
+    if (-not $el) { return $false }
+    try { if ($el.Current.ControlType.ProgrammaticName -notmatch 'Button') { return $false } } catch { return $false }
+    try { if ($el.Current.IsOffscreen) { return $false } } catch { return $false }
+    $r = $el.Current.BoundingRectangle
+    return ($r.Width -ge 8 -and $r.Height -ge 8)
+  }
+  function Find-VisibleButton([string]$Name) {
+    foreach ($el in @(Find-All $Name)) {
+      if ($el.Current.Name -eq $Name -and (Test-OnScreenButton $el)) { return $el }
+    }
+    return $null
+  }
+  function Describe-Exact([string]$Name) {
+    $notes = @()
+    foreach ($el in @(Find-All $Name)) {
+      if ($el.Current.Name -ne $Name) { continue }
+      $kind = ''
+      try { $kind = $el.Current.ControlType.ProgrammaticName } catch { $kind = 'unknown' }
+      $r = $el.Current.BoundingRectangle
+      $notes += "$kind $([int]$r.Width)x$([int]$r.Height)"
+    }
+    return ($notes -join '; ')
+  }
   function Click-Exact([string]$Name) {
     $el = Find-Exact $Name
     if (-not $el) { throw "No exact UI element named $Name" }
@@ -728,7 +754,7 @@ try {
   Add-Scenario 'Control: Listen starts transcription' ([bool]$listening) ''
   Click-Exact 'Pause' | Out-Null
   $pausedNote = Wait-Named 'Listening paused' 4
-  $sessionStillOpen = [bool](Find-Exact 'End session')
+  $sessionStillOpen = [bool](Find-VisibleButton 'End session')
   $stopPosted = $false
   $stopUntil = (Get-Date).AddSeconds(4)
   while ((Get-Date) -lt $stopUntil -and -not $stopPosted) {
@@ -866,7 +892,7 @@ try {
   if (-not (Find-Exact 'Back to sessions')) { Click-Exact 'Overlay menu' | Out-Null; Start-Sleep -Milliseconds 300 }
   Click-Exact 'Back to sessions' | Out-Null
   $returned = Wait-Named 'Call Sessions' 4
-  Add-Scenario 'Control: Back to sessions leaves without ending' ([bool]($returned -and (Find-Element 'Start') -and -not (Find-Exact 'End session'))) ''
+  Add-Scenario 'Control: Back to sessions leaves without ending' ([bool]($returned -and (Find-Element 'Start') -and -not (Find-VisibleButton 'End session'))) ''
   $startAgain = Find-Exact 'Start'
   if ($startAgain) { Click-Element $startAgain; Start-Sleep -Milliseconds 500 }
   Click-Exact 'End session' | Out-Null
@@ -878,11 +904,11 @@ try {
       $endPosted = [bool](Select-String -Path $env:SONORA_MOCK_LOG -Pattern 'PATCH /api/sessions/.+' -Quiet)
     }
     $noActive = [bool](Find-Element 'No active sessions')
-    $stillLive = [bool](Find-Exact 'End session')
+    $stillLive = [bool](Find-VisibleButton 'End session')
     $leftSession = $noActive -and -not $stillLive
     if (-not ($endPosted -and $leftSession)) { Start-Sleep -Milliseconds 250 }
   }
-  Add-Scenario 'Control: End stops the session and returns to the list' ([bool]($endPosted -and $leftSession)) "saved=$endPosted noActive=$noActive stillLive=$stillLive"
+  Add-Scenario 'Control: End stops the session and returns to the list' ([bool]($endPosted -and $leftSession)) "saved=$endPosted noActive=$noActive stillLive=$stillLive nodes=$(Describe-Exact 'End session')"
   Save-Screen '05a-ended.png'
   Save-Screen '05-live.png'
   $logout = Wait-Named 'Log out' 6
