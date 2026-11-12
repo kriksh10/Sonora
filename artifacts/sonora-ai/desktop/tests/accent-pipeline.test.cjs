@@ -68,12 +68,13 @@ function pcm16le(samples) {
 
 test('Speechmatics is declared pcm_s16le 16 kHz and the pipeline emits that encoding', () => {
   assert.match(speech, /encoding: "pcm_s16le", sample_rate: 16000/);
-  assert.match(speech, /model: "standard"/);
+  assert.match(speech, /operating_point: "enhanced"/);
+  assert.match(speech, /model: "enhanced"/);
   assert.match(speech, /language: speechmaticsLanguage\(language\)/);
   assert.match(speech, /max_delay: 0\.7/);
   assert.match(speech, /enable_partials: true/);
   assert.doesNotMatch(speech, /audio_filtering/);
-  assert.doesNotMatch(speech, /operating_point/);
+  assert.doesNotMatch(speech, /model: "standard"/);
   assert.match(native, /pub const RATE: u32 = 16_000/);
   assert.match(native, /pub const FRAME: usize = 160/);
   const frame = pcm16le(new Array(160).fill(0.25));
