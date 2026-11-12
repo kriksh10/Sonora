@@ -1014,10 +1014,34 @@ try {
     }
     if ($trayEl) { break }
   }
+  if (-not $trayEl) {
+    foreach ($trayRoot in $trayRoots) {
+      $named = $trayRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+      for ($i = 0; $i -lt $named.Count; $i++) {
+        if ($named.Item($i).Current.Name -eq 'Show Hidden Icons') {
+          $cr = $named.Item($i).Current.BoundingRectangle
+          if ($cr.Width -ge 4) { [SonoraInput]::Click([int]($cr.X + $cr.Width / 2), [int]($cr.Y + $cr.Height / 2)); Start-Sleep -Milliseconds 500 }
+          break
+        }
+      }
+    }
+    $overflow = [SonoraInput]::FindWindow('NotifyIconOverflowWindow', $null)
+    if ($overflow -and $overflow -ne [IntPtr]::Zero) {
+      try {
+        $overflowRoot = [System.Windows.Automation.AutomationElement]::FromHandle($overflow)
+        $named = $overflowRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+        for ($i = 0; $i -lt $named.Count; $i++) {
+          $name = $named.Item($i).Current.Name
+          if ($name) { $trayNames += $name }
+          if ($name -match 'Sonora') { $trayEl = $named.Item($i); break }
+        }
+      } catch {}
+    }
+  }
   $tray = $false
   if ($trayEl) {
     $tr = $trayEl.Current.BoundingRectangle
-    $tray = $tr.Width -ge 4 -and $tr.Y -gt ($screenBottom - 160)
+    $tray = $tr.Width -ge 4
   }
   $taskbar = $false
   $taskbarRoot = $trayRoots | Select-Object -First 1
