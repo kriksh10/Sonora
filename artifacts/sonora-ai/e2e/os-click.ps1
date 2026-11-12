@@ -103,6 +103,20 @@ public static class SonoraInput {
     uint sent = SendInput(3, inputs, Marshal.SizeOf(typeof(INPUT)));
     if (sent != 3) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
   }
+  public static void RightClick(int x, int y) {
+    int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    int vw = Math.Max(1, GetSystemMetrics(SM_CXVIRTUALSCREEN));
+    int vh = Math.Max(1, GetSystemMetrics(SM_CYVIRTUALSCREEN));
+    int ax = (int)Math.Round((x - vx) * 65535.0 / Math.Max(1, vw - 1));
+    int ay = (int)Math.Round((y - vy) * 65535.0 / Math.Max(1, vh - 1));
+    INPUT[] inputs = new INPUT[3];
+    inputs[0].type = 0; inputs[0].mi.dx = ax; inputs[0].mi.dy = ay; inputs[0].mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
+    inputs[1].type = 0; inputs[1].mi.dx = ax; inputs[1].mi.dy = ay; inputs[1].mi.dwFlags = 0x0008 | MOUSEEVENTF_ABSOLUTE;
+    inputs[2].type = 0; inputs[2].mi.dx = ax; inputs[2].mi.dy = ay; inputs[2].mi.dwFlags = 0x0010 | MOUSEEVENTF_ABSOLUTE;
+    uint sent = SendInput(3, inputs, Marshal.SizeOf(typeof(INPUT)));
+    if (sent != 3) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+  }
   [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc lpEnumFunc, IntPtr lParam);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
   public delegate bool EnumProc(IntPtr hWnd, IntPtr lParam);
@@ -1064,6 +1078,7 @@ try {
           if ($name -match 'Sonora') { $trayEl = $named.Item($i); break }
         }
         if (-not $trayEl) { $trayEl = $overflowRoot }
+        $script:trayHost = $overflowRoot
       } catch {}
     }
   }
@@ -1086,11 +1101,28 @@ try {
   }
   $traySample = (($trayNames | Where-Object { $_ -match 'Sonora|Overflow|Hidden|Notify' } | Select-Object -Unique | Select-Object -First 12) -join ' | ')
   Add-Scenario 'Minimize leaves no taskbar or Alt+Tab entry and keeps a tray icon' ($minHidden -and $minStyle -match 'WS_EX_TOOLWINDOW' -and $minStyle -notmatch 'WS_EX_APPWINDOW' -and -not $taskbar -and $tray) "hidden=$minHidden style=$minStyle taskbar=$taskbar tray=$tray names=$traySample"
-  if ($tray -and $trayEl) {
-    $tr = $trayEl.Current.BoundingRectangle
-    [SonoraInput]::Click([int]($tr.X + $tr.Width / 2), [int]($tr.Y + $tr.Height / 2))
-  }
   $restoredTray = $false
+  $clickTargets = @()
+  if ($script:trayHost) { $clickTargets += $script:trayHost }
+  if ($trayEl) { $clickTargets += $trayEl }
+  if ($script:trayHost) {
+    $kids = $script:trayHost.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+    for ($i = 0; $i -lt $kids.Count; $i++) { $clickTargets += $kids.Item($i) }
+  }
+  foreach ($target in $clickTargets) {
+    if ($restoredTray) { break }
+    $tr = $target.Current.BoundingRectangle
+    if ($tr.Width -lt 4 -or $tr.Height -lt 4 -or $tr.Width -gt 200) { continue }
+    $cx = [int]($tr.X + $tr.Width / 2); $cy = [int]($tr.Y + $tr.Height / 2)
+    [SonoraInput]::Click($cx, $cy)
+    Start-Sleep -Milliseconds 400
+    if ([SonoraInput]::IsWindowVisible($hwnd)) { $restoredTray = $true; break }
+    [SonoraInput]::RightClick($cx, $cy)
+    Start-Sleep -Milliseconds 400
+    $show = Find-Exact 'Show Sonora'
+    if ($show) { Click-Element $show; Start-Sleep -Milliseconds 400 }
+    if ([SonoraInput]::IsWindowVisible($hwnd)) { $restoredTray = $true }
+  }
   $trayUntil = (Get-Date).AddSeconds(6)
   while ((Get-Date) -lt $trayUntil) { if ([SonoraInput]::IsWindowVisible($hwnd)) { $restoredTray = $true; break }; Start-Sleep -Milliseconds 250 }
   Add-Scenario 'Tray click restores the window' $restoredTray ''
