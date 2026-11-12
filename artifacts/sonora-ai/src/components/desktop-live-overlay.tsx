@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ChevronLeft, ChevronRight, Copy, Expand, MoreVertical, ThumbsDown, ThumbsUp, X } from "lucide-react";
 import type { CallSession, TranscriptEntry } from "@workspace/api-client-react";
 import SafeMarkdown from "@/components/safe-markdown";
+import DesktopSelect from "@/components/desktop-select";
 import { liveAnswerQuestion } from "@/lib/overlay-hit-test";
 
 type AudioSource = "microphone" | "system" | "both";
@@ -72,13 +73,17 @@ export default function DesktopLiveOverlay(props: {
           <summary className="dp-icon-btn" aria-label="Overlay menu"><MoreVertical size={16} /></summary>
           <div className="dp-glass dp-menu-pop">
             <p style={{ margin: 0 }}>Opacity is the slim slider on the Sonora bar. {Math.round(Number(getComputedStyle(document.documentElement).getPropertyValue("--sonora-background-opacity")) * 100) || 40}% now.</p>
-            <label>Audio
-              <select aria-label="Audio source" value={props.audioSource} onChange={event => props.onAudioSourceChange(event.target.value as AudioSource)}>
-                <option value="microphone">Microphone</option>
-                <option value="system">Call audio</option>
-                <option value="both">Both</option>
-              </select>
-            </label>
+            <DesktopSelect
+              legend="Audio"
+              label="Audio source"
+              value={props.audioSource}
+              options={[
+                { value: "microphone", label: "Microphone" },
+                { value: "system", label: "Call audio" },
+                { value: "both", label: "Both" },
+              ]}
+              onChange={value => props.onAudioSourceChange(value as AudioSource)}
+            />
             {props.onAutoAnswerChange && <button type="button" className="dp-pill" onClick={() => props.onAutoAnswerChange?.(!props.autoAnswer)}>Auto Answer {props.autoAnswer ? "on" : "off"}</button>}
             {props.onMicrophoneAutoChange && (props.audioSource === "both" || props.audioSource === "microphone") && (
               <button type="button" className="dp-pill" aria-pressed={!!props.microphoneAuto} onClick={() => props.onMicrophoneAutoChange?.(!props.microphoneAuto)}>

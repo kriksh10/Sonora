@@ -640,6 +640,51 @@ try {
     if (-not $heard) { Start-Sleep -Milliseconds 400 }
   }
   Add-Scenario 'Live session mocked transcript produces an answer' ([bool]$heard) $(if ($heard) { '' } else { 'answer text missing' })
+
+  function Find-Exact([string]$Name) {
+    foreach ($el in @(Find-All $Name)) { if ($el.Current.Name -eq $Name) { return $el } }
+    return $null
+  }
+  Click-Name 'Overlay menu' | Out-Null
+  Start-Sleep -Milliseconds 400
+  Click-Name 'Audio source' | Out-Null
+  Start-Sleep -Milliseconds 500
+  Save-Screen '05a-audio-menu.png'
+  $native = @()
+  foreach ($el in @(Find-All 'Audio source')) {
+    if ($el.Current.ControlType.ProgrammaticName -match 'ComboBox') { $native += $el.Current.Name }
+  }
+  Add-Scenario 'Audio picker is not a native Windows select' ($native.Count -eq 0) $(if ($native) { $native -join ', ' } else { 'custom list' })
+  $missing = @()
+  $bottoms = @()
+  foreach ($name in @('Microphone', 'Call audio', 'Both')) {
+    $el = Find-Exact $name
+    if (-not $el) { $missing += $name; continue }
+    $r = $el.Current.BoundingRectangle
+    if ($r.Width -lt 8 -or $r.Height -lt 8) { $missing += "$name has no box"; continue }
+    $bottoms += ($r.Y + $r.Height)
+  }
+  $help = Find-Element 'Microphone answers also reply'
+  $helpDetail = 'help text missing'
+  $helpOk = $false
+  if ($help -and $bottoms.Count -eq 3) {
+    $hr = $help.Current.BoundingRectangle
+    $listBottom = ($bottoms | Measure-Object -Maximum).Maximum
+    $helpOk = $hr.Height -gt 4 -and $hr.Y -ge ($listBottom - 2)
+    $helpDetail = "helpY=$([int]$hr.Y) listBottom=$([int]$listBottom)"
+  }
+  Add-Scenario 'Audio menu shows Microphone, Call audio, and Both without covering the help text' (($missing.Count -eq 0) -and $helpOk) $(if ($missing) { $missing -join ', ' } else { $helpDetail })
+  [SonoraInput]::SetForegroundWindow($hwnd) | Out-Null
+  Start-Sleep -Milliseconds 200
+  [System.Windows.Forms.SendKeys]::SendWait('{DOWN}')
+  Start-Sleep -Milliseconds 400
+  [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+  Start-Sleep -Milliseconds 500
+  $picked = Find-Element 'Audio source, Both'
+  Add-Scenario 'Audio menu keyboard selects Both' ([bool]$picked) $(if ($picked) { $picked.Current.Name } else { 'trigger did not announce Both' })
+  Save-Screen '05a-audio-both.png'
+  if (Find-Element 'Overlay menu') { Click-Name 'Overlay menu' | Out-Null; Start-Sleep -Milliseconds 250 }
+
   foreach ($name in @('Screenshot', 'Chat', 'Previous answer', 'Next answer', 'Clear', 'End')) {
     if (Find-Element $name) { Click-Name $name | Out-Null; Add-Scenario "OS click $name" $true '' }
     else { Add-Scenario "OS click $name" $false 'missing' }

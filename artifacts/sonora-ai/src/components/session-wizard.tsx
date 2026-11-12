@@ -7,6 +7,7 @@ import { apiRequest, fetchDefaultPreferences, summarizePreferences } from "@/lib
 import { extractFileText } from "@/lib/extract-file-text";
 import { CALL_LANGUAGES, type CallLanguage } from "@/lib/call-languages";
 import { GEMINI_MODELS, type GeminiModelId } from "@/lib/pricing";
+import { ShellSelect } from "@/components/desktop-select";
 import { saveAutoExtend } from "@/lib/session-tools";
 
 type Draft = {
@@ -264,14 +265,14 @@ export default function SessionWizard({ onClose, onCreated, initialType = "inter
             </div>
           </> : <>
             <div className="mb-4 grid gap-3 sm:grid-cols-2">
-              <label className="text-xs text-white/45">Call language
-                <select value={draft.language} onChange={(e) => set("language", e.target.value as Draft["language"])} className={field}>
-                  {CALL_LANGUAGES.map((language) => <option key={language.name}>{language.name}</option>)}
-                </select></label>
-              <label className="text-xs text-white/45">Gemini model
-                <select value={draft.model} onChange={(e) => set("model", e.target.value as Draft["model"])} className={field}>
-                  {GEMINI_MODELS.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
-                </select></label>
+              <div className="text-xs text-white/45"><span className="block">Call language</span>
+                <ShellSelect label="Call language" value={draft.language} scroll className={`${field} mt-1.5`}
+                  options={CALL_LANGUAGES.map(language => ({ value: language.name, label: language.name }))}
+                  onChange={value => set("language", value as Draft["language"])} /></div>
+              <div className="text-xs text-white/45"><span className="block">Gemini model</span>
+                <ShellSelect label="Gemini model" value={draft.model} scroll className={`${field} mt-1.5`}
+                  options={GEMINI_MODELS.map(model => ({ value: model.id, label: model.label }))}
+                  onChange={value => set("model", value as GeminiModelId)} /></div>
             </div>
             <div className="mb-4 rounded-xl border border-white/10 bg-[#191a1d] p-3">
               <div className="flex items-center justify-between gap-3">

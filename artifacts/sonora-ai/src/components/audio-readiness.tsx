@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { createAudioGroup, createDesktopAudio, type AudioCapture } from "@/lib/desktop-audio";
 import { requestAnswer } from "@/lib/answer-stream";
+import { ShellSelect } from "@/components/desktop-select";
 
 export default function AudioReadiness({ sessionId, roundNumber, systemDevice, onClose, answerBusy, supportsDualAudio }: {
   sessionId: string; roundNumber?: number; systemDevice?: string; onClose: () => void; answerBusy: boolean; supportsDualAudio: boolean;
@@ -81,14 +82,17 @@ export default function AudioReadiness({ sessionId, roundNumber, systemDevice, o
       <DialogDescription className="text-white/60">Check devices and Gemini before the call. Passing this check does not start your session or enable Auto Answer.</DialogDescription>
       <div className="space-y-4 text-sm">
         <p className="text-white/65">Wear headphones. Speak to test your mic; play call audio to test the remote channel. Activity confirms a source, not a person’s identity.</p>
-        <label className="block">Audio source
-          <select aria-label="Readiness audio source" disabled={phase !== "off"} value={source}
-            onChange={e => setSource(e.target.value as typeof source)} className="ml-3 rounded border border-white/20 bg-[#22252a] p-2">
-            <option value="microphone">Microphone</option>
-            {window.sonoraDesktop && <option value="system">Call audio</option>}
-            {window.sonoraDesktop && supportsDualAudio && <option value="both">Both separately</option>}
-          </select>
-        </label>
+        <div>
+          <span className="mb-1 block">Audio source</span>
+          <ShellSelect label="Readiness audio source" disabled={phase !== "off"} value={source}
+            className="ml-3 rounded border border-white/20 bg-[#22252a] p-2"
+            onChange={value => setSource(value as typeof source)}
+            options={[
+              { value: "microphone", label: "Microphone" },
+              ...(window.sonoraDesktop ? [{ value: "system", label: "Call audio" }] : []),
+              ...(window.sonoraDesktop && supportsDualAudio ? [{ value: "both", label: "Both separately" }] : []),
+            ]} />
+        </div>
         {(["microphone", "system"] as const).filter(channel => channel === source || source === "both").map(channel =>
           <div key={channel} className="rounded-lg border border-white/10 p-3">
             <div className="flex justify-between gap-2"><span>{channel === "microphone" ? "Microphone" : "Call audio"}</span><span className={seen[channel] ? "text-emerald-300" : "text-amber-200"}>{seen[channel] ? "Activity detected" : "No activity confirmed"}</span></div>

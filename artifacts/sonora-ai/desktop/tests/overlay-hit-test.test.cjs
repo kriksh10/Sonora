@@ -30,10 +30,12 @@ const { Element } = context;
 const button = new Element('button', new Element('.dp-glass', new Element('.dp-overlay', null)));
 const gap = new Element('.dp-overlay', new Element('.dp-app', null));
 const card = new Element('.dp-glass', new Element('.dp-overlay', null));
+const picker = new Element('div', new Element('.dp-select', new Element('.dp-menu-pop', null)));
 
 test('clicks on glass and buttons stay in Sonora; empty gaps do not', () => {
   assert.equal(overlayPointerCaptures(button), true);
   assert.equal(overlayPointerCaptures(card), true);
+  assert.equal(overlayPointerCaptures(picker), true);
   assert.equal(overlayPointerCaptures(gap), false);
   assert.equal(overlayPointerCaptures(null), false);
 });
@@ -68,5 +70,10 @@ test('packaged shell keeps visible UI clickable and stays above other windows', 
   assert.match(css, /background: rgba\(0, 0, 0, 0\.04\)/);
   assert.match(overlay, /liveAnswerQuestion/);
   assert.match(overlay, /onClick=\{\(\) => ask\(askText\)\}/);
+  assert.match(overlay, /DesktopSelect/);
+  assert.doesNotMatch(overlay, /<select/);
+  assert.match(css, /\.dp-select-list \{[^}]*position: static/);
+  assert.match(css, /\.dp-select-list \{[^}]*background: #1b1b1d/);
+  assert.match(css, /\.dp-select-option \{[^}]*color: #f7f7f8/);
   assert.doesNotMatch(main, /setIgnoreMouseEvents\(true/);
 });

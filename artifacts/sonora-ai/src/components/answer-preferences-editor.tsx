@@ -3,6 +3,7 @@ import type { AnswerPreferences } from "@workspace/api-client-react";
 import {
   DEFAULT_ANSWER_PREFERENCES, EXAMPLE_QUESTIONS, QUESTION_TYPES, renderPreview, saveDefaultPreferences, type QuestionType,
 } from "@/lib/answer-preferences";
+import { ShellSelect } from "@/components/desktop-select";
 
 const FORMATS = [
   ["full_script", "Full script", "An answer you can read word for word."],
@@ -89,9 +90,12 @@ export default function AnswerPreferencesEditor({ initial, saveLabel = "Save", o
         </div>
         <div className="min-w-0">
           <label className="mb-2 block text-sm font-semibold" htmlFor="preview-type">Preview question type</label>
-          <select id="preview-type" value={type} onChange={(e) => setType(e.target.value as QuestionType)} className="mb-3 w-full rounded-lg border border-white/10 bg-[#191a1d] px-3 py-2.5 text-sm text-white">
-            {QUESTION_TYPES.map((q) => <option key={q} value={q}>{q}</option>)}
-          </select>
+          <div className="mb-3">
+            <ShellSelect id="preview-type" label="Preview question type" scroll value={type}
+              className="w-full rounded-lg border border-white/10 bg-[#191a1d] px-3 py-2.5 text-sm text-white"
+              options={QUESTION_TYPES.map(question => ({ value: question, label: question }))}
+              onChange={value => setType(value as QuestionType)} />
+          </div>
           <div className="rounded-xl border border-white/10 bg-[#0c0d0f] p-4">
             <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-amber-200/80">Illustrative example, not a live Gemini answer</div>
             <p className="mb-3 text-sm text-white"><span className="font-semibold">Question: </span>{EXAMPLE_QUESTIONS[type]}</p>

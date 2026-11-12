@@ -7,6 +7,7 @@ import { SwitchRow } from "@/components/session-wizard";
 import { apiRequest, sessionPreferences, summarizePreferences } from "@/lib/answer-preferences";
 import { CALL_LANGUAGES, type CallLanguage } from "@/lib/call-languages";
 import { GEMINI_MODELS, resolveGeminiModel } from "@/lib/pricing";
+import { ShellSelect } from "@/components/desktop-select";
 
 const field = "mt-1.5 w-full rounded-lg border border-white/10 bg-[#191a1d] px-3 py-2.5 text-sm text-white outline-none focus:border-white/25";
 const LANGS = CALL_LANGUAGES.map(language => language.name);
@@ -46,11 +47,14 @@ export default function SessionPreferencesDialog({ session, onClose, onSaved }: 
           </div>
           <p className="mb-4 text-xs text-white/45">Changes apply to later answers in {session.title}. The session status and history are not changed.</p>
           <div className="mb-4 grid gap-3 sm:grid-cols-2">
-            <label className="text-xs text-white/45">Call language
-              <select value={language} onChange={(e) => setLanguage(e.target.value as typeof language)} className={field}>{LANGS.map((l) => <option key={l}>{l}</option>)}</select></label>
-            <label className="text-xs text-white/45">Gemini model
-              <select value={model} onChange={(e) => setModel(resolveGeminiModel(e.target.value))} className={field}>
-                {GEMINI_MODELS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+            <div className="text-xs text-white/45"><span className="block">Call language</span>
+              <ShellSelect label="Call language" value={language} scroll className={`${field} mt-1.5`}
+                options={LANGS.map(name => ({ value: name, label: name }))}
+                onChange={value => setLanguage(value as typeof language)} /></div>
+            <div className="text-xs text-white/45"><span className="block">Gemini model</span>
+              <ShellSelect label="Gemini model" value={model} scroll className={`${field} mt-1.5`}
+                options={GEMINI_MODELS.map(item => ({ value: item.id, label: item.label }))}
+                onChange={value => setModel(resolveGeminiModel(value))} /></div>
           </div>
           <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-[#191a1d] p-3">
             <div className="min-w-0 text-sm"><div className="font-semibold">Answer preferences</div>
