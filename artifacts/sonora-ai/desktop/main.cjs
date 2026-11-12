@@ -199,7 +199,7 @@ function stopCapture() {
 }
 function updateTray() {
   if (!tray || tray.isDestroyed()) return;
-  tray.setToolTip(captureActive ? 'Sonora — AUDIO CAPTURE ACTIVE' : 'Sonora AI — audio off');
+  tray.setToolTip(captureActive ? 'Sonora tray AUDIO CAPTURE ACTIVE' : 'Sonora tray');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: captureActive ? 'Audio capture active' : 'Audio off', enabled: false },
     { label: 'Show Sonora', click: show },

@@ -103,6 +103,24 @@ public static class SonoraInput {
     uint sent = SendInput(3, inputs, Marshal.SizeOf(typeof(INPUT)));
     if (sent != 3) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
   }
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc lpEnumFunc, IntPtr lParam);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+  public delegate bool EnumProc(IntPtr hWnd, IntPtr lParam);
+  public static string[] OverlayWindows() {
+    var found = new System.Collections.Generic.List<string>();
+    EnumWindows((h, l) => {
+      var cls = new System.Text.StringBuilder(256);
+      GetClassName(h, cls, cls.Capacity);
+      var title = Title(h);
+      var klass = cls.ToString();
+      if (klass.IndexOf("Overflow", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+          klass.IndexOf("Notify", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+          title.IndexOf("Sonora", System.StringComparison.OrdinalIgnoreCase) >= 0)
+        found.Add(h.ToInt64().ToString() + "|" + klass + "|" + title);
+      return true;
+    }, IntPtr.Zero);
+    return found.ToArray();
+  }
   public static void RaiseWithoutFocus(IntPtr hWnd) {
     SetWindowPos(hWnd, new IntPtr(-1), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
   }
@@ -1026,6 +1044,16 @@ try {
       }
     }
     $overflow = [SonoraInput]::FindWindow('NotifyIconOverflowWindow', $null)
+    $listed = @([SonoraInput]::OverlayWindows())
+    $trayNames += $listed
+    foreach ($row in $listed) {
+      $bits = $row.Split('|', 3)
+      if ($bits.Length -lt 3) { continue }
+      if ($bits[1] -match 'Overflow|Notify' -or $bits[2] -match 'Sonora') {
+        $candidate = [IntPtr][int64]$bits[0]
+        if (-not $overflow -or $overflow -eq [IntPtr]::Zero) { $overflow = $candidate }
+      }
+    }
     if ($overflow -and $overflow -ne [IntPtr]::Zero) {
       try {
         $overflowRoot = [System.Windows.Automation.AutomationElement]::FromHandle($overflow)
@@ -1055,7 +1083,7 @@ try {
     if ($br.Width -gt 80 -and $br.Y -gt ($screenBottom - 120)) { $taskbar = $true; break }
   }
   }
-  $traySample = (($trayNames | Select-Object -Unique | Select-Object -First 8) -join ' | ')
+  $traySample = (($trayNames | Where-Object { $_ -match 'Sonora|Overflow|Hidden|Notify' } | Select-Object -Unique | Select-Object -First 12) -join ' | ')
   Add-Scenario 'Minimize leaves no taskbar or Alt+Tab entry and keeps a tray icon' ($minHidden -and $minStyle -match 'WS_EX_TOOLWINDOW' -and $minStyle -notmatch 'WS_EX_APPWINDOW' -and -not $taskbar -and $tray) "hidden=$minHidden style=$minStyle taskbar=$taskbar tray=$tray names=$traySample"
   if ($tray -and $trayEl) {
     $tr = $trayEl.Current.BoundingRectangle
