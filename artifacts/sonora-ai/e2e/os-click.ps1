@@ -1102,6 +1102,21 @@ try {
   $traySample = (($trayNames | Where-Object { $_ -match 'Sonora|Overflow|Hidden|Notify' } | Select-Object -Unique | Select-Object -First 12) -join ' | ')
   Add-Scenario 'Minimize leaves no taskbar or Alt+Tab entry and keeps a tray icon' ($minHidden -and $minStyle -match 'WS_EX_TOOLWINDOW' -and $minStyle -notmatch 'WS_EX_APPWINDOW' -and -not $taskbar -and $tray) "hidden=$minHidden style=$minStyle taskbar=$taskbar tray=$tray names=$traySample"
   $restoredTray = $false
+  $rootSearch = [System.Windows.Automation.AutomationElement]::RootElement
+  $wanted = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'Sonora tray')
+  $findUntil = (Get-Date).AddSeconds(3)
+  while ((Get-Date) -lt $findUntil -and -not $restoredTray) {
+    $namedIcon = $rootSearch.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $wanted)
+    if ($namedIcon) {
+      $ir = $namedIcon.Current.BoundingRectangle
+      if ($ir.Width -ge 4) {
+        [SonoraInput]::Click([int]($ir.X + $ir.Width / 2), [int]($ir.Y + $ir.Height / 2))
+        Start-Sleep -Milliseconds 500
+        if ([SonoraInput]::IsWindowVisible($hwnd)) { $restoredTray = $true }
+      }
+    }
+    if (-not $restoredTray) { Start-Sleep -Milliseconds 300 }
+  }
   $clickTargets = @()
   if ($script:trayHost) { $clickTargets += $script:trayHost }
   if ($trayEl) { $clickTargets += $trayEl }
