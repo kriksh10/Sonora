@@ -870,16 +870,17 @@ try {
   $startAgain = Find-Exact 'Start'
   if ($startAgain) { Click-Element $startAgain; Start-Sleep -Milliseconds 500 }
   Click-Exact 'End session' | Out-Null
-  $endedChip = Wait-Named 'Ended' 8
   $endPosted = $false
-  $endUntil = (Get-Date).AddSeconds(4)
-  while ((Get-Date) -lt $endUntil -and -not $endPosted) {
-    if ($env:SONORA_MOCK_LOG -and (Test-Path $env:SONORA_MOCK_LOG)) {
+  $leftSession = $false
+  $endUntil = (Get-Date).AddSeconds(8)
+  while ((Get-Date) -lt $endUntil -and -not ($endPosted -and $leftSession)) {
+    if (-not $endPosted -and $env:SONORA_MOCK_LOG -and (Test-Path $env:SONORA_MOCK_LOG)) {
       $endPosted = [bool](Select-String -Path $env:SONORA_MOCK_LOG -Pattern 'PATCH /api/sessions/.+' -Quiet)
     }
-    if (-not $endPosted) { Start-Sleep -Milliseconds 200 }
+    $leftSession = [bool]((Find-Element 'No active sessions') -and (Find-Element 'Session ended') -and -not (Find-Exact 'End session'))
+    if (-not ($endPosted -and $leftSession)) { Start-Sleep -Milliseconds 250 }
   }
-  Add-Scenario 'Control: End stops the session and returns to the list' ([bool]($endedChip -and (Find-Element 'Call Sessions') -and -not (Find-Exact 'End session') -and $endPosted)) "saved=$endPosted"
+  Add-Scenario 'Control: End stops the session and returns to the list' ([bool]($endPosted -and $leftSession)) "saved=$endPosted left=$leftSession"
   Save-Screen '05a-ended.png'
   Save-Screen '05-live.png'
   $logout = Wait-Named 'Log out' 6

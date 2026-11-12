@@ -73,7 +73,7 @@ export default function DesktopSessions(props: {
       <td>{lengthLabel(session, props.now)}</td>
       <td>{session.startedAt ? credits(session) : "—"}</td>
       <td>{new Date(session.createdAt).toLocaleDateString()}</td>
-      <td><span className={`dp-chip ${session.status === "active" ? "live" : session.status === "ended" ? "ended" : "ready"}`}>{session.status === "active" ? "Live" : session.status === "ended" ? "Ended" : "Ready"}</span></td>
+      <td><span className={`dp-chip ${session.status === "active" ? "live" : session.status === "ended" ? "ended" : "ready"}`} aria-label={session.status === "ended" ? "Session ended" : undefined}>{session.status === "active" ? "Live" : session.status === "ended" ? "Ended" : "Ready"}</span></td>
       <td>
         {session.status === "ended"
           ? <button className="dp-row-btn" onClick={() => { props.onView(session); setPanel("transcript"); }}>View transcript</button>
