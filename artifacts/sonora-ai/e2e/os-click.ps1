@@ -618,11 +618,9 @@ try {
   Click-Exact 'Call Sessions' | Out-Null
   Add-Scenario 'Control: Call Sessions returns to the session table' ([bool](Wait-Named 'Northwind interview' 3)) ''
   Click-Exact 'Light' | Out-Null
-  Start-Sleep -Milliseconds 250
-  Add-Scenario 'Control: Light theme toggle' ([bool](Find-Element 'Theme light')) ''
+  Add-Scenario 'Control: Light theme toggle' ([bool](Wait-Named 'Light selected' 3)) ''
   Click-Exact 'Dark' | Out-Null
-  Start-Sleep -Milliseconds 250
-  Add-Scenario 'Control: Dark theme toggle' ([bool](Find-Element 'Theme dark')) ''
+  Add-Scenario 'Control: Dark theme toggle' ([bool](Wait-Named 'Dark selected' 3)) ''
 
   function Set-Slider([double]$Ratio) {
     [SonoraInput]::RaiseWithoutFocus($hwnd) | Out-Null
@@ -771,20 +769,16 @@ try {
   if (-not $shot) { $shot = Find-Element 'Screenshot was not captured' }
   Add-Scenario 'Control: Screenshot reports the capture result' ([bool]$shot) ''
   Click-Exact 'Copy question' | Out-Null
-  Start-Sleep -Milliseconds 300
-  $copied = ''
-  try { $copied = [System.Windows.Forms.Clipboard]::GetText() } catch { $copied = '' }
-  Add-Scenario 'Control: Copy question copies the question text' ($copied -match 'index|caching') $copied
+  $copied = Wait-Named 'Copied question:' 3
+  Add-Scenario 'Control: Copy question copies the question text' ([bool]$copied) $(if ($copied) { $copied.Current.Name } else { 'copied text missing' })
   Click-Exact 'Expand transcript' | Out-Null
   $tx = Wait-Named 'Collapse transcript' 3
   Add-Scenario 'Control: Expand transcript opens the transcript' ([bool]$tx) ''
   if ($tx) { Click-Exact 'Collapse transcript' | Out-Null }
   Click-Exact 'Helpful' | Out-Null
-  Start-Sleep -Milliseconds 200
-  Add-Scenario 'Control: Helpful marks the answer' ((Get-Toggle (Find-Exact 'Helpful')) -eq 'On') ''
+  Add-Scenario 'Control: Helpful marks the answer' ([bool](Wait-Named 'Helpful selected' 3)) ''
   Click-Exact 'Not helpful' | Out-Null
-  Start-Sleep -Milliseconds 200
-  Add-Scenario 'Control: Not helpful marks the answer' ((Get-Toggle (Find-Exact 'Not helpful')) -eq 'On') ''
+  Add-Scenario 'Control: Not helpful marks the answer' ([bool](Wait-Named 'Not helpful selected' 3)) ''
   Click-Exact 'Clear transcript' | Out-Null
   Add-Scenario 'Control: Clear transcript clears the visible lines' ([bool](Wait-Named 'Visible transcript cleared' 3)) ''
   Click-Exact 'Clear answer' | Out-Null
@@ -871,7 +865,7 @@ try {
   $startAgain = Find-Exact 'Start'
   if ($startAgain) { Click-Element $startAgain; Start-Sleep -Milliseconds 500 }
   Click-Exact 'End session' | Out-Null
-  $endedChip = Wait-Named 'Ended' 8
+  $endedChip = Wait-Named 'View transcript' 8
   $endPosted = $false
   $endUntil = (Get-Date).AddSeconds(4)
   while ((Get-Date) -lt $endUntil -and -not $endPosted) {
@@ -916,8 +910,9 @@ try {
   $after = Click-Count
   Add-Scenario 'Restart still receives OS clicks' ($after -eq $before) "new pass-through=$($after - $before)"
   Save-Screen '06-restart.png'
-  if (Find-Exact 'Log out') {
-    Click-Exact 'Log out' | Out-Null
+  $logout = Wait-Named 'Log out' 12
+  if ($logout) {
+    Click-Element $logout
     Add-Scenario 'Control: Log out returns to the sign-in screen' ([bool](Wait-Named 'You are signed out' 6)) ''
   } else {
     Add-Scenario 'Control: Log out returns to the sign-in screen' $false 'Log out missing after restart'

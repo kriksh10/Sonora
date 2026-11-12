@@ -242,9 +242,10 @@ function requireApp(name) {
       await click(page, page.getByRole('button', { name: 'Chat' }));
       await click(page, page.locator('summary[aria-label="Overlay menu"]'));
       await click(page, page.getByRole('button', { name: 'Answer settings' }));
-      await page.getByRole('status').filter({ hasText: 'Answer settings' }).waitFor();
+      await page.getByRole('dialog', { name: 'Answer settings' }).waitFor();
+      await click(page, page.getByRole('button', { name: 'Close', exact: true }));
       await shot('04-live.png');
-      await click(page, page.getByRole('button', { name: 'End' }));
+      await click(page, page.getByRole('button', { name: 'End session' }));
       await page.getByRole('heading', { name: 'Call Sessions' }).waitFor();
     });
 
@@ -264,7 +265,7 @@ function requireApp(name) {
       await page.evaluate(() => window.dispatchEvent(new CustomEvent('sonora-e2e-transcript', { detail: { text: 'What is a queue?' } })));
       await click(page, answerButton(page));
       await page.getByText('Heard: What is a queue?', { exact: true }).waitFor();
-      await click(page, page.getByRole('button', { name: 'End' }));
+      await click(page, page.getByRole('button', { name: 'End session' }));
     });
 
     await scenario('glass, sidebar, transcript, and edges keep focus; gaps pass through only when enabled', async () => {

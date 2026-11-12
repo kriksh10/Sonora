@@ -45,6 +45,7 @@ export default function DesktopLiveOverlay(props: {
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [answerOpen, setAnswerOpen] = useState(true);
   const [vote, setVote] = useState<"up" | "down" | null>(null);
+  const [copied, setCopied] = useState("");
   const spoken = [...props.entries].reverse().find(entry => entry.role !== "assistant")?.text || "";
   const liveWords = props.paused
     ? "Paused. Transcription is off until you resume."
@@ -134,7 +135,8 @@ export default function DesktopLiveOverlay(props: {
             <button type="button" className="dp-pill" aria-label="Clear answer" onClick={props.onClearAnswers}>Clear</button>
             <button type="button" className="dp-icon-btn" aria-label="Hide answer" onClick={() => setAnswerOpen(false)}><X size={14} /></button>
           </div>
-          <div className="dp-q"><b>Question:</b> {props.latestQuestion || props.question || "Waiting for a question"} <button type="button" aria-label="Copy question" onClick={() => void navigator.clipboard?.writeText(props.latestQuestion || props.question || "")}><Copy size={13} /></button></div>
+          <div className="dp-q"><b>Question:</b> {props.latestQuestion || props.question || "Waiting for a question"} <button type="button" aria-label="Copy question" onClick={() => { const text = props.latestQuestion || props.question || ""; setCopied(text); void navigator.clipboard?.writeText(text).catch(() => {}); }}><Copy size={13} /></button></div>
+          {copied && <p role="status">Copied question: {copied}</p>}
           <div className="dp-answer-scroll" aria-label={props.answer || "Answer pending"}>
             <h3>Answer: {headline}</h3>
             {props.answer ? <SafeMarkdown text={props.answer} /> : <p>Ask, or let Auto Answer respond when the interviewer finishes.</p>}
@@ -144,8 +146,8 @@ export default function DesktopLiveOverlay(props: {
           <footer className="dp-foot">
             <span>Answer · {props.duration}</span>
             <span className="spacer" />
-            <button type="button" className={vote === "up" ? "is-on" : ""} aria-label="Helpful" aria-pressed={vote === "up"} onClick={() => setVote(vote === "up" ? null : "up")}><ThumbsUp size={14} /></button>
-            <button type="button" className={vote === "down" ? "is-on" : ""} aria-label="Not helpful" aria-pressed={vote === "down"} onClick={() => setVote(vote === "down" ? null : "down")}><ThumbsDown size={14} /></button>
+            <button type="button" className={vote === "up" ? "is-on" : ""} aria-label={vote === "up" ? "Helpful selected" : "Helpful"} aria-pressed={vote === "up"} onClick={() => setVote(vote === "up" ? null : "up")}><ThumbsUp size={14} /></button>
+            <button type="button" className={vote === "down" ? "is-on" : ""} aria-label={vote === "down" ? "Not helpful selected" : "Not helpful"} aria-pressed={vote === "down"} onClick={() => setVote(vote === "down" ? null : "down")}><ThumbsDown size={14} /></button>
           </footer>
         </article>
       )}

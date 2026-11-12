@@ -103,9 +103,8 @@ export default function DesktopSessions(props: {
             <a href={props.upgradeHref}>Upgrade</a>
           </div>
           <div className="dp-tabs" style={{ margin: 0 }}>
-            <span aria-label={`Theme ${props.theme}`} style={{ position: "absolute", width: 1, height: 1, overflow: "hidden" }}>{props.theme}</span>
-            <button type="button" aria-pressed={props.theme === "dark"} className={props.theme === "dark" ? "is-active" : ""} onClick={() => props.onTheme("dark")}>Dark</button>
-            <button type="button" aria-pressed={props.theme === "light"} className={props.theme === "light" ? "is-active" : ""} onClick={() => props.onTheme("light")}>Light</button>
+            <button type="button" aria-pressed={props.theme === "dark"} aria-label={props.theme === "dark" ? "Dark selected" : "Dark"} className={props.theme === "dark" ? "is-active" : ""} onClick={() => props.onTheme("dark")}>Dark</button>
+            <button type="button" aria-pressed={props.theme === "light"} aria-label={props.theme === "light" ? "Light selected" : "Light"} className={props.theme === "light" ? "is-active" : ""} onClick={() => props.onTheme("light")}>Light</button>
           </div>
           <div className="dp-user"><span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{props.userEmail || "Signed in"}</span><button type="button" aria-label="Log out" onClick={props.onSignOut}><LogOut size={14} /></button></div>
         </div>}
