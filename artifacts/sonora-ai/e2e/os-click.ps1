@@ -870,7 +870,7 @@ try {
   $startAgain = Find-Exact 'Start'
   if ($startAgain) { Click-Element $startAgain; Start-Sleep -Milliseconds 500 }
   Click-Exact 'End session' | Out-Null
-  $endedChip = Wait-Named 'View transcript' 8
+  $endedChip = Wait-Named 'Ended' 8
   $endPosted = $false
   $endUntil = (Get-Date).AddSeconds(4)
   while ((Get-Date) -lt $endUntil -and -not $endPosted) {
@@ -882,6 +882,13 @@ try {
   Add-Scenario 'Control: End stops the session and returns to the list' ([bool]($endedChip -and (Find-Element 'Call Sessions') -and -not (Find-Exact 'End session') -and $endPosted)) "saved=$endPosted"
   Save-Screen '05a-ended.png'
   Save-Screen '05-live.png'
+  $logout = Wait-Named 'Log out' 6
+  if ($logout) {
+    Click-Element $logout
+    Add-Scenario 'Control: Log out returns to the sign-in screen' ([bool](Wait-Named 'You are signed out' 6)) ''
+  } else {
+    Add-Scenario 'Control: Log out returns to the sign-in screen' $false 'Log out missing on the session list'
+  }
 
   Click-Name 'Hide Sonora' | Out-Null
   Start-Sleep -Milliseconds 700
@@ -915,13 +922,6 @@ try {
   $after = Click-Count
   Add-Scenario 'Restart still receives OS clicks' ($after -eq $before) "new pass-through=$($after - $before)"
   Save-Screen '06-restart.png'
-  $logout = Wait-Named 'Log out' 12
-  if ($logout) {
-    Click-Element $logout
-    Add-Scenario 'Control: Log out returns to the sign-in screen' ([bool](Wait-Named 'You are signed out' 6)) ''
-  } else {
-    Add-Scenario 'Control: Log out returns to the sign-in screen' $false 'Log out missing after restart'
-  }
 }
 finally {
   $failed = @($scenarios | Where-Object { -not $_.pass })
