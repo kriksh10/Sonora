@@ -617,9 +617,14 @@ try {
   Add-Scenario 'Control: Documents opens the saved-document panel' ([bool](Wait-Named 'Nothing saved yet' 3)) ''
   Click-Exact 'Call Sessions' | Out-Null
   Add-Scenario 'Control: Call Sessions returns to the session table' ([bool](Wait-Named 'Northwind interview' 3)) ''
-  Click-Exact 'Light' | Out-Null
+  function Select-Theme([string]$Name) {
+    $plain = Find-Exact $Name
+    if ($plain) { Click-Element $plain; return }
+    if (-not (Find-Exact "$Name selected")) { throw "No theme button named $Name" }
+  }
+  Select-Theme 'Light'
   Add-Scenario 'Control: Light theme toggle' ([bool](Wait-Named 'Light selected' 3)) ''
-  Click-Exact 'Dark' | Out-Null
+  Select-Theme 'Dark'
   Add-Scenario 'Control: Dark theme toggle' ([bool](Wait-Named 'Dark selected' 3)) ''
 
   function Set-Slider([double]$Ratio) {
