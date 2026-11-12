@@ -132,6 +132,7 @@ type SonoraDesktopBridge = {
   shortcut: string;
   show: () => Promise<DesktopState>;
   hide: () => Promise<DesktopState>;
+  minimize?: () => Promise<DesktopState>;
   toggle: () => Promise<DesktopState>;
   quit: () => Promise<void>;
   getState: () => Promise<DesktopState>;

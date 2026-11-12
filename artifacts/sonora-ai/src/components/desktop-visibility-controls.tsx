@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { EyeOff, GripHorizontal, Pin, Settings2, ShieldCheck, Square } from "lucide-react";
+import { EyeOff, GripHorizontal, Minus, Pin, Settings2, ShieldCheck, Square } from "lucide-react";
 import DesktopMaintenance from "@/components/desktop-maintenance";
 import DesktopHotkeysSheet from "@/components/desktop-hotkeys-sheet";
 import { createBackgroundOpacity } from "@/lib/background-opacity";
@@ -98,6 +98,9 @@ export default function DesktopVisibilityControls() {
           aria-label="Hide from screen sharing (best effort)" title="Screen-share exclusion is best effort"
           className={`sonora-window-action ${state?.contentProtection ? "text-emerald-300" : ""}`}
           onClick={() => void run(() => bridge.setContentProtection(!state?.contentProtection))}><ShieldCheck size={14} /></button>
+        <button type="button" disabled={!state || pending || !bridge.minimize} className="sonora-window-action" aria-label="Minimize"
+          title="Minimize to the tray. Sonora stays out of the taskbar, Alt+Tab, and Task View."
+          onClick={() => void run(() => bridge.minimize!())}><Minus size={14} /></button>
         <button type="button" disabled={!state || pending} className="sonora-window-action" aria-label="Hide Sonora"
           title="Hide the Sonora window. Audio keeps running. Show it again from the tray icon. This is not the screen-share shield."
           onClick={() => void run(() => bridge.hide())}><EyeOff size={14} /></button>
@@ -117,7 +120,7 @@ export default function DesktopVisibilityControls() {
                 onChange={event => opacityControl.current?.set(Number(event.target.value) / 100)}
                 className="sonora-slim-slider mt-3 w-full" />
             </label>
-            <p id="sonora-opacity-help" className="mt-2">{minimumOpacity}% is the slider floor. Panels never paint below 4% so Windows still treats them as a click target. 100% is opaque. Dialogs, inputs, cards, and this menu use the same opacity. The words stay solid.</p>
+            <p id="sonora-opacity-help" className="mt-2">{minimumOpacity}% is the slider floor. Only the panel and glass fill change. Text and buttons stay solid. A 4% hit plate keeps clicks on Sonora. 100% is an opaque panel.</p>
             {typeof bridge.setBackgroundOpacity === "function" && state && minimumOpacity === 45 &&
               <p className="mt-2 text-amber-200">This older shell supports 45–100%. Rebuild and install version 0.3.1 or newer for the 15% setting.</p>}
             {typeof bridge.setBackgroundOpacity === "function"

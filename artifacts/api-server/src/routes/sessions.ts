@@ -18,6 +18,7 @@ import { interviewAnswerPolicy } from "../lib/interview-answer-policy";
 import { relevantDocuments, transcriptForAnswer } from "../lib/answer-context";
 import { readPublicJobPage } from "../lib/job-page";
 import { answerPreferenceInstructions, standardAnswerPreferences, withAnswerPreferences } from "../lib/answer-preferences";
+import { answerGenerationConfig, answerWasCutOff, chunkAnswerText, chunkFinishReason, ANSWER_CONTINUATIONS } from "../lib/gemini-answer";
 import { titleForNewSession } from "./session-create-title";
 
 const router: IRouter = Router();
@@ -337,28 +338,43 @@ router.post("/sessions/:id/answer", async (req, res, next) => {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
         controller.signal.throwIfAborted();
-        const request = {
-          model: session.model,
-          contents: screenshot ? [{ role: "user", parts: [
-            { text: `${prompt}\n\nUse the attached screenshot only as reference for this question.` },
-            { inlineData: { mimeType: "image/jpeg", data: screenshot } },
-          ] }] : prompt,
-          config: { systemInstruction, abortSignal: controller.signal,
-            ...(session.model === "gemini-2.5-flash" ? { thinkingConfig: { thinkingBudget: 0 } } : {}) },
-        };
-        if (wantsStream) {
-          const stream = await ai.models.generateContentStream(request);
-          for await (const chunk of stream) {
-            controller.signal.throwIfAborted();
-            if (!chunk.text) continue;
-            if (answer.length + chunk.text.length > 24000) throw new Error("Answer exceeded the supported size.");
-            answer += chunk.text;
-            send({ content: chunk.text });
+        answer = "";
+        let continuation = "";
+        for (let part = 0; part < ANSWER_CONTINUATIONS; part += 1) {
+          const asked = continuation
+            ? `${prompt}\n\nContinue the answer from the last sentence. Do not repeat text already written.\n\n${answer.slice(-2000)}`
+            : prompt;
+          const request = {
+            model: session.model,
+            contents: screenshot && !continuation ? [{ role: "user", parts: [
+              { text: `${asked}\n\nUse the attached screenshot only as reference for this question.` },
+              { inlineData: { mimeType: "image/jpeg", data: screenshot } },
+            ] }] : asked,
+            config: { systemInstruction, ...answerGenerationConfig(session.model, controller.signal) },
+          };
+          let piece = "";
+          let reason = "";
+          if (wantsStream) {
+            const stream = await ai.models.generateContentStream(request);
+            for await (const chunk of stream) {
+              controller.signal.throwIfAborted();
+              const finish = chunkFinishReason(chunk);
+              if (finish) reason = finish;
+              const text = chunkAnswerText(chunk);
+              if (!text) continue;
+              if (answer.length + piece.length + text.length > 24000) throw new Error("Answer exceeded the supported size.");
+              piece += text;
+              send({ content: text });
+            }
+          } else {
+            const result = await ai.models.generateContent(request);
+            reason = chunkFinishReason(result);
+            piece = chunkAnswerText(result).trim();
+            if (answer.length + piece.length > 24000) throw new Error("Answer exceeded the supported size.");
           }
-        } else {
-          const result = await ai.models.generateContent(request);
-          answer = result.text?.trim() ?? "";
-          if (answer.length > 24000) throw new Error("Answer exceeded the supported size.");
+          answer += piece;
+          continuation = piece;
+          if (!answerWasCutOff(reason) || !piece) break;
         }
         break;
       } catch (cause) {

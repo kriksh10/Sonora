@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('sonoraDesktop', {
   shortcut: 'Ctrl+Shift+Space',
   show: () => ipcRenderer.invoke('overlay:show'),
   hide: () => ipcRenderer.invoke('overlay:hide'),
+  minimize: () => ipcRenderer.invoke('overlay:minimize'),
   toggle: () => ipcRenderer.invoke('overlay:toggle'),
   quit: () => ipcRenderer.invoke('overlay:quit'),
   getState: () => ipcRenderer.invoke('overlay:get-state'),

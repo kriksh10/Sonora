@@ -155,18 +155,32 @@ function clearWindowPlate() {
 function show() {
   if (!win || win.isDestroyed()) return;
   clearWindowPlate();
+  win.setSkipTaskbar?.(true);
   win.show();
   win.focus();
+  win.setSkipTaskbar?.(true);
   if (alwaysOnTop) holdOnTop();
+  broadcast();
+}
+function conceal() {
+  if (!win || win.isDestroyed()) return;
+  // Windows leaves a screen-saver-level always-on-top window visible if hide()
+  // runs while that level is still set. Drop the level, keep the preference.
+  win.setAlwaysOnTop(false);
+  // A minimized window grows a taskbar button and an Alt+Tab entry. Hide it instead.
+  try { if (win.isMinimized?.()) win.restore(); } catch { /* hide still removes it */ }
+  win.setSkipTaskbar?.(true);
+  win.hide();
+  win.setSkipTaskbar?.(true);
   broadcast();
 }
 function hide() {
   if (!win || win.isDestroyed() || !win.isVisible()) return;
-  // Windows leaves a screen-saver-level always-on-top window visible if hide()
-  // runs while that level is still set. Drop the level, keep the preference.
-  win.setAlwaysOnTop(false);
-  win.hide();
-  broadcast();
+  conceal();
+}
+function minimizeToTray() {
+  if (!win || win.isDestroyed()) return;
+  conceal();
 }
 function toggle() { if (win?.isVisible()) hide(); else show(); }
 function setContentProtection(value) {
@@ -269,6 +283,7 @@ function registerIpc() {
   });
   handle('overlay:show', () => { show(); return state(); });
   handle('overlay:hide', () => { hide(); return state(); });
+  handle('overlay:minimize', () => { minimizeToTray(); return state(); });
   handle('overlay:toggle', () => { toggle(); return state(); });
   handle('overlay:set-always-on-top', value => {
     if (typeof value !== 'boolean') throw new Error('Expected boolean.');
@@ -389,7 +404,7 @@ function createWindow() {
     // thickFrame, rounded corners, and Win11 Mica paint an opaque backing behind a frameless window.
     frame: false, thickFrame: false, roundedCorners: false,
     transparent: true, backgroundColor: HIT_FLOOR, backgroundMaterial: 'none', resizable: true, alwaysOnTop: true,
-    skipTaskbar: true, hasShadow: false,
+    title: '\u2060', skipTaskbar: true, hasShadow: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'), partition: 'persist:sonora',
       contextIsolation: true, nodeIntegration: false, sandbox: true,
@@ -397,6 +412,9 @@ function createWindow() {
     },
   });
   win.setIgnoreMouseEvents(false);
+  win.setSkipTaskbar(true);
+  try { win.setIcon(nativeImage.createEmpty()); } catch { /* an empty icon is optional */ }
+  win.on('page-title-updated', event => event.preventDefault());
   clearWindowPlate();
   if (migrateOpacity) persistWindow();
   applyAlwaysOnTop(alwaysOnTop);
@@ -424,6 +442,7 @@ function createWindow() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(persistWindow, 300);
   };
+  win.on('minimize', () => minimizeToTray());
   win.on('moved', remember);
   win.on('resized', remember);
   const recoverPosition = () => {

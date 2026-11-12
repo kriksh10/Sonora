@@ -40,6 +40,13 @@ test('stream interruption, malformed completion and provider errors cannot masqu
     assert.equal(seen[0], 'Partial');
   }
 });
+test('a final frame without a trailing blank line is still applied', async () => {
+  const chunks = [];
+  const text = frame({ content: 'Long ' }) + `data: ${JSON.stringify({ content: 'answer' })}\n\ndata: ${JSON.stringify({ done: true, answer: 'Long answer', model: 'gemini-test' })}`;
+  const result = await client(async () => streamed([text]))('id', { question: 'Q' }, new AbortController().signal, t => chunks.push(t));
+  assert.equal(result.answer, 'Long answer');
+  assert.deepEqual(chunks, ['Long ', 'Long answer']);
+});
 test('legacy JSON fallback and expired-auth errors remain explicit', async () => {
   const answer = await client(async () => Response.json({ answer: 'Full answer', model: 'test' }))('id', { question: 'Q' }, new AbortController().signal, () => {});
   assert.equal(answer.answer, 'Full answer');

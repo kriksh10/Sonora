@@ -70,6 +70,8 @@ public static class SonoraInput {
     if ((style & 0x80000) != 0) parts.Add("WS_EX_LAYERED");
     if ((style & 0x200000) != 0) parts.Add("WS_EX_NOREDIRECTIONBITMAP");
     if ((style & 0x8) != 0) parts.Add("WS_EX_TOPMOST");
+    if ((style & 0x80) != 0) parts.Add("WS_EX_TOOLWINDOW");
+    if ((style & 0x40000) != 0) parts.Add("WS_EX_APPWINDOW");
     return "0x" + style.ToString("X") + " " + string.Join(",", parts);
   }
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
@@ -101,6 +103,30 @@ public static class SonoraInput {
   }
   public static void RaiseWithoutFocus(IntPtr hWnd) {
     SetWindowPos(hWnd, new IntPtr(-1), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+  }
+  public static void Wheel(int x, int y, int delta) {
+    int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    int vw = Math.Max(1, GetSystemMetrics(SM_CXVIRTUALSCREEN));
+    int vh = Math.Max(1, GetSystemMetrics(SM_CYVIRTUALSCREEN));
+    int ax = (int)Math.Round((x - vx) * 65535.0 / Math.Max(1, vw - 1));
+    int ay = (int)Math.Round((y - vy) * 65535.0 / Math.Max(1, vh - 1));
+    INPUT[] inputs = new INPUT[2];
+    inputs[0].type = 0; inputs[0].mi.dx = ax; inputs[0].mi.dy = ay; inputs[0].mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
+    inputs[1].type = 0; inputs[1].mi.dx = ax; inputs[1].mi.dy = ay; inputs[1].mi.mouseData = unchecked((uint)delta); inputs[1].mi.dwFlags = 0x0800;
+    uint sent = SendInput(2, inputs, Marshal.SizeOf(typeof(INPUT)));
+    if (sent != 2) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+  }
+}
+public static class SonoraKeys {
+  [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, System.UIntPtr dwExtraInfo);
+  public static void RestoreChord() {
+    keybd_event(0x11, 0, 0, System.UIntPtr.Zero);
+    keybd_event(0x10, 0, 0, System.UIntPtr.Zero);
+    keybd_event(0x20, 0, 0, System.UIntPtr.Zero);
+    keybd_event(0x20, 0, 2, System.UIntPtr.Zero);
+    keybd_event(0x10, 0, 2, System.UIntPtr.Zero);
+    keybd_event(0x11, 0, 2, System.UIntPtr.Zero);
   }
 }
 "@
@@ -714,8 +740,13 @@ try {
         $after = Click-Count
         $fg2Name = Get-ForegroundName
         $label = "slider $([int]($ratio * 100)) $(if ($focus) {'focused'} else {'unfocused'}) $(if ($pin) {'pinned'} else {'unpinned'})"
-        $ok = ($panelPassed -eq 0) -and ($marginPassed -eq 0) -and ($fg2Name -like 'Sonora*')
+        $fgHwnd = [SonoraInput]::GetForegroundWindow()
+        $fgPid = [uint32]0
+        [void][SonoraInput]::GetWindowThreadProcessId($fgHwnd, [ref]$fgPid)
+        $fgProc = (Get-Process -Id $fgPid -ErrorAction SilentlyContinue).ProcessName
+        $ok = ($panelPassed -eq 0) -and ($marginPassed -eq 0) -and (($fg2Name -like 'Sonora*') -or ($fgProc -like 'Sonora*'))
         Add-Scenario $label $ok "panel=$panelPassed margin=$marginPassed foreground=$fg2Name total=$($after - $before)"
+        if ($pin -and $focus) { Save-Screen ("opacity-{0}.png" -f [int]($ratio * 100)) }
       }
     }
   }
@@ -794,10 +825,29 @@ try {
     Add-Scenario 'Control: Previous answer shows the earlier answer' ([bool](Wait-Named 'Heard: How does caching work?' 4)) ''
     Click-Exact 'Next answer' | Out-Null
     Add-Scenario 'Control: Next answer shows the later answer' ([bool](Wait-Named 'Heard: What is an index?' 4)) ''
+    Click-Element $chat
+    [System.Windows.Forms.SendKeys]::SendWait('Write six hundred words')
+    Start-Sleep -Milliseconds 250
+    Click-Exact 'Answer' | Out-Null
+    $full = Wait-Named 'ENDWORD' 8
+    $pane = Find-Element 'Answer scrollable'
+    if (-not $pane) { $pane = Find-Element 'Answer end visible' }
+    $scrolled = [bool](Find-Element 'Answer end visible')
+    if ($pane -and -not $scrolled) {
+      $box = $pane.Current.BoundingRectangle
+      $until = (Get-Date).AddSeconds(6)
+      while ((Get-Date) -lt $until -and -not $scrolled) {
+        [SonoraInput]::Wheel([int]($box.X + $box.Width / 2), [int]($box.Y + 40), -240)
+        Start-Sleep -Milliseconds 200
+        $scrolled = [bool](Find-Element 'Answer end visible')
+      }
+    }
+    Add-Scenario 'Control: A 600 word answer renders and scrolls to the end' ([bool]($full -and $scrolled)) "end=$([bool]$full) scrolled=$scrolled"
   } else {
     Add-Scenario 'Control: Chat question is answered' $false 'chat box missing'
     Add-Scenario 'Control: Previous answer shows the earlier answer' $false 'chat box missing'
     Add-Scenario 'Control: Next answer shows the later answer' $false 'chat box missing'
+    Add-Scenario 'Control: A 600 word answer renders and scrolls to the end' $false 'chat box missing'
   }
   Click-Exact 'Screenshot' | Out-Null
   $shot = Wait-Named 'Screenshot attached' 6
@@ -939,6 +989,47 @@ try {
   }
   Add-Scenario 'Opening Sonora again shows the hidden window' $shown ''
   Save-Screen '05c-shown.png'
+  Click-Exact 'Minimize' | Out-Null
+  Start-Sleep -Milliseconds 700
+  $minHidden = -not [SonoraInput]::IsWindowVisible($hwnd)
+  $minStyle = [SonoraInput]::ExStyle($hwnd)
+  $screenBottom = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Bottom
+  $root = [System.Windows.Automation.AutomationElement]::RootElement
+  $trayEl = $null
+  foreach ($tip in @('Sonora AI — audio off', 'Sonora AI - audio off', 'Sonora — AUDIO CAPTURE ACTIVE')) {
+    $cond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, $tip)
+    $found = $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond)
+    if ($found) { $trayEl = $found; break }
+  }
+  $tray = $false
+  if ($trayEl) {
+    $tr = $trayEl.Current.BoundingRectangle
+    $tray = $tr.Width -ge 4 -and $tr.Width -le 64 -and $tr.Y -gt ($screenBottom - 120)
+  }
+  $taskbar = $false
+  $buttonType = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)
+  $buttons = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $buttonType)
+  for ($i = 0; $i -lt $buttons.Count; $i++) {
+    $name = $buttons.Item($i).Current.Name
+    if ($name -notmatch 'Sonora') { continue }
+    $br = $buttons.Item($i).Current.BoundingRectangle
+    if ($br.Width -gt 80 -and $br.Y -gt ($screenBottom - 120)) { $taskbar = $true; break }
+  }
+  Add-Scenario 'Minimize leaves no taskbar or Alt+Tab entry and keeps a tray icon' ($minHidden -and $minStyle -match 'WS_EX_TOOLWINDOW' -and $minStyle -notmatch 'WS_EX_APPWINDOW' -and -not $taskbar -and $tray) "hidden=$minHidden style=$minStyle taskbar=$taskbar tray=$tray"
+  if ($tray -and $trayEl) {
+    $tr = $trayEl.Current.BoundingRectangle
+    [SonoraInput]::Click([int]($tr.X + $tr.Width / 2), [int]($tr.Y + $tr.Height / 2))
+  }
+  $restoredTray = $false
+  $trayUntil = (Get-Date).AddSeconds(6)
+  while ((Get-Date) -lt $trayUntil) { if ([SonoraInput]::IsWindowVisible($hwnd)) { $restoredTray = $true; break }; Start-Sleep -Milliseconds 250 }
+  Add-Scenario 'Tray click restores the window' $restoredTray ''
+  if ($restoredTray) { Click-Exact 'Minimize' | Out-Null; Start-Sleep -Milliseconds 500 }
+  [SonoraKeys]::RestoreChord()
+  $restoredKey = $false
+  $keyUntil = (Get-Date).AddSeconds(6)
+  while ((Get-Date) -lt $keyUntil) { if ([SonoraInput]::IsWindowVisible($hwnd)) { $restoredKey = $true; break }; Start-Sleep -Milliseconds 250 }
+  Add-Scenario 'Hotkey restores the minimized window' $restoredKey ''
 
   Stop-Sonora
   Start-Sleep -Seconds 1

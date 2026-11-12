@@ -74,6 +74,22 @@ test('unsupported platform does not offer capture exclusion', () => {
   assert.equal(toggle.checked, false);
 });
 
+test('minimize and the restore hotkey hide to the tray without a taskbar window', () => {
+  const f = fixture();
+  f.window.setSkipTaskbar = value => { f.window.skip = value; };
+  f.window.isMinimized = () => false;
+  vm.runInContext('minimizeToTray();', f.context);
+  assert.equal(f.window.isVisible(), false);
+  assert.equal(f.window.skip, true);
+  vm.runInContext('onHotkey({ id: "toggle", forward: false });', f.context);
+  assert.equal(f.window.isVisible(), true);
+  const main = fs.readFileSync(path.resolve(__dirname, '../main.cjs'), 'utf8');
+  assert.match(main, /win\.on\('minimize', \(\) => minimizeToTray\(\)\)/);
+  assert.match(main, /tray\.on\('click', toggle\)/);
+  assert.match(main, /skipTaskbar: true/);
+  assert.match(main, /page-title-updated/);
+});
+
 test('failed native protection change does not falsely update requested state', () => {
   const f = fixture();
   f.window.setContentProtection = () => { throw new Error('native failure'); };

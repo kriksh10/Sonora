@@ -70,6 +70,46 @@ html.sonora-desktop .lsv-answer,
 html.sonora-desktop .lsv-md,
 html.sonora-desktop .lsv-text,
 html.sonora-desktop .lsv-title strong { opacity: 1; color: #f4f6f8; }
+/* The slider changes panel glass only. Buttons and words stay fully opaque. */
+html.sonora-desktop button,
+html.sonora-desktop .dp-pill,
+html.sonora-desktop .dp-nav-btn,
+html.sonora-desktop .sonora-window-action,
+html.sonora-desktop .lsv-btn,
+html.sonora-desktop .dp-primary,
+html.sonora-desktop .dp-end {
+  opacity: 1;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+html.sonora-desktop .dp-pill,
+html.sonora-desktop .dp-tabs button,
+html.sonora-desktop .lsv-btn:not(.lsv-primary):not(.lsv-stop) {
+  background: #2a2b2f !important;
+  background-color: #2a2b2f !important;
+  color: #f7f8f8 !important;
+}
+html.sonora-desktop .dp-primary,
+html.sonora-desktop .lsv-btn.lsv-primary {
+  background: #257c3c !important;
+  background-color: #257c3c !important;
+  color: #fff !important;
+}
+html.sonora-desktop .dp-end,
+html.sonora-desktop .lsv-btn.lsv-stop {
+  background: #e11d2e !important;
+  background-color: #e11d2e !important;
+  color: #fff !important;
+}
+html.sonora-desktop .dp-app,
+html.sonora-desktop .dp-app h1,
+html.sonora-desktop .dp-app h2,
+html.sonora-desktop .dp-app h3,
+html.sonora-desktop .dp-app p,
+html.sonora-desktop .dp-app button,
+html.sonora-desktop .dp-app a {
+  -webkit-font-smoothing: antialiased;
+}
 /* Page, dialogs, inputs, tabs, and popovers share one alpha. Brand buttons stay solid. */
 html.sonora-desktop :is(
   .sonora-workspace,

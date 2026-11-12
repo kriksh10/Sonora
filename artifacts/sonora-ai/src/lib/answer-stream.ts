@@ -30,34 +30,40 @@ export async function requestAnswer(
   const decoder = new TextDecoder();
   let buffer = "", answer = "";
   let completed: { answer: string; model: string } | undefined;
+  const takeFrames = () => {
+    buffer = buffer.replace(/\r\n/g, "\n");
+    if (buffer.length > 100000) throw new Error("Invalid oversized answer stream.");
+    let boundary;
+    while ((boundary = buffer.indexOf("\n\n")) !== -1) {
+      const frame = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      const data = frame.split("\n").filter(line => line.startsWith("data:")).map(line => line.slice(5).trimStart()).join("\n");
+      if (!data) continue;
+      const event = JSON.parse(data);
+      if (event.error) throw new Error(typeof event.error === "string" ? event.error : "Answer interrupted.");
+      if (typeof event.content === "string") {
+        answer += event.content;
+        if (answer.length > 24000) throw new Error("Answer exceeded the supported size.");
+        onContent(answer);
+      }
+      if (event.done === true) {
+        if (typeof event.answer !== "string" || !event.answer.trim() || event.answer.length > 24000 ||
+            typeof event.model !== "string" || event.answer !== answer) throw new Error("Invalid completed answer.");
+        completed = { answer: event.answer, model: event.model };
+      }
+    }
+  };
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
-      buffer = buffer.replace(/\r\n/g, "\n");
-      if (buffer.length > 100000) throw new Error("Invalid oversized answer stream.");
-      let boundary;
-      while ((boundary = buffer.indexOf("\n\n")) !== -1) {
-        const frame = buffer.slice(0, boundary);
-        buffer = buffer.slice(boundary + 2);
-        const data = frame.split("\n").filter(line => line.startsWith("data:")).map(line => line.slice(5).trimStart()).join("\n");
-        if (!data) continue;
-        const event = JSON.parse(data);
-        if (event.error) throw new Error(typeof event.error === "string" ? event.error : "Answer interrupted.");
-        if (typeof event.content === "string") {
-          answer += event.content;
-          if (answer.length > 24000) throw new Error("Answer exceeded the supported size.");
-          onContent(answer);
-        }
-        if (event.done === true) {
-          if (typeof event.answer !== "string" || !event.answer.trim() || event.answer.length > 24000 ||
-              typeof event.model !== "string" || event.answer !== answer) throw new Error("Invalid completed answer.");
-          completed = { answer: event.answer, model: event.model };
-        }
-      }
+      takeFrames();
       if (completed) break;
     }
+    buffer += decoder.decode();
+    if (buffer.trim()) buffer += "\n\n";
+    takeFrames();
     if (!completed) throw new Error("Answer stream interrupted. Partial text is not a completed answer. Retry when connected.");
     return completed;
   } finally {

@@ -46,7 +46,7 @@ html.sonora-desktop .sonora-workspace.dp-app {
   width: 28px; height: 28px; border-radius: 8px; cursor: pointer;
 }
 .dp-icon-btn:hover, .dp-brand button:hover { background: rgba(255,255,255,.08); color: #fff; }
-.dp-label { margin: 14px 8px 6px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: rgba(255,255,255,.42); }
+.dp-label { margin: 14px 8px 6px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #c8c9cc; }
 .dp-nav-btn {
   display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
   border: 0; background: transparent; color: rgba(255,255,255,.78);
@@ -71,7 +71,7 @@ html.sonora-desktop .sonora-workspace.dp-app {
 .dp-head p { margin: 6px 0 0; color: rgba(255,255,255,.55); font-size: 13px; }
 .dp-tabs { display: flex; gap: 6px; margin: 18px 0 12px; }
 .dp-tabs button, .dp-pill {
-  border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.04); color: rgba(255,255,255,.8);
+  border: 1px solid rgba(255,255,255,.28); background: #2a2b2f; color: #f7f8f8;
   border-radius: 999px; padding: 6px 12px; font: 500 12px/1.2 Inter, "Segoe UI", sans-serif; cursor: pointer;
 }
 .dp-tabs button.is-active, .dp-pill.is-active { background: rgba(255,255,255,.14); color: #fff; }
@@ -157,7 +157,7 @@ html.sonora-desktop .sonora-workspace.dp-app {
 .dp-menu-pop select, .dp-chat textarea, html.sonora-desktop .dp-dialog input,
 html.sonora-desktop .dp-dialog textarea, html.sonora-desktop .dp-dialog select {
   width: 100%; border: 1px solid rgba(255,255,255,.16) !important; border-radius: 10px;
-  background: rgba(255,255,255, calc(var(--sonora-background-opacity, .4) * .16)) !important;
+  background: #1e1e20 !important;
   color: #fff; padding: 8px 10px; font: inherit;
 }
 .dp-strip { display: flex; align-items: center; gap: 10px; min-height: 42px; }

@@ -85,6 +85,10 @@ const server = http.createServer(async (req, res) => {
       if (mode === 'offline') { req.socket.on('error', () => {}); req.socket.destroy(); return; }
       if (mode === 'timeout') return;
       const body = await readBody(req);
+      if (typeof body.question === 'string' && body.question.toLowerCase().includes('six hundred')) {
+        const words = Array.from({ length: 600 }, (_, index) => `word${index + 1}`);
+        return send(res, 200, { answer: `${words.join(' ')} ENDWORD`, model: 'e2e' });
+      }
       return send(res, 200, { answer: `Heard: ${body.question}`, model: 'e2e' });
     }
     const ended = url.pathname.match(/^\/api\/sessions\/([^/]+)$/);
