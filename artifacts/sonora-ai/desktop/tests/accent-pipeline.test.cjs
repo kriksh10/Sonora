@@ -10,6 +10,14 @@ const speech = fs.readFileSync(path.join(repo, 'artifacts/api-server/src/lib/spe
 const capture = fs.readFileSync(path.join(app, 'src/lib/desktop-audio.ts'), 'utf8');
 const native = fs.readFileSync(path.join(app, 'desktop/native-audio/src/pcm.rs'), 'utf8');
 const wasapi = fs.readFileSync(path.join(app, 'desktop/native-audio/src/platform.rs'), 'utf8');
+const compat = fs.readFileSync(path.join(app, 'src/lib/compat-pcm.ts'), 'utf8');
+const proposal = fs.readFileSync(path.join(app, 'src/lib/anti-alias.ts'), 'utf8');
+const measured = new Function(`${proposal
+  .replace(/export const /g, 'const ')
+  .replace(/export function /g, 'function ')
+  .replace(/: ArrayLike<number>/g, '')
+  .replace(/: number\[\]/g, '')
+  .replace(/: number/g, '')}; return { downsample, smoothGain };`)();
 
 /** Same boxcar used by the worklet and the native encoder: average each input bucket that lands on 16 kHz. */
 function resample(input, rate) {
@@ -81,24 +89,39 @@ test('browser capture leaves noise suppression and auto gain at the browser defa
   assert.match(wasapi, /use the first two/);
 });
 
-test('48 kHz speech keeps its duration and a 12 kHz tone aliases through the boxcar', () => {
-  const voice = resample(sine(48000, 1000, 48000), 48000);
+test('a low-pass before the boxcar keeps 1 kHz and rejects 12 kHz', () => {
+  const bare = resample(sine(48000, 12000, 48000), 48000);
+  assert.ok(rms(bare) > 0.2, `boxcar alone still aliases 12 kHz at RMS ${rms(bare)}`);
+  const voice = measured.downsample(sine(48000, 1000, 48000), 48000);
   assert.equal(voice.length, 16000);
-  const kept = Math.abs(correlation(voice, sine(16000, 1000, voice.length)));
+  let kept = 0;
+  const reference = sine(16000, 1000, voice.length);
+  for (let lag = 0; lag <= 40; lag++) kept = Math.max(kept, Math.abs(correlation(voice.slice(lag), reference)));
   assert.ok(kept > 0.95, `1 kHz correlation ${kept}`);
-  const aliased = resample(sine(48000, 12000, 48000), 48000);
-  const leftover = rms(aliased);
-  assert.ok(leftover > 0.2, `12 kHz tone above the 8 kHz Nyquist still has RMS ${leftover} after the boxcar`);
+  const filtered = rms(measured.downsample(sine(48000, 12000, 48000), 48000));
+  assert.ok(filtered < 0.02, `12 kHz RMS after the low-pass is ${filtered}`);
+  assert.match(proposal, /LOWPASS_CUTOFF_HZ = 7200/);
+  assert.match(proposal, /LOWPASS_TAPS = 31/);
+  assert.match(worklet, /const taps = 31, fc = 7200 \/ sampleRate/);
+  assert.match(worklet, /this\.sum \+= this\.lowpass\(value\)/);
+  assert.match(compat, /sum \+= lowpass\(value\)/);
+  assert.match(native, /LOWPASS_CUTOFF: f64 = 7_200\.0/);
+  assert.match(native, /LOWPASS_TAPS: usize = 31/);
+  assert.match(native, /self\.sum \+= self\.lowpass\.apply/);
 });
 
-test('quiet-speech lift changes gain between neighbouring 10 ms frames', () => {
-  const gain = peak => Math.min(8, 0.2 / peak);
-  const quiet = 0.01 * gain(0.01);
-  const louder = 0.05 * gain(0.05);
-  assert.ok(Math.abs(quiet - 0.08) < 1e-9);
-  assert.ok(Math.abs(louder - 0.2) < 1e-9);
-  assert.ok(quiet / 0.01 !== louder / 0.05);
-  assert.match(worklet, /const gain = Math\.min\(8, 0\.2 \/ this\.peak\)/);
+test('neighbouring 10 ms frames move gain by a step instead of snapping', () => {
+  let gain = 1;
+  for (let frame = 0; frame < 80; frame++) gain = measured.smoothGain(gain, 0.01);
+  const settled = gain;
+  const next = measured.smoothGain(settled, 0.05);
+  const step = Math.abs(next - settled);
+  assert.ok(settled > 6, `gain settled at ${settled}`);
+  assert.ok(step < 0.5, `one frame moved gain by ${step}, the old snap was 4`);
+  assert.match(proposal, /GAIN_STEP = 0\.065/);
+  assert.match(native, /GAIN_STEP: f32 = 0\.065/);
+  assert.match(native, /self\.gain \+= \(target - self\.gain\) \* GAIN_STEP/);
+  assert.doesNotMatch(native.slice(native.indexOf('frame_peak'), native.indexOf('chunks.push(Chunk::Pcm')), /lift_quiet_speech/);
 });
 
 test('real Speechmatics word error rate is not measured without an API key', (t) => {

@@ -8,8 +8,64 @@ const SAMPLES: usize = RATE as usize * 9 / 2;
 const SPEECH_FLOOR: f32 = 0.003;
 const TARGET_PEAK: f32 = 0.2;
 const MAX_GAIN: f32 = 8.0;
+/// One 10 ms step toward the target gain. Matches src/lib/anti-alias.ts.
+const GAIN_STEP: f32 = 0.065;
+const LOWPASS_CUTOFF: f64 = 7_200.0;
+const LOWPASS_TAPS: usize = 31;
 
 pub const FRAME: usize = 160;
+
+struct Lowpass {
+    taps: Vec<f64>,
+    delay: Vec<f64>,
+    pos: usize,
+}
+
+impl Lowpass {
+    fn bypass() -> Self {
+        Self { taps: Vec::new(), delay: Vec::new(), pos: 0 }
+    }
+
+    fn for_rate(rate: u32) -> Self {
+        if rate <= RATE {
+            return Self::bypass();
+        }
+        let mut taps = vec![0.0; LOWPASS_TAPS];
+        let half = (LOWPASS_TAPS - 1) as f64 / 2.0;
+        let fc = LOWPASS_CUTOFF / f64::from(rate);
+        let mut sum = 0.0;
+        for i in 0..LOWPASS_TAPS {
+            let n = i as f64 - half;
+            let sinc = if n == 0.0 {
+                2.0 * fc
+            } else {
+                (2.0 * std::f64::consts::PI * fc * n).sin() / (std::f64::consts::PI * n)
+            };
+            let window = 0.54 - 0.46 * (2.0 * std::f64::consts::PI * i as f64 / (LOWPASS_TAPS - 1) as f64).cos();
+            taps[i] = sinc * window;
+            sum += taps[i];
+        }
+        for tap in &mut taps {
+            *tap /= sum;
+        }
+        Self { delay: vec![0.0; LOWPASS_TAPS], taps, pos: 0 }
+    }
+
+    fn apply(&mut self, value: f64) -> f64 {
+        if self.taps.is_empty() {
+            return value;
+        }
+        let n = self.taps.len();
+        self.delay[self.pos] = value;
+        let mut acc = 0.0;
+        for k in 0..n {
+            let index = (self.pos + n - k) % n;
+            acc += self.delay[index] * self.taps[k];
+        }
+        self.pos = (self.pos + 1) % n;
+        acc
+    }
+}
 
 pub enum Chunk {
     Audio(Vec<u8>, bool),
@@ -31,6 +87,9 @@ pub struct Encoder {
     reference_sum: f64,
     reference_count: u32,
     echo: Canceller,
+    lowpass: Lowpass,
+    reference_lowpass: Lowpass,
+    gain: f32,
     peak: f32,
     silent_chunks: u32,
     trailing_quiet: usize,
@@ -50,6 +109,9 @@ impl Encoder {
             reference_sum: 0.0,
             reference_count: 0,
             echo: Canceller::new(),
+            lowpass: Lowpass::bypass(),
+            reference_lowpass: Lowpass::bypass(),
+            gain: 1.0,
             peak: 0.0,
             silent_chunks: 0,
             trailing_quiet: 0,
@@ -77,12 +139,15 @@ impl Encoder {
         if self.reference_rate.is_some_and(|previous| previous != rate) {
             bail!("Audio device format changed. Stop and restart capture.");
         }
+        if self.reference_rate.is_none() {
+            self.reference_lowpass = Lowpass::for_rate(rate);
+        }
         self.reference_rate = Some(rate);
         for &value in input {
             if !value.is_finite() {
                 bail!("Audio device returned invalid samples.");
             }
-            self.reference_sum += f64::from(value.clamp(-1.0, 1.0));
+            self.reference_sum += self.reference_lowpass.apply(f64::from(value.clamp(-1.0, 1.0)));
             self.reference_count += 1;
             self.reference_phase += RATE;
             if self.reference_phase < rate {
@@ -104,13 +169,16 @@ impl Encoder {
         if self.rate.is_some_and(|previous| previous != rate) {
             bail!("Audio device format changed. Stop and restart capture.");
         }
+        if self.rate.is_none() {
+            self.lowpass = Lowpass::for_rate(rate);
+        }
         self.rate = Some(rate);
         let mut chunks = Vec::new();
         for &value in input {
             if !value.is_finite() {
                 bail!("Audio device returned invalid samples.");
             }
-            self.sum += f64::from(value.clamp(-1.0, 1.0));
+            self.sum += self.lowpass.apply(f64::from(value.clamp(-1.0, 1.0)));
             self.count += 1;
             self.phase += RATE;
             if self.phase < rate {
@@ -129,7 +197,9 @@ impl Encoder {
                 let mut frame = std::mem::take(&mut self.live);
                 let frame_peak = frame.iter().fold(0.0_f32, |peak, sample| peak.max(f32::from(sample.unsigned_abs()) / 32767.0));
                 if frame_peak >= SPEECH_FLOOR {
-                    lift_quiet_speech(&mut frame, frame_peak);
+                    let target = if frame_peak >= TARGET_PEAK { 1.0 } else { (TARGET_PEAK / frame_peak).min(MAX_GAIN) };
+                    self.gain += (target - self.gain) * GAIN_STEP;
+                    apply_gain(&mut frame, self.gain);
                 }
                 chunks.push(Chunk::Pcm(pcm_bytes(&frame)));
             }
@@ -170,7 +240,13 @@ fn lift_quiet_speech(samples: &mut [i16], peak: f32) {
     if peak >= TARGET_PEAK {
         return;
     }
-    let gain = (TARGET_PEAK / peak).min(MAX_GAIN);
+    apply_gain(samples, (TARGET_PEAK / peak).min(MAX_GAIN));
+}
+
+fn apply_gain(samples: &mut [i16], gain: f32) {
+    if (gain - 1.0).abs() < 0.001 {
+        return;
+    }
     for sample in samples {
         let boosted = (f32::from(*sample) * gain).round().clamp(-32767.0, 32767.0);
         *sample = boosted as i16;
@@ -217,7 +293,8 @@ mod tests {
                 assert_eq!(&wav[0..4], b"RIFF");
                 assert_eq!(&wav[8..16], b"WAVEfmt ");
                 assert_eq!(u32::from_le_bytes(wav[24..28].try_into().unwrap()), RATE);
-                assert_eq!(i16::from_le_bytes(wav[44..46].try_into().unwrap()), 8192);
+                let settled = i16::from_le_bytes(wav[300..302].try_into().unwrap());
+                assert!((settled - 8192).abs() <= 1, "settled sample {settled}");
             }
         }
     }
@@ -241,10 +318,10 @@ mod tests {
         chunks.retain(|chunk| matches!(chunk, Chunk::Audio(_, _)));
         assert_eq!(chunks.len(), 1);
         let Chunk::Audio(wav, end_of_turn) = &chunks[0] else { panic!("Short speech was lost"); };
-        assert_eq!(wav.len(), 86_444);
+        assert_eq!(wav.len(), 86_460);
         assert!(*end_of_turn);
         assert!(wav[44..64044].iter().any(|x| *x != 0));
-        assert!(wav[64044..].iter().all(|x| *x == 0));
+        assert!(wav[64108..].iter().all(|x| *x == 0));
         let mut silent = Vec::new();
         for _ in 0..24 { silent.extend(encoder.pad_silence(250).unwrap()); }
         silent.retain(|chunk| matches!(chunk, Chunk::Silence { .. }));
@@ -258,10 +335,37 @@ mod tests {
         let chunks: Vec<_> = encoder.push(16_000, &vec![0.01; SAMPLES]).unwrap()
             .into_iter().filter(|chunk| matches!(chunk, Chunk::Audio(_, _))).collect();
         let Chunk::Audio(wav, _) = &chunks[0] else { panic!("Quiet speech was dropped"); };
-        // 0.01 quantizes to 328, then the 8x cap lifts it to 2624.
-        assert_eq!(i16::from_le_bytes(wav[44..46].try_into().unwrap()), 2624);
+        // 0.01 quantizes to 328, then the 8x cap lifts a settled sample to 2624.
+        let lifted = i16::from_le_bytes(wav[300..302].try_into().unwrap());
+        assert!((lifted - 2624).abs() <= 8, "lifted sample {lifted}");
         let silent: Vec<_> = Encoder::new().push(16_000, &vec![0.001; SAMPLES]).unwrap()
             .into_iter().filter(|chunk| matches!(chunk, Chunk::Silence { .. })).collect();
         assert!(matches!(silent[0], Chunk::Silence { prolonged: false }));
+    }
+    #[test]
+    fn twelve_kilohertz_is_rejected_and_frame_gain_does_not_snap() {
+        let mut encoder = Encoder::new();
+        let input: Vec<f32> = (0..48_000).map(|i| (2.0 * std::f64::consts::PI * 12_000.0 * i as f64 / 48_000.0).sin() as f32).collect();
+        let chunks = encoder.push(48_000, &input).unwrap();
+        let mut energy = 0.0;
+        let mut count = 0.0;
+        for chunk in chunks {
+            let Chunk::Pcm(bytes) = chunk else { continue };
+            for pair in bytes.chunks_exact(2) {
+                let sample = i16::from_le_bytes([pair[0], pair[1]]) as f32 / 32767.0;
+                energy += f64::from(sample * sample);
+                count += 1.0;
+            }
+        }
+        let rms = (energy / count).sqrt();
+        assert!(rms < 0.02, "12 kHz RMS {rms}");
+
+        let mut quiet = Encoder::new();
+        quiet.push(16_000, &vec![0.01; 3_200]).unwrap();
+        let before = quiet.gain;
+        quiet.push(16_000, &vec![0.05; 160]).unwrap();
+        let step = (quiet.gain - before).abs();
+        assert!(before > 6.0, "gain settled at {before}");
+        assert!(step < 0.5, "one frame moved gain by {step}");
     }
 }

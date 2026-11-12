@@ -14,12 +14,40 @@ class SonoraPcm extends AudioWorkletProcessor {
     this.trailingQuiet = 0;
     this.raw = new Float32Array(320);
     this.rawUsed = 0;
+    this.taps = null;
+    this.delay = null;
+    this.delayPos = 0;
+  }
+  // Same 31-tap, 7200 Hz low-pass as src/lib/anti-alias.ts. At 16 kHz it is a no-op.
+  lowpass(value) {
+    if (sampleRate <= 16000) return value;
+    if (!this.taps) {
+      const taps = 31, fc = 7200 / sampleRate, half = (taps - 1) / 2;
+      this.taps = new Float64Array(taps);
+      let sum = 0;
+      for (let i = 0; i < taps; i++) {
+        const n = i - half;
+        const sinc = n === 0 ? 2 * fc : Math.sin(2 * Math.PI * fc * n) / (Math.PI * n);
+        const window = 0.54 - 0.46 * Math.cos((2 * Math.PI * i) / (taps - 1));
+        this.taps[i] = sinc * window;
+        sum += this.taps[i];
+      }
+      for (let i = 0; i < taps; i++) this.taps[i] /= sum;
+      this.delay = new Float64Array(taps);
+      this.delayPos = 0;
+    }
+    const n = this.taps.length;
+    this.delay[this.delayPos] = value;
+    let acc = 0;
+    for (let k = 0; k < n; k++) acc += this.delay[(this.delayPos - k + n) % n] * this.taps[k];
+    this.delayPos = (this.delayPos + 1) % n;
+    return acc;
   }
   process(inputs) {
     const channel = inputs[0]?.[0];
     if (!channel) return true;
     for (const value of channel) {
-      this.sum += value;
+      this.sum += this.lowpass(value);
       this.count++;
       this.peak = Math.max(this.peak, Math.abs(value));
       this.meterPeak = Math.max(this.meterPeak, Math.abs(value));
