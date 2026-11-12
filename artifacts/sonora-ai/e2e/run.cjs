@@ -22,9 +22,10 @@ function exePath() {
   return path.join(unpacked, hit);
 }
 
-const answerButton = page => page.getByRole('button', { name: 'Answer Ctrl+Enter' });
+const answerButton = page => page.getByRole('button', { name: 'Answer', exact: true });
 
 async function click(page, locator) {
+  await locator.scrollIntoViewIfNeeded();
   const box = await locator.boundingBox();
   if (!box) throw new Error(`No clickable box for ${locator}`);
   const x = box.x + box.width / 2;
@@ -235,7 +236,7 @@ function requireApp(name) {
       await page.getByText('Heard: Typed from chat', { exact: true }).waitFor();
       await click(page, page.getByRole('button', { name: 'Next answer' }));
       await page.getByText('Heard: Explain indexes', { exact: true }).waitFor();
-      await click(page, page.getByRole('button', { name: 'Clear', exact: true }).first());
+      await click(page, page.getByRole('button', { name: 'Clear transcript' }));
       await click(page, page.getByRole('button', { name: 'Screenshot' }));
       await page.getByText('Screenshot attached.').waitFor();
       await click(page, page.getByRole('button', { name: 'Chat' }));

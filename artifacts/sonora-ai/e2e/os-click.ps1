@@ -425,6 +425,8 @@ try {
   }
   function Click-Element($el) {
     if (-not $el) { throw 'No UI element to click' }
+    try { $el.GetCurrentPattern([System.Windows.Automation.ScrollItemPattern]::Pattern).ScrollIntoView() } catch {}
+    Start-Sleep -Milliseconds 120
     $r = $el.Current.BoundingRectangle
     if ($r.Width -lt 1 -or $r.Height -lt 1) { throw "Element $($el.Current.Name) has no on-screen box" }
     $before = Click-Count
@@ -585,6 +587,12 @@ try {
     try { return [double]$el.GetCurrentPattern([System.Windows.Automation.RangeValuePattern]::Pattern).Current.Value }
     catch { return $null }
   }
+  function Find-Slider([string]$Name) {
+    foreach ($el in @(Find-All $Name)) {
+      if ($el.Current.ControlType.ProgrammaticName -match 'Slider') { return $el }
+    }
+    return $null
+  }
   Click-Exact 'Collapse sidebar' | Out-Null
   $sidebarBack = Wait-Named 'Expand sidebar' 3
   Add-Scenario 'Control: Collapse sidebar hides the labels' ([bool]$sidebarBack) ''
@@ -611,10 +619,10 @@ try {
   Add-Scenario 'Control: Call Sessions returns to the session table' ([bool](Wait-Named 'Northwind interview' 3)) ''
   Click-Exact 'Light' | Out-Null
   Start-Sleep -Milliseconds 250
-  Add-Scenario 'Control: Light theme toggle' ((Get-Toggle (Find-Exact 'Light')) -eq 'On') ''
+  Add-Scenario 'Control: Light theme toggle' ([bool](Find-Element 'Theme light')) ''
   Click-Exact 'Dark' | Out-Null
   Start-Sleep -Milliseconds 250
-  Add-Scenario 'Control: Dark theme toggle' ((Get-Toggle (Find-Exact 'Dark')) -eq 'On') ''
+  Add-Scenario 'Control: Dark theme toggle' ([bool](Find-Element 'Theme dark')) ''
 
   function Set-Slider([double]$Ratio) {
     [SonoraInput]::RaiseWithoutFocus($hwnd) | Out-Null
@@ -683,10 +691,10 @@ try {
     }
   }
   Save-Screen '04-slider-matrix.png'
-  $opacityBefore = Get-Range (Find-Element 'Overlay opacity')
+  $opacityBefore = Get-Range (Find-Slider 'Overlay opacity')
   Set-Slider 0.2
   Start-Sleep -Milliseconds 300
-  $opacityAfter = Get-Range (Find-Element 'Overlay opacity')
+  $opacityAfter = Get-Range (Find-Slider 'Overlay opacity')
   Add-Scenario 'Control: Opacity slider changes overlay opacity' ($null -ne $opacityBefore -and $null -ne $opacityAfter -and [math]::Abs($opacityAfter - $opacityBefore) -gt 0.5) "before=$opacityBefore after=$opacityAfter"
   $pinBefore = Get-Toggle (Find-Element 'Keep on top')
   Click-Exact 'Keep on top' | Out-Null
@@ -704,6 +712,8 @@ try {
   Add-Scenario 'Control: Settings opens window options' ([bool](Find-Element 'Click through the overlay')) ''
   Click-Exact 'Window settings' | Out-Null
 
+  [SonoraInput]::SetForegroundWindow($hwnd) | Out-Null
+  Start-Sleep -Milliseconds 300
   $row = Find-Element 'Northwind interview'
   if ($row) {
     $start = Find-Exact 'Start'

@@ -103,6 +103,7 @@ export default function DesktopSessions(props: {
             <a href={props.upgradeHref}>Upgrade</a>
           </div>
           <div className="dp-tabs" style={{ margin: 0 }}>
+            <span aria-label={`Theme ${props.theme}`} style={{ position: "absolute", width: 1, height: 1, overflow: "hidden" }}>{props.theme}</span>
             <button type="button" aria-pressed={props.theme === "dark"} className={props.theme === "dark" ? "is-active" : ""} onClick={() => props.onTheme("dark")}>Dark</button>
             <button type="button" aria-pressed={props.theme === "light"} className={props.theme === "light" ? "is-active" : ""} onClick={() => props.onTheme("light")}>Light</button>
           </div>
