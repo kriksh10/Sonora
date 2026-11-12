@@ -155,7 +155,7 @@ export default function DesktopSessions(props: {
                 <tbody>
                   <tr className="dp-group"><td colSpan={7}>Active</td></tr>
                   {active.map(row)}
-                  {active.length === 0 && <tr><td colSpan={7}>No active sessions.</td></tr>}
+                  {active.length === 0 && <tr><td colSpan={7}><p aria-label="No active sessions">No active sessions.</p></td></tr>}
                   <tr className="dp-group"><td colSpan={7}>Past</td></tr>
                   {past.map(row)}
                   {past.length === 0 && <tr><td colSpan={7}>No past sessions.</td></tr>}

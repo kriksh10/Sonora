@@ -877,10 +877,12 @@ try {
     if (-not $endPosted -and $env:SONORA_MOCK_LOG -and (Test-Path $env:SONORA_MOCK_LOG)) {
       $endPosted = [bool](Select-String -Path $env:SONORA_MOCK_LOG -Pattern 'PATCH /api/sessions/.+' -Quiet)
     }
-    $leftSession = [bool]((Find-Element 'No active sessions') -and -not (Find-Exact 'End session'))
+    $noActive = [bool](Find-Element 'No active sessions')
+    $stillLive = [bool](Find-Exact 'End session')
+    $leftSession = $noActive -and -not $stillLive
     if (-not ($endPosted -and $leftSession)) { Start-Sleep -Milliseconds 250 }
   }
-  Add-Scenario 'Control: End stops the session and returns to the list' ([bool]($endPosted -and $leftSession)) "saved=$endPosted left=$leftSession"
+  Add-Scenario 'Control: End stops the session and returns to the list' ([bool]($endPosted -and $leftSession)) "saved=$endPosted noActive=$noActive stillLive=$stillLive"
   Save-Screen '05a-ended.png'
   Save-Screen '05-live.png'
   $logout = Wait-Named 'Log out' 6
