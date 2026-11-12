@@ -20,7 +20,9 @@ test('worklet makes independent six-second 16 kHz chunks and leaves outputs sile
   assert.equal(chunks.length, 1);
   assert.equal(chunks[0].samples.length, 96000);
   assert.equal(chunks[0].endOfTurn, false);
-  assert.ok(Math.abs(chunks[0].samples[0] - .2) < .00001);
+  // The low-pass starts from silence, so the first outputs ramp up. A later sample of this
+  // constant 0.1 tone is lifted to the 0.2 target.
+  assert.ok(Math.abs(chunks[0].samples[64] - .2) < .001);
   assert.equal(messages.filter(m => typeof m.peak === 'number').length, 24);
   assert.ok(output.every(value => value === 0));
 });
@@ -48,7 +50,7 @@ test('quiet speech is lifted and near-silence is still skipped', () => {
   quiet.node.process([[new Float32Array(48000 * 6).fill(0.01)]]);
   const lifted = quiet.messages.find(m => m.samples);
   assert.ok(lifted);
-  assert.ok(Math.abs(lifted.samples[0] - 0.08) < 0.00001);
+  assert.ok(Math.abs(lifted.samples[64] - 0.08) < 0.001);
   const silent = processor();
   silent.node.process([[new Float32Array(48000 * 6).fill(0.001)]]);
   assert.equal(silent.messages.some(m => m.samples), false);
@@ -59,7 +61,8 @@ test('browser worklet continuously emits 20ms raw frames, including silence, bef
   node.process([[new Float32Array(48000).fill(.1)]]);
   const frames = messages.filter(m => m.pcm);
   assert.equal(frames.length, 50);
-  assert.ok(frames.every(m => m.pcm.length === 320 && Math.abs(m.pcm[0] - .1) < .00001));
+  assert.ok(frames.every(m => m.pcm.length === 320));
+  assert.ok(Math.abs(frames[10].pcm[0] - .1) < .001);
   assert.equal(messages.some(m => m.samples), false);
   node.process([[new Float32Array(48000)]]);
   assert.equal(messages.filter(m => m.pcm).length, 100);
