@@ -78,7 +78,23 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       return send(res, 200, { answer: `Heard: ${body.question}`, model: 'e2e' });
     }
+    const ended = url.pathname.match(/^\/api\/sessions\/([^/]+)$/);
+    if (ended && req.method === 'PATCH') {
+      if (!authed) return send(res, 401, { error: 'Sign in first.' });
+      const body = await readBody(req);
+      const session = sessions.find(item => item.id === ended[1]);
+      if (!session) return send(res, 404, { error: 'Session not found.' });
+      if (body.status === 'ended' || body.status === 'active' || body.status === 'ready') session.status = body.status;
+      if (body.status === 'ended') session.endedAt = new Date().toISOString();
+      return send(res, 200, session);
+    }
     const live = url.pathname.match(/^\/api\/sessions\/([^/]+)\/live-audio$/);
+    if (live && req.method === 'POST') {
+      const body = await readBody(req);
+      if (body.stop === true) return send(res, 200, { stopped: true });
+      if (mode === 'speechmatics') return send(res, 503, { error: 'Speechmatics unavailable' });
+      return send(res, 200, { ok: true, transcript: 'How does caching work?' });
+    }
     if (live) {
       if (mode === 'speechmatics') return send(res, 503, { error: 'Speechmatics unavailable' });
       return send(res, 200, { ok: true, transcript: 'How does caching work?' });

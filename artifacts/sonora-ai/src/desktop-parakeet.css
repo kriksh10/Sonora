@@ -118,7 +118,8 @@ html.sonora-desktop .sonora-workspace.dp-app {
   border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; padding: 0;
 }
 .dp-line { display: block; width: 100%; padding: 4px 0; }
-.dp-end { border: 0; border-radius: 999px; background: #e11d2e; color: #fff; font-weight: 700; padding: 7px 14px; cursor: pointer; }
+.dp-end { flex: none; position: relative; z-index: 2; border: 0; border-radius: 999px; background: #e11d2e; color: #fff; font-weight: 700; padding: 7px 14px; cursor: pointer; -webkit-app-region: no-drag; app-region: no-drag; }
+.dp-pill.is-paused { border-color: #f5c451; color: #ffe7a3; background: rgba(245, 196, 81, .16); }
 .dp-menu { position: relative; }
 .dp-menu summary { list-style: none; }
 .dp-menu summary::-webkit-details-marker { display: none; }

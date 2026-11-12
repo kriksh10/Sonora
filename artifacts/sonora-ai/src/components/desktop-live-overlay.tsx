@@ -21,6 +21,8 @@ export default function DesktopLiveOverlay(props: {
   interim: string;
   entries: TranscriptEntry[];
   listening: boolean;
+  paused?: boolean;
+  onPauseToggle?: () => void;
   level: number;
   duration: string;
   notice: string;
@@ -44,7 +46,9 @@ export default function DesktopLiveOverlay(props: {
   const [answerOpen, setAnswerOpen] = useState(true);
   const [vote, setVote] = useState<"up" | "down" | null>(null);
   const spoken = [...props.entries].reverse().find(entry => entry.role !== "assistant")?.text || "";
-  const liveWords = props.interim || spoken || (props.listening ? "Listening…" : "Listening is off. Click Listen, or type a question in Chat.");
+  const liveWords = props.paused
+    ? "Paused. Transcription is off until you resume."
+    : props.interim || spoken || (props.listening ? "Listening…" : "Listening is off. Click Listen, or type a question in Chat.");
   const askText = liveAnswerQuestion({ typed: props.question, latest: props.latestQuestion, interim: props.interim, spoken });
   const history = props.assistantAnswers.filter(text => text.trim());
   const at = history.lastIndexOf(props.answer);
@@ -62,10 +66,14 @@ export default function DesktopLiveOverlay(props: {
       <header className="dp-glass dp-bar">
         <span className="dp-dots" aria-hidden="true"><i className={props.listening ? "on" : ""} /><i className={props.error ? "warn" : props.listening ? "on" : ""} /></span>
         <div className="dp-actions">
-          <button type="button" className="dp-pill" onClick={() => ask(askText)}>Answer <kbd>Ctrl+Enter</kbd></button>
-          <button type="button" className="dp-pill" disabled={!props.onScreenshot} onClick={props.onScreenshot}>Screenshot <kbd>Ctrl+Shift+Enter</kbd></button>
+          <button type="button" className="dp-pill" aria-label="Answer" onClick={() => ask(askText)}>Answer <kbd>Ctrl+Enter</kbd></button>
+          <button type="button" className="dp-pill" aria-label="Screenshot" disabled={!props.onScreenshot} onClick={props.onScreenshot}>Screenshot <kbd>Ctrl+Shift+Enter</kbd></button>
           <button type="button" className={`dp-pill ${chat ? "is-active" : ""}`} onClick={() => setChat(value => !value)}>Chat</button>
           <button type="button" className="dp-pill" onClick={props.onToggleAudio}>{props.listening ? "Stop listening" : "Listen"}</button>
+          {props.onPauseToggle && (
+            <button type="button" className={`dp-pill ${props.paused ? "is-paused" : ""}`} aria-pressed={!!props.paused}
+              disabled={!props.listening && !props.paused} onClick={props.onPauseToggle}>{props.paused ? "Resume" : "Pause"}</button>
+          )}
         </div>
         <div className="dp-drag desktop-drag" title="Drag Sonora" />
         <button type="button" className="dp-icon-btn" aria-label={collapsed ? "Expand overlay" : "Collapse overlay"} onClick={() => setCollapsed(value => !value)}><ChevronLeft size={16} /></button>
@@ -97,7 +105,7 @@ export default function DesktopLiveOverlay(props: {
             <button type="button" className="dp-pill" onClick={props.onBack}>Back to sessions</button>
           </div>
         </details>
-        <button type="button" className="dp-end" onClick={props.onEnd}>End</button>
+        <button type="button" className="dp-end" aria-label="End session" onClick={props.onEnd}>End</button>
       </header>
       {chat && (
         <form className="dp-glass dp-chat" onSubmit={event => { event.preventDefault(); ask(props.question); }}>
@@ -113,7 +121,7 @@ export default function DesktopLiveOverlay(props: {
               <button type="button" className="dp-line" key={index} onClick={() => ask(entry.text)}>{entry.text}</button>
             ))}</div>
           ) : <button type="button" className="dp-words" onClick={() => ask(spoken || props.interim)}>{liveWords}</button>}
-          <button type="button" className="dp-pill" onClick={props.onClearTranscript}>Clear</button>
+          <button type="button" className="dp-pill" aria-label="Clear transcript" onClick={props.onClearTranscript}>Clear</button>
           <button type="button" className="dp-icon-btn" aria-label={transcriptOpen ? "Collapse transcript" : "Expand transcript"} onClick={() => setTranscriptOpen(value => !value)}><Expand size={14} /></button>
         </section>
       )}
@@ -123,7 +131,7 @@ export default function DesktopLiveOverlay(props: {
             <button type="button" className="dp-icon-btn" aria-label="Previous answer" disabled={!previous} onClick={() => previous && props.onShowAnswer(previous)}><ChevronLeft size={16} /></button>
             <button type="button" className="dp-icon-btn" aria-label="Next answer" disabled={!next} onClick={() => next && props.onShowAnswer(next)}><ChevronRight size={16} /></button>
             <span className="spacer" />
-            <button type="button" className="dp-pill" onClick={props.onClearAnswers}>Clear</button>
+            <button type="button" className="dp-pill" aria-label="Clear answer" onClick={props.onClearAnswers}>Clear</button>
             <button type="button" className="dp-icon-btn" aria-label="Hide answer" onClick={() => setAnswerOpen(false)}><X size={14} /></button>
           </div>
           <div className="dp-q"><b>Question:</b> {props.latestQuestion || props.question || "Waiting for a question"} <button type="button" aria-label="Copy question" onClick={() => void navigator.clipboard?.writeText(props.latestQuestion || props.question || "")}><Copy size={13} /></button></div>

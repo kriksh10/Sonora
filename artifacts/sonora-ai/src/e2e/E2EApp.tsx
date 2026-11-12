@@ -3,6 +3,7 @@ import type { CallSession, TranscriptEntry } from "@workspace/api-client-react";
 import DesktopVisibilityControls from "@/components/desktop-visibility-controls";
 import DesktopSessions from "@/components/desktop-sessions";
 import DesktopLiveOverlay from "@/components/desktop-live-overlay";
+import DesktopSelect from "@/components/desktop-select";
 import { requestAnswer } from "@/lib/answer-stream";
 import { readSonoraTheme, type SonoraTheme } from "@/lib/theme";
 
@@ -40,6 +41,12 @@ export default function E2EApp() {
   const [lastClick, setLastClick] = useState("idle");
   const [hoverLabel, setHoverLabel] = useState("Hover idle");
   const [audioSource, setAudioSource] = useState<"microphone" | "system" | "both">("system");
+  const [paused, setPaused] = useState(false);
+  const [autoAnswer, setAutoAnswer] = useState(true);
+  const [microphoneAuto, setMicrophoneAuto] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [readinessOpen, setReadinessOpen] = useState(false);
+  const [language, setLanguage] = useState("English");
   const selected = sessions.find(session => session.id === selectedId) ?? null;
   const visible = sessions.filter(session => (filter === "all" || session.sessionType === filter) &&
     `${session.title} ${session.company ?? ""}`.toLowerCase().includes(search.toLowerCase()));
@@ -118,7 +125,8 @@ export default function E2EApp() {
 
   const listen = async () => {
     if (!selected) return;
-    if (listening) { setListening(false); setNotice("Audio transcription stopped."); return; }
+    if (listening) { setListening(false); setPaused(false); setNotice("Audio transcription stopped."); return; }
+    setPaused(false);
     try {
       const response = await fetch(`/api/sessions/${selected.id}/live-audio`, { credentials: "include" });
       if (response.status === 503) { setError(""); setNotice("Speechmatics unavailable. Using Gemini fallback for transcription."); }
@@ -180,8 +188,38 @@ export default function E2EApp() {
             duration="00:10"
             notice={notice}
             error={error}
-            onEnd={() => { setLive(false); setListening(false); setNotice("Session ended."); }}
-            onBack={() => { setLive(false); setListening(false); }}
+            paused={paused}
+            onPauseToggle={() => {
+              if (!selected) return;
+              if (listening) {
+                setListening(false);
+                setPaused(true);
+                setNotice("Listening paused. Transcription is off.");
+                void fetch(`/api/sessions/${selected.id}/live-audio`, {
+                  method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ stop: true, source: audioSource === "microphone" ? "microphone" : "system" }),
+                });
+                return;
+              }
+              if (paused) { setPaused(false); void listen(); }
+            }}
+            onEnd={() => {
+              if (!selected) return;
+              const id = selected.id;
+              setListening(false);
+              setPaused(false);
+              setLive(false);
+              setNotice("Session ended.");
+              void fetch(`/api/sessions/${id}`, {
+                method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status: "ended" }),
+              }).then(async response => {
+                if (!response.ok) return;
+                const updated = await response.json() as CallSession;
+                setSessions(items => items.map(item => item.id === id ? updated : item));
+              }).catch(() => {});
+            }}
+            onBack={() => { setLive(false); setListening(false); setPaused(false); }}
             onToggleAudio={() => void listen()}
             onScreenshot={() => void (async () => {
               const image = await window.sonoraDesktop?.captureScreen?.();
@@ -189,12 +227,14 @@ export default function E2EApp() {
               await ask(latest || question || "Explain what is visible in this screenshot.");
               setNotice("Screenshot attached.");
             })()}
-            onPreferences={() => setNotice("Answer settings")}
-            onReadiness={() => setNotice("Readiness")}
+            onPreferences={() => { setSettingsOpen(true); setNotice("Answer settings"); }}
+            onReadiness={() => { setReadinessOpen(true); setNotice("Readiness check is ready. Audio stays off until you start it."); }}
             audioSource={audioSource}
             onAudioSourceChange={setAudioSource}
-            autoAnswer
-            onAutoAnswerChange={() => setNotice("Auto Answer toggled")}
+            autoAnswer={autoAnswer}
+            onAutoAnswerChange={value => { setAutoAnswer(value); setNotice(value ? "Auto Answer on" : "Auto Answer off"); }}
+            microphoneAuto={microphoneAuto}
+            onMicrophoneAutoChange={value => { setMicrophoneAuto(value); setNotice(value ? "Microphone answers on" : "Microphone answers off"); }}
           />
         ) : (
           <DesktopSessions
@@ -206,7 +246,7 @@ export default function E2EApp() {
             onSearch={setSearch}
             onCreate={() => { setFormError(""); setCreateOpen(true); }}
             onMock={() => { setFilter("mock"); setFormError(""); setCreateOpen(true); }}
-            onJoin={session => { setSelectedId(session.id); setLive(true); setEntries([]); setAnswer(""); setHistory([]); setQuestion(""); setLatest(""); setError(""); setNotice(""); }}
+            onJoin={session => { setSelectedId(session.id); setLive(true); setPaused(false); setEntries([]); setAnswer(""); setHistory([]); setQuestion(""); setLatest(""); setError(""); setNotice(""); }}
             onView={session => setSelectedId(session.id)}
             selected={selected}
             creditText="12 credits left"
@@ -220,6 +260,28 @@ export default function E2EApp() {
             unlimitedUntilMs={null}
             upgradeHref="#"
           />
+        )}
+        {settingsOpen && (
+          <div className="dp-backdrop" role="presentation" style={{ position: "fixed", inset: 0, display: "grid", placeItems: "center", zIndex: 30 }}>
+            <div className="dp-glass dp-dialog" role="dialog" aria-label="Answer settings" style={{ width: 360, padding: 20 }}>
+              <h2>Answer settings</h2>
+              <DesktopSelect label="Call language" value={language} onChange={setLanguage} options={[
+                { value: "English", label: "English" },
+                { value: "Spanish", label: "Spanish" },
+                { value: "French", label: "French" },
+              ]} />
+              <button type="button" style={{ marginTop: 12 }} onClick={() => setSettingsOpen(false)}>Close</button>
+            </div>
+          </div>
+        )}
+        {readinessOpen && (
+          <div className="dp-backdrop" role="presentation" style={{ position: "fixed", inset: 0, display: "grid", placeItems: "center", zIndex: 30 }}>
+            <div className="dp-glass dp-dialog" role="dialog" aria-label="Readiness" style={{ width: 360, padding: 20 }}>
+              <h2>Pre-interview check</h2>
+              <p>Readiness check is ready. Audio stays off until you start it.</p>
+              <button type="button" onClick={() => setReadinessOpen(false)}>Close check</button>
+            </div>
+          </div>
         )}
         {createOpen && (
           <div className="dp-backdrop fixed" role="presentation" style={{ position: "fixed", inset: 0, display: "grid", placeItems: "center", zIndex: 20 }}>
