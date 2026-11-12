@@ -829,7 +829,7 @@ try {
     [System.Windows.Forms.SendKeys]::SendWait('Write six hundred words')
     Start-Sleep -Milliseconds 250
     Click-Exact 'Answer' | Out-Null
-    $full = Wait-Named 'ENDWORD' 8
+    $longEnd = Wait-Named 'ENDWORD' 8
     $pane = Find-Element 'Answer scrollable'
     if (-not $pane) { $pane = Find-Element 'Answer end visible' }
     $scrolled = [bool](Find-Element 'Answer end visible')
@@ -842,7 +842,7 @@ try {
         $scrolled = [bool](Find-Element 'Answer end visible')
       }
     }
-    Add-Scenario 'Control: A 600 word answer renders and scrolls to the end' ([bool]($full -and $scrolled)) "end=$([bool]$full) scrolled=$scrolled"
+    Add-Scenario 'Control: A 600 word answer renders and scrolls to the end' ([bool]($longEnd -and $scrolled)) "end=$([bool]$longEnd) scrolled=$scrolled"
   } else {
     Add-Scenario 'Control: Chat question is answered' $false 'chat box missing'
     Add-Scenario 'Control: Previous answer shows the earlier answer' $false 'chat box missing'
