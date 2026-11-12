@@ -1,3 +1,5 @@
+import { createLowpass } from "./anti-alias";
+
 export type PcmEvent = { pcm?: Float32Array; samples?: Float32Array; peak?: number; silent?: boolean; prolonged?: boolean; endOfTurn?: boolean };
 
 /** Compatibility path for browsers which expose AudioWorklet but cannot load it.
@@ -7,12 +9,13 @@ export function createCompatPcm(rate: number, emit: (event: PcmEvent) => void) {
   let samples = new Float32Array(96000), used = 0, phase = 0, sum = 0, count = 0;
   let peak = 0, quiet = 0, silentChunks = 0;
   let raw = new Float32Array(320), rawUsed = 0;
+  const lowpass = createLowpass(rate);
   return (input: Float32Array) => {
     let meter = 0;
     for (const value of input) {
       meter = Math.max(meter, Math.abs(value));
       peak = Math.max(peak, Math.abs(value));
-      sum += value; count++; phase += 16000;
+      sum += lowpass(value); count++; phase += 16000;
       if (phase < rate) continue;
       phase -= rate;
       const sample = sum / count;
