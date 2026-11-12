@@ -1,6 +1,9 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
 
 const dist = path.resolve(process.argv[2] || 'dist');
 const port = Number(process.env.E2E_PORT || 4173);
@@ -35,7 +38,7 @@ function note(line) {
 }
 
 function serverOperatingPoint() {
-  const source = fs.readFileSync(path.resolve(__dirname, '../../api-server/src/lib/speechmatics.ts'), 'utf8');
+  const source = fs.readFileSync(path.resolve(here, '../../api-server/src/lib/speechmatics.ts'), 'utf8');
   const match = source.match(/operating_point:\s*"([^"]+)"/);
   return match ? match[1] : 'missing';
 }
