@@ -17,7 +17,8 @@ html.sonora-desktop .sonora-workspace.dp-app {
   app-region: no-drag;
 }
 .dp-glass {
-  background: color-mix(in srgb, #1e1e1e calc(var(--sonora-card-opacity, var(--sonora-background-opacity, .45)) * 100%), transparent);
+  /* rgba keeps a real alpha on a transparent Windows window. color-mix was flattening to an opaque gray. */
+  background: rgba(30, 30, 30, var(--sonora-card-opacity, var(--sonora-background-opacity, 0.45))) !important;
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
   border: 1px solid rgba(255, 255, 255, .14);
@@ -98,7 +99,7 @@ html.sonora-desktop .dp-overlay * {
 }
 .dp-bar, .dp-strip, .dp-card { padding: 8px 10px; }
 .dp-bar { position: relative; z-index: 5; display: flex; align-items: center; gap: 8px; min-height: 46px;
-  background: color-mix(in srgb, #1e1e1e calc(var(--sonora-chrome-opacity, .35) * 100%), transparent) !important; }
+  background: rgba(30, 30, 30, var(--sonora-chrome-opacity, 0.35)) !important; }
 .dp-scroll-chevrons { display: flex; justify-content: flex-end; gap: 6px; }
 .dp-scroll-chevrons button { border: 0; border-radius: 8px; background: #2a2b2f; color: #f7f8f8; width: 28px; height: 28px; cursor: default; }
 .dp-dots { display: flex; gap: 5px; }
