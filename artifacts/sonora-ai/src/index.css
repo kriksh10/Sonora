@@ -24,6 +24,7 @@ html.sonora-desktop, html.sonora-desktop body { height: 100% !important; width: 
 html.sonora-desktop #root { height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 html.sonora-desktop .sonora-window-bar { flex: 0 0 auto; }
 html.sonora-desktop #root > :not(.sonora-window-bar) { flex: 1 1 auto; min-height: 0; overflow: auto; }
+html.sonora-desktop #root > main.dp-app { overflow: hidden; }
 html.sonora-desktop {
   --sonora-background-opacity: 0.45;
   --sonora-card-opacity: var(--sonora-background-opacity, 0.45);
@@ -187,7 +188,7 @@ html.sonora-desktop .reference-modal-backdrop {
   backdrop-filter: none !important;
 }
 html.sonora-desktop .sonora-window-error { background: rgba(68, 30, 36, var(--sonora-background-opacity, .4)) !important; }
-.sonora-window-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: .5rem; min-height: 44px; padding: 6px 10px; color: #e7e8eb; border-bottom: 1px solid #ffffff18; background: color-mix(in srgb, #1e1e1e calc(var(--sonora-chrome-opacity, .35) * 100%), transparent); -webkit-backdrop-filter: blur(18px) saturate(1.35); backdrop-filter: blur(18px) saturate(1.35); -webkit-app-region: no-drag; app-region: no-drag; }
+.sonora-window-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: .5rem; min-height: 44px; padding: 6px 10px; color: #e7e8eb; border-bottom: 1px solid #ffffff18; background: color-mix(in srgb, #1e1e1e calc(var(--sonora-chrome-opacity, .35) * 100%), transparent); -webkit-backdrop-filter: none; backdrop-filter: none; -webkit-app-region: no-drag; app-region: no-drag; }
 .sonora-window-bar button, .sonora-window-bar input, .sonora-window-bar label, .sonora-window-bar summary { position: relative; z-index: 1; -webkit-app-region: no-drag; app-region: no-drag; }
 .sonora-window-drag-handle { align-self: stretch; flex: 1; min-width: 70px; cursor: grab; user-select: none; }
 .sonora-window-popover, .sonora-window-popover * { -webkit-app-region: no-drag; }

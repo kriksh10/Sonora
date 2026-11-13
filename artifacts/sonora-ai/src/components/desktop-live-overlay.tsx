@@ -64,7 +64,6 @@ export default function DesktopLiveOverlay(props: {
     const el = answerPane.current;
     if (!el) return;
     const frame = requestAnimationFrame(() => {
-      el.scrollTop = 0;
       const words = (props.answer || "").trim().split(/\s+/).filter(Boolean);
       const view = el.getBoundingClientRect();
       let visible = 0;
@@ -109,8 +108,6 @@ export default function DesktopLiveOverlay(props: {
     if (text) props.onAsk(text);
     else props.onAsk("");
   };
-  const headline = props.answer.split("\n").map(line => line.trim()).find(Boolean)?.replace(/^#+\s*/, "") || "No answer yet";
-
   return (
     <div className="dp-overlay">
       <header className="dp-glass dp-bar">
@@ -192,7 +189,7 @@ export default function DesktopLiveOverlay(props: {
           </div>}
           <p className="sonora-scroll-status" aria-label={`Answer scroll position ${scrollTop}`}>Answer scroll position {scrollTop}</p>
           <div ref={answerPane} className="dp-answer-scroll" tabIndex={0} onScroll={markAnswer} aria-label={props.answer ? (answerEnd ? "Answer end visible" : "Answer scrollable") : "Answer pending"}>
-            <h3>Answer: {headline}</h3>
+            <h3>{props.answer ? "Answer" : "No answer yet"}</h3>
             {props.answer ? <div className="sonora-answer-body"><SafeMarkdown text={props.answer} /></div> : <p>Ask, or let Auto Answer respond when the interviewer finishes.</p>}
           </div>
           <p className="sonora-scroll-status" aria-label={metrics}>{metrics}</p>
