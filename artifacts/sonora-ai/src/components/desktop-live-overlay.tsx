@@ -66,12 +66,12 @@ export default function DesktopLiveOverlay(props: {
     const frame = requestAnimationFrame(() => {
       el.scrollTop = 0;
       const words = (props.answer || "").trim().split(/\s+/).filter(Boolean);
-      const body = el.querySelector(".sonora-answer-body") ?? el;
       const view = el.getBoundingClientRect();
       let visible = 0;
-      const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+      let stop = false;
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
       let node = walker.nextNode();
-      while (node) {
+      while (node && !stop) {
         const raw = node.textContent || "";
         const pattern = /\S+/g;
         let match: RegExpExecArray | null;
@@ -80,7 +80,9 @@ export default function DesktopLiveOverlay(props: {
           range.setStart(node, match.index);
           range.setEnd(node, match.index + match[0].length);
           const rect = range.getClientRects()[0];
-          if (rect && rect.bottom > view.top + 2 && rect.top < view.bottom - 2) visible += 1;
+          if (!rect) continue;
+          if (rect.top >= view.bottom - 2) { stop = true; break; }
+          if (rect.bottom > view.top + 2) visible += 1;
         }
         node = walker.nextNode();
       }

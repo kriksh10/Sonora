@@ -50,11 +50,20 @@ public static class ProofInput {
 "@
 
 function Save-Screen([string]$Name) {
+  $path = Join-Path $OutDir $Name
+  if ($script:UseComposedCapture) {
+    try {
+      Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:4181/shot' -OutFile $path -TimeoutSec 15
+      Write-Host "screenshot $Name composed"
+      return
+    } catch {
+      Write-Host "composed capture failed: $($_.Exception.Message)"
+    }
+  }
   $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
   $bmp = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
   $g = [System.Drawing.Graphics]::FromImage($bmp)
   $g.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
-  $path = Join-Path $OutDir $Name
   $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
   $g.Dispose(); $bmp.Dispose()
   Write-Host "screenshot $Name"
@@ -259,10 +268,10 @@ function Ask-Proof([string]$Question, [string]$Expect) {
   if (-not $box -or $box.Current.ControlType.ProgrammaticName -notmatch 'Edit') { throw 'Question box missing' }
   Click-Ui $box
   [System.Windows.Forms.SendKeys]::SendWait('^a' + $Question)
-  Start-Sleep -Milliseconds 300
+  Start-Sleep -Milliseconds 700
   Click-Ui (Find-Exact 'Answer')
   $metric = Wait-Named $Expect 25
-  if (-not $metric) { throw "Did not see $Expect" }
+  if (-not $metric) { Write-SonoraNames; throw "Did not see $Expect" }
   return $metric.Current.Name
 }
 
@@ -328,7 +337,7 @@ try {
       Set-Content -Path (Join-Path $dir 'window-preferences.json') -Value $prefs -Encoding utf8
     }
   }
-  $sonora = Start-Process -FilePath $Exe -ArgumentList '--force-renderer-accessibility' -PassThru
+  $sonora = Start-Process -FilePath $Exe -ArgumentList @('--force-renderer-accessibility', '--visual-proof') -PassThru
   if (-not (Wait-Named 'Sign in' 25)) { throw 'Sign in did not appear' }
   $sonoraWindow = (Get-Process -Id $sonora.Id).MainWindowHandle
   if ($sonoraWindow -ne [IntPtr]::Zero) { [ProofInput]::SetForegroundWindow($sonoraWindow) | Out-Null }
@@ -364,6 +373,7 @@ try {
     }
   }
   if (-not (Wait-Named 'End session' 8)) { Write-SonoraNames; throw 'Live overlay did not open' }
+  $script:UseComposedCapture = $true
 
   $opacityReadings = @{}
   foreach ($percent in @(15, 45, 95)) {

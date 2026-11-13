@@ -1,4 +1,5 @@
 const { app, BrowserWindow, globalShortcut, ipcMain, Menu, Tray, nativeImage, screen, dialog, desktopCapturer, shell } = require('electron');
+const http = require('node:http');
 const path = require('node:path');
 const fs = require('node:fs');
 const { validateServiceUrl, isAllowedNavigation } = require('./security.cjs');
@@ -570,6 +571,27 @@ function createWindow() {
   void loadService();
 }
 
+function startVisualProofCapture() {
+  if (!localE2E || !process.argv.includes('--visual-proof')) return;
+  const server = http.createServer(async (req, res) => {
+    try {
+      const display = screen.getPrimaryDisplay();
+      const width = Math.max(1, Math.round(display.size.width * (display.scaleFactor || 1)));
+      const height = Math.max(1, Math.round(display.size.height * (display.scaleFactor || 1)));
+      const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width, height } });
+      const image = sources[0]?.thumbnail;
+      if (!image || image.isEmpty()) { res.writeHead(503); res.end(); return; }
+      const png = image.toPNG();
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': png.length });
+      res.end(png);
+    } catch (error) {
+      res.writeHead(500);
+      res.end(String(error));
+    }
+  });
+  server.listen(4181, '127.0.0.1');
+}
+
 async function loadService() {
   if (!win || win.isDestroyed()) return;
   if (localE2E) {
@@ -636,6 +658,7 @@ else {
     } catch { updates = createAutoUpdate({ isPackaged: false }); }
     browserAuth = createBrowserAuth({ serviceUrl: target, openExternal: url => shell.openExternal(url) });
     createWindow();
+    startVisualProofCapture();
     activateHotkeys();
     syncTray();
     stopUpdates = updates.start();
