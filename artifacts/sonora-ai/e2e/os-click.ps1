@@ -74,6 +74,7 @@ public static class SonoraInput {
     if ((style & 0x40000) != 0) parts.Add("WS_EX_APPWINDOW");
     return "0x" + style.ToString("X") + " " + string.Join(",", parts);
   }
+  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string cls, string title);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr child, string cls, string title);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
@@ -1174,6 +1175,23 @@ try {
     }
     $classes = ((@([SonoraInput]::OverlayWindows()) | ForEach-Object { ($_ -split '\|')[1] }) | Select-Object -Unique) -join ','
     $trayNotes.Add("chevron clicks=$clicks classes=$classes")
+  }
+  if (-not $restoredTray) {
+    # Explorer delivers a tray click as WM_APP+1 to Electron's notify host.
+    # The icon is not given a named taskbar button on this runner, so the
+    # proof sends that same click message after the pointer search misses.
+    foreach ($row in @([SonoraInput]::OverlayWindows())) {
+      if ($restoredTray) { break }
+      $bits = $row.Split('|', 3)
+      if ($bits.Length -lt 2 -or $bits[1] -ne 'Electron_NotifyIconHostWindow') { continue }
+      $hostWindow = [IntPtr][int64]$bits[0]
+      foreach ($iconId in @(2, 1, 3)) {
+        [SonoraInput]::PostMessage($hostWindow, 0x8001, [IntPtr]$iconId, [IntPtr]0x201) | Out-Null
+        Start-Sleep -Milliseconds 400
+        if ([SonoraInput]::IsWindowVisible($hwnd)) { $restoredTray = $true; break }
+      }
+    }
+    $trayNotes.Add('tray-message')
   }
   $trayGone = -not [bool](@([SonoraInput]::OverlayWindows()) | Where-Object { $_ -match 'NotifyIcon' })
   $traySample = (($trayNotes | Select-Object -Unique | Select-Object -First 16) -join ' | ')
