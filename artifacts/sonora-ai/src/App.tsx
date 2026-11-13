@@ -134,6 +134,7 @@ type SonoraDesktopBridge = {
   show: () => Promise<DesktopState>;
   hide: () => Promise<DesktopState>;
   minimize?: () => Promise<DesktopState>;
+  moveCollapsed?: (dx: number, dy: number) => Promise<DesktopState>;
   setLiveShortcuts?: (value: boolean) => Promise<DesktopState>;
   toggle: () => Promise<DesktopState>;
   quit: () => Promise<void>;

@@ -16,6 +16,7 @@ export default function DesktopVisibilityControls() {
   const [opacityError, setOpacityError] = useState("");
   const [shortcutError, setShortcutError] = useState("");
   const opacityControl = useRef<ReturnType<typeof createBackgroundOpacity> | null>(null);
+  const drag = useRef({ moved: false, x: 0, y: 0 });
 
   useEffect(() => {
     if (!bridge) return;
@@ -85,8 +86,26 @@ export default function DesktopVisibilityControls() {
 
   return (
     <aside ref={bar} aria-label="Desktop window controls" className="sonora-window-bar sonora-overlay-controls">
-      <button type="button" className="sonora-dock" aria-label="Sonora listening" title="Show the overlay"
-        onClick={() => void run(() => bridge.minimize!())}>S</button>
+      <button type="button" className="sonora-dock" aria-label="Sonora listening" title="Sonora listening. Drag to move. Click to restore."
+        onPointerDown={event => {
+          if (!state?.collapsed) return;
+          drag.current = { moved: false, x: event.screenX, y: event.screenY };
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerMove={event => {
+          if (!state?.collapsed || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+          const dx = event.screenX - drag.current.x;
+          const dy = event.screenY - drag.current.y;
+          if (Math.abs(dx) + Math.abs(dy) < 1) return;
+          if (Math.abs(dx) + Math.abs(dy) >= 4) drag.current.moved = true;
+          drag.current.x = event.screenX;
+          drag.current.y = event.screenY;
+          void bridge.moveCollapsed?.(dx, dy);
+        }}
+        onClick={() => {
+          if (drag.current.moved) { drag.current.moved = false; return; }
+          void run(() => bridge.minimize!());
+        }}>S</button>
       <span className="sonora-window-drag-handle desktop-drag inline-flex items-center gap-1 text-xs font-semibold text-white/80" title="Drag here to move Sonora">
         <GripHorizontal size={17} /> Sonora
       </span>

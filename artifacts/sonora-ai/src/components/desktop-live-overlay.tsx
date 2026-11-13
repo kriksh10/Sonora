@@ -49,12 +49,14 @@ export default function DesktopLiveOverlay(props: {
   const answerPane = useRef<HTMLDivElement>(null);
   const [answerEnd, setAnswerEnd] = useState(true);
   const [answerOverflow, setAnswerOverflow] = useState(false);
+  const [scrollTop, setScrollTop] = useState(0);
   const markAnswer = () => {
     const el = answerPane.current;
     if (!el) return;
     const overflow = el.scrollHeight > el.clientHeight + 2;
     setAnswerOverflow(overflow);
     setAnswerEnd(!overflow || el.scrollTop + el.clientHeight >= el.scrollHeight - 8);
+    setScrollTop(Math.round(el.scrollTop));
   };
   useEffect(() => { markAnswer(); }, [props.answer]);
   useEffect(() => {
@@ -157,6 +159,7 @@ export default function DesktopLiveOverlay(props: {
             <button type="button" aria-label="Scroll answer up" onClick={() => answerPane.current?.scrollBy({ top: -200 })}>↑</button>
             <button type="button" aria-label="Scroll answer down" onClick={() => answerPane.current?.scrollBy({ top: 200 })}>↓</button>
           </div>}
+          <p className="sonora-scroll-status" aria-label={`Answer scroll position ${scrollTop}`}>Answer scroll position {scrollTop}</p>
           <div ref={answerPane} className="dp-answer-scroll" tabIndex={0} onScroll={markAnswer} aria-label={props.answer ? (answerEnd ? "Answer end visible" : "Answer scrollable") : "Answer pending"}>
             <h3>Answer: {headline}</h3>
             {props.answer ? <SafeMarkdown text={props.answer} /> : <p>Ask, or let Auto Answer respond when the interviewer finishes.</p>}

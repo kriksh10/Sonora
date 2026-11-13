@@ -39,7 +39,7 @@ function fixture(platform = 'win32') {
   context.testWindow = window;
   context.testTray = tray;
   vm.runInContext('win = testWindow; tray = testTray; updateTray();', context);
-  return { context, window, protections, sends, menu: () => menu };
+  return { context, window, protections, sends, menu: () => vm.runInContext('trayMenu', context) };
 }
 
 test('capture exclusion and native state stay synchronized', () => {
@@ -57,8 +57,9 @@ test('hide releases screen-saver always-on-top before the window disappears and 
   assert.equal(f.window.isVisible(), false);
   vm.runInContext('holdOnTop();', f.context);
   assert.equal(f.window.top, false);
-  assert.equal(f.menu().find(item => item.label === 'Open').label, 'Open');
-  f.menu().find(item => item.label === 'Open').click();
+  assert.equal(f.menu().find(item => item.label === 'Open Sonora').label, 'Open Sonora');
+  assert.equal(f.menu().some(item => String(item.label).startsWith('Version ')), true);
+  f.menu().find(item => item.label === 'Open Sonora').click();
   assert.equal(f.window.isVisible(), true);
   assert.equal(f.window.top, true);
   assert.equal(vm.runInContext('tray', f.context), null);
@@ -69,8 +70,8 @@ test('hide and tray restore preserve active audio and keep Stop available', () =
   vm.runInContext('captureActive = true; hide();', f.context);
   assert.equal(f.window.isVisible(), false);
   assert.equal(f.sends.at(-1)[1].captureActive, true);
-  assert.equal(f.menu().some(item => item.label === 'Open'), true);
-  f.menu().find(item => item.label === 'Open').click();
+  assert.equal(f.menu().some(item => item.label === 'Open Sonora'), true);
+  f.menu().find(item => item.label === 'Open Sonora').click();
   assert.equal(f.window.isVisible(), true);
   assert.equal(vm.runInContext('captureActive', f.context), true);
 });

@@ -152,6 +152,28 @@ public static class SonoraInput {
     uint sent = SendInput(2, inputs, Marshal.SizeOf(typeof(INPUT)));
     if (sent != 2) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
   }
+  public static void Drag(int x1, int y1, int x2, int y2) {
+    int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    int vw = Math.Max(1, GetSystemMetrics(SM_CXVIRTUALSCREEN));
+    int vh = Math.Max(1, GetSystemMetrics(SM_CYVIRTUALSCREEN));
+    int ax1 = (int)Math.Round((x1 - vx) * 65535.0 / Math.Max(1, vw - 1));
+    int ay1 = (int)Math.Round((y1 - vy) * 65535.0 / Math.Max(1, vh - 1));
+    int ax2 = (int)Math.Round((x2 - vx) * 65535.0 / Math.Max(1, vw - 1));
+    int ay2 = (int)Math.Round((y2 - vy) * 65535.0 / Math.Max(1, vh - 1));
+    INPUT[] down = new INPUT[2];
+    down[0].type = 0; down[0].mi.dx = ax1; down[0].mi.dy = ay1; down[0].mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
+    down[1].type = 0; down[1].mi.dx = ax1; down[1].mi.dy = ay1; down[1].mi.dwFlags = MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_ABSOLUTE;
+    if (SendInput(2, down, Marshal.SizeOf(typeof(INPUT))) != 2) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+    System.Threading.Thread.Sleep(40);
+    INPUT[] move = new INPUT[1];
+    move[0].type = 0; move[0].mi.dx = ax2; move[0].mi.dy = ay2; move[0].mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
+    if (SendInput(1, move, Marshal.SizeOf(typeof(INPUT))) != 1) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+    System.Threading.Thread.Sleep(40);
+    INPUT[] up = new INPUT[1];
+    up[0].type = 0; up[0].mi.dx = ax2; up[0].mi.dy = ay2; up[0].mi.dwFlags = MOUSEEVENTF_LEFTUP | MOUSEEVENTF_ABSOLUTE;
+    if (SendInput(1, up, Marshal.SizeOf(typeof(INPUT))) != 1) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+  }
 }
 public static class SonoraKeys {
   [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, System.UIntPtr dwExtraInfo);
@@ -169,9 +191,17 @@ public static class SonoraKeys {
     keybd_event(0x48, 0, 2, System.UIntPtr.Zero);
     keybd_event(0x11, 0, 2, System.UIntPtr.Zero);
   }
+  public static void Chord(byte[] keys) {
+    for (int i = 0; i < keys.Length; i++) keybd_event(keys[i], 0, 0, System.UIntPtr.Zero);
+    for (int i = keys.Length - 1; i >= 0; i--) keybd_event(keys[i], 0, 2, System.UIntPtr.Zero);
+  }
 }
 "@
 
+function Send-Chord([byte[]]$Keys) {
+  [SonoraKeys]::Chord($Keys)
+  Start-Sleep -Milliseconds 550
+}
 function Save-Screen([string]$Name) {
   # CopyFromScreen can stall the runner when another grabber holds the desktop DC.
   $job = Start-Job -ScriptBlock {
@@ -789,14 +819,26 @@ try {
         $fgProc = (Get-Process -Id $fgPid -ErrorAction SilentlyContinue).ProcessName
         $ok = ($panelPassed -eq 0) -and ($marginPassed -eq 0) -and (($fg2Name -like 'Sonora*') -or ($fgProc -like 'Sonora*'))
         Add-Scenario $label $ok "panel=$panelPassed margin=$marginPassed foreground=$fg2Name total=$($after - $before)"
-        if ($pin -and $focus) {
-          $shownOpacity = switch ($ratio) { 0 { 15 } 0.5 { 55 } default { 95 } }
-          Save-Screen ("opacity-{0}.png" -f $shownOpacity)
-        }
+        if ($pin -and $focus -and $ratio -eq 0) { Save-Screen 'opacity-15.png' }
+        if ($pin -and $focus -and $ratio -eq 1) { Save-Screen 'opacity-95.png' }
       }
     }
   }
   Save-Screen '04-slider-matrix.png'
+  $opacityHits = @{}
+  foreach ($targetOpacity in @(15, 45, 95)) {
+    $ratio = ($targetOpacity - 15) / 80.0
+    Set-Slider $ratio
+    Start-Sleep -Milliseconds 250
+    $opacityHits[$targetOpacity] = Get-Range (Find-Slider 'Overlay opacity')
+    Save-Screen ("opacity-{0}.png" -f $targetOpacity)
+  }
+  $opacityDetail = ((15, 45, 95 | ForEach-Object { "$_=$($opacityHits[$_])" }) -join ' ')
+  $opacityOk = $true
+  foreach ($targetOpacity in @(15, 45, 95)) {
+    if ($null -eq $opacityHits[$targetOpacity] -or [math]::Abs([double]$opacityHits[$targetOpacity] - $targetOpacity) -gt 7) { $opacityOk = $false }
+  }
+  Add-Scenario 'Opacity reaches 15, 45, and 95' $opacityOk $opacityDetail
   $opacityBefore = Get-Range (Find-Slider 'Overlay opacity')
   Set-Slider 0.2
   Start-Sleep -Milliseconds 300
@@ -861,10 +903,30 @@ try {
   $listeningIcon = Wait-Named 'Sonora listening' 3
   Add-Scenario 'Ctrl+H collapses the live overlay to a listening icon' ([bool]([SonoraInput]::IsWindowVisible($hwnd) -and $collapsedHeight -le 140 -and $collapsedHeight -ge 40 -and $listeningIcon)) "full=$fullHeight collapsed=$collapsedHeight"
   Save-Screen '05d-collapsed.png'
+  $dragged = $false
+  if ($listeningIcon) {
+    $beforeDrag = New-Object SonoraInput+RECT
+    [SonoraInput]::GetWindowRect($hwnd, [ref]$beforeDrag) | Out-Null
+    $iconBox = $listeningIcon.Current.BoundingRectangle
+    $x1 = [int]($iconBox.X + $iconBox.Width / 2)
+    $y1 = [int]($iconBox.Y + $iconBox.Height / 2)
+    [SonoraInput]::Drag($x1, $y1, $x1 + 70, $y1 + 30)
+    Start-Sleep -Milliseconds 300
+    $afterDrag = New-Object SonoraInput+RECT
+    [SonoraInput]::GetWindowRect($hwnd, [ref]$afterDrag) | Out-Null
+    $dragged = ([math]::Abs($afterDrag.Left - $beforeDrag.Left) -ge 20) -or ([math]::Abs($afterDrag.Top - $beforeDrag.Top) -ge 20)
+    Add-Scenario 'The listening icon is draggable' ($dragged -and [SonoraInput]::IsWindowVisible($hwnd)) "from=$($beforeDrag.Left),$($beforeDrag.Top) to=$($afterDrag.Left),$($afterDrag.Top)"
+  } else { Add-Scenario 'The listening icon is draggable' $false 'icon missing' }
+  $listeningIcon = Find-Exact 'Sonora listening'
   if ($listeningIcon) { Click-Element $listeningIcon; Start-Sleep -Milliseconds 500 }
   else { [SonoraKeys]::CollapseChord(); Start-Sleep -Milliseconds 500 }
   $restoredHeight = Get-WindowHeight $hwnd
   Add-Scenario 'Clicking the listening icon restores the overlay' ($restoredHeight -gt 240) "height=$restoredHeight"
+  Send-Chord ([byte[]](0x11, 0x48))
+  $collapsedAgain = Get-WindowHeight $hwnd
+  Send-Chord ([byte[]](0x11, 0x48))
+  $restoredByKey = Get-WindowHeight $hwnd
+  Add-Scenario 'Ctrl+H restores the overlay' ($collapsedAgain -le 140 -and $restoredByKey -gt 240) "collapsed=$collapsedAgain restored=$restoredByKey"
   Click-Exact 'Stop listening' | Out-Null
   Add-Scenario 'Control: Stop listening turns transcription off' ([bool](Wait-Named 'Audio transcription stopped' 4)) ''
   Click-Exact 'Listen' | Out-Null
@@ -887,11 +949,27 @@ try {
     Add-Scenario 'Control: Previous answer shows the earlier answer' ([bool](Wait-Named 'Heard: How does caching work?' 4)) ''
     Click-Exact 'Next answer' | Out-Null
     Add-Scenario 'Control: Next answer shows the later answer' ([bool](Wait-Named 'Heard: What is an index?' 4)) ''
+    Send-Chord ([byte[]](0x11, 0x25))
+    Add-Scenario 'Shortcut: Ctrl+Left shows the previous answer' ([bool](Wait-Named 'Heard: How does caching work?' 6)) ''
+    Send-Chord ([byte[]](0x11, 0x27))
+    Add-Scenario 'Shortcut: Ctrl+Right shows the next answer' ([bool](Wait-Named 'Heard: What is an index?' 6)) ''
     Click-Element $chat
     [System.Windows.Forms.SendKeys]::SendWait('Write six hundred words')
     Start-Sleep -Milliseconds 250
     Click-Exact 'Answer' | Out-Null
     $longEnd = Wait-Named 'ENDWORD' 8
+    function Read-AnswerScroll {
+      $el = Find-Element 'Answer scroll position'
+      if ($el -and $el.Current.Name -match '(\d+)\s*$') { return [int]$Matches[1] }
+      return -1
+    }
+    $beforeScroll = Read-AnswerScroll
+    Send-Chord ([byte[]](0x11, 0x28))
+    $afterDown = Read-AnswerScroll
+    Send-Chord ([byte[]](0x11, 0x26))
+    $afterUp = Read-AnswerScroll
+    Add-Scenario 'Shortcut: Ctrl+Down scrolls the answer' ($afterDown -ge ($beforeScroll + 120)) "before=$beforeScroll after=$afterDown"
+    Add-Scenario 'Shortcut: Ctrl+Up scrolls the answer' ($afterUp -le ($afterDown - 80)) "down=$afterDown up=$afterUp"
     $pane = Find-Element 'Answer scrollable'
     if (-not $pane) { $pane = Find-Element 'Answer end visible' }
     $scrolled = [bool](Find-Element 'Answer end visible')
@@ -905,6 +983,20 @@ try {
       }
     }
     Add-Scenario 'Control: A 600 word answer renders and scrolls to the end' ([bool]($longEnd -and $scrolled)) "end=$([bool]$longEnd) scrolled=$scrolled"
+    Click-Element $chat
+    [System.Windows.Forms.SendKeys]::SendWait('^aShortcut ping')
+    Start-Sleep -Milliseconds 400
+    Send-Chord ([byte[]](0x11, 0x0D))
+    Add-Scenario 'Shortcut: Ctrl+Enter answers' ([bool](Wait-Named 'Heard: Shortcut ping' 8)) ''
+    Send-Chord ([byte[]](0x11, 0x10, 0x20))
+    Start-Sleep -Milliseconds 400
+    $chatClosed = $true
+    foreach ($el in @(Find-All 'Question')) { if ($el.Current.ControlType.ProgrammaticName -match 'Edit') { $chatClosed = $false } }
+    Send-Chord ([byte[]](0x11, 0x10, 0x20))
+    Start-Sleep -Milliseconds 400
+    $chatOpened = $false
+    foreach ($el in @(Find-All 'Question')) { if ($el.Current.ControlType.ProgrammaticName -match 'Edit') { $chatOpened = $true } }
+    Add-Scenario 'Shortcut: Ctrl+Shift+Space toggles chat' ($chatClosed -and $chatOpened) "closed=$chatClosed opened=$chatOpened"
   } else {
     Add-Scenario 'Control: Chat question is answered' $false 'chat box missing'
     Add-Scenario 'Control: Previous answer shows the earlier answer' $false 'chat box missing'
@@ -915,6 +1007,8 @@ try {
   $shot = Wait-Named 'Screenshot attached' 6
   if (-not $shot) { $shot = Find-Element 'Screenshot was not captured' }
   Add-Scenario 'Control: Screenshot reports the capture result' ([bool]$shot) ''
+  Send-Chord ([byte[]](0x11, 0x10, 0x0D))
+  Add-Scenario 'Shortcut: Ctrl+Shift+Enter captures a screenshot' ([bool](Wait-Named 'Screenshot attached 2' 8)) ''
   Click-Exact 'Copy question' | Out-Null
   $copied = Wait-Named 'Copied question:' 3
   Add-Scenario 'Control: Copy question copies the question text' ([bool]$copied) $(if ($copied) { $copied.Current.Name } else { 'copied text missing' })
@@ -926,6 +1020,10 @@ try {
   Add-Scenario 'Control: Helpful marks the answer' ([bool](Wait-Named 'Helpful selected' 3)) ''
   Click-Exact 'Not helpful' | Out-Null
   Add-Scenario 'Control: Not helpful marks the answer' ([bool](Wait-Named 'Not helpful selected' 3)) ''
+  Send-Chord ([byte[]](0x11, 0x10, 0x08))
+  Add-Scenario 'Shortcut: Ctrl+Shift+Backspace clears the transcript' ([bool](Wait-Named 'Visible transcript cleared' 4)) ''
+  Send-Chord ([byte[]](0x11, 0x08))
+  Add-Scenario 'Shortcut: Ctrl+Backspace clears answers' ([bool](Wait-Named 'Visible answers cleared' 4)) ''
   Click-Exact 'Clear transcript' | Out-Null
   Add-Scenario 'Control: Clear transcript clears the visible lines' ([bool](Wait-Named 'Visible transcript cleared' 3)) ''
   Click-Exact 'Clear answer' | Out-Null

@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('sonoraDesktop', {
   show: () => ipcRenderer.invoke('overlay:show'),
   hide: () => ipcRenderer.invoke('overlay:hide'),
   minimize: () => ipcRenderer.invoke('overlay:minimize'),
+  moveCollapsed: (dx, dy) => ipcRenderer.invoke('overlay:move-collapsed', dx, dy),
   toggle: () => ipcRenderer.invoke('overlay:toggle'),
   quit: () => ipcRenderer.invoke('overlay:quit'),
   getState: () => ipcRenderer.invoke('overlay:get-state'),

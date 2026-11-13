@@ -21,6 +21,7 @@ let expandedBounds = null;
 let expandedMinimum = null;
 let snapPlace = { col: 1, row: 0 };
 let liveShortcuts = false;
+let trayMenu = [];
 let contentProtection = ['win32', 'darwin'].includes(process.platform);
 let captureActive = false;
 let shortcutRegistered = false;
@@ -227,17 +228,29 @@ function stopCapture() {
 }
 function updateTray() {
   if (!tray || tray.isDestroyed()) return;
-  tray.setToolTip('Sonora');
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Open', click: show },
+  trayMenu = [
+    { label: 'Open Sonora', click: show },
     { label: `Version ${app.getVersion()}`, enabled: false },
     { label: 'Quit', click: () => {
-      dialog.showMessageBox({ type: 'question', buttons: ['Cancel', 'Quit'], defaultId: 1, cancelId: 0,
-        message: 'Quit Sonora?', detail: 'Quitting stops listening and closes the window.' }).then(result => {
+      dialog.showMessageBox({ type: 'question', buttons: ['Cancel', 'Quit'], defaultId: 0, cancelId: 0,
+        title: 'Quit Sonora', message: 'Quit Sonora?', detail: 'Quitting stops listening and closes the window.' }).then(result => {
         if (result.response === 1) { quitting = true; app.quit(); }
       }).catch(() => {});
     } },
-  ]));
+  ];
+  tray.setToolTip('Sonora');
+  const built = Menu.buildFromTemplate(trayMenu);
+  // Windows turns a context menu into the left-click action, so the icon click never restores the window.
+  if (process.platform === 'win32') {
+    try { tray.setContextMenu(null); } catch { /* left click stays a click */ }
+  } else tray.setContextMenu(built);
+}
+function moveCollapsed(dx, dy) {
+  if (!collapsed || !win || win.isDestroyed()) return state();
+  if (typeof dx !== 'number' || typeof dy !== 'number' || !Number.isFinite(dx) || !Number.isFinite(dy)) throw new Error('Expected a move.');
+  const box = win.getBounds();
+  win.setBounds({ x: Math.round(box.x + dx), y: Math.round(box.y + dy), width: box.width, height: box.height });
+  return state();
 }
 function destroyTray() {
   if (tray && !tray.isDestroyed?.()) tray.destroy?.();
@@ -249,6 +262,10 @@ function ensureTray() {
   tray = new Tray(icon);
   tray.on('click', show);
   tray.on('double-click', show);
+  tray.on('right-click', () => {
+    if (!tray || tray.isDestroyed?.()) return;
+    tray.popUpContextMenu?.(Menu.buildFromTemplate(trayMenu));
+  });
   updateTray();
 }
 function syncTray() {
@@ -314,6 +331,7 @@ function registerIpc() {
   handle('overlay:show', () => { show(); return state(); });
   handle('overlay:hide', () => { hide(); return state(); });
   handle('overlay:minimize', () => { setCollapsed(!collapsed); return state(); });
+  handle('overlay:move-collapsed', (dx, dy) => moveCollapsed(dx, dy));
   handle('overlay:set-live-shortcuts', value => {
     liveShortcuts = value === true;
     activateHotkeys();
