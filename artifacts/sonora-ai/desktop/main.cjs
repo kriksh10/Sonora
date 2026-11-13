@@ -156,9 +156,8 @@ function broadcast() {
 const WINDOW_CLEAR = '#00000000';
 function clearWindowPlate() {
   if (!win || win.isDestroyed()) return;
-  // Changing the plate after creation paints it opaque white on Windows.
-  // The constructor color is the transparent one.
-  if (process.platform === 'win32') win.setBackgroundMaterial?.('none');
+  // The window plate and material are fixed at creation. Touching either
+  // afterward paints an opaque white sheet on Windows.
 }
 function show() {
   if (!win || win.isDestroyed()) return;
@@ -458,7 +457,7 @@ function createWindow() {
     minWidth: Math.min(390, bounds.width), minHeight: Math.min(620, bounds.height), show: false,
     // thickFrame, rounded corners, and Win11 Mica paint an opaque backing behind a frameless window.
     frame: false, thickFrame: false, roundedCorners: false,
-    transparent: true, backgroundColor: WINDOW_CLEAR, backgroundMaterial: 'none', resizable: true, alwaysOnTop: true,
+    transparent: true, backgroundColor: WINDOW_CLEAR, resizable: true, alwaysOnTop: true,
     // toolbar sets WS_EX_TOOLWINDOW on Windows, so the window stays out of the taskbar, Alt+Tab, and Task View.
     hiddenInMissionControl: true,
     ...(process.platform === 'win32' ? { type: 'toolbar' } : {}),
