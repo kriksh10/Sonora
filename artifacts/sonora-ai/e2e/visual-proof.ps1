@@ -255,8 +255,20 @@ try {
   foreach ($percent in @(15, 45, 95)) {
     Get-Process msedge -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 400
-    $edge = Start-Process -FilePath $edgePath -ArgumentList @("--app=$htmlUri?opacity=$percent", '--window-size=900,760', '--window-position=140,40', '--new-window') -PassThru
-    Start-Sleep -Seconds 2
+    $profile = Join-Path $OutDir 'edge-profile'
+    $edge = Start-Process -FilePath $edgePath -ArgumentList @(
+      "--user-data-dir=$profile", '--no-first-run', '--no-default-browser-check', '--disable-sync',
+      "--app=$htmlUri?opacity=$percent", '--window-size=900,760', '--window-position=140,40'
+    ) -PassThru
+    $title = ''
+    $until = (Get-Date).AddSeconds(8)
+    while ((Get-Date) -lt $until) {
+      $proc = Get-Process msedge -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -match 'Reference opacity' } | Select-Object -First 1
+      if ($proc) { $title = $proc.MainWindowTitle; break }
+      Start-Sleep -Milliseconds 300
+    }
+    if (-not $title) { throw "Reference page did not open for $percent. Last edge titles: $((Get-Process msedge -ErrorAction SilentlyContinue | Select-Object -ExpandProperty MainWindowTitle) -join ' | ')" }
+    Start-Sleep -Milliseconds 400
     Save-Screen ("reference-opacity-{0}.png" -f $percent)
   }
   if ($edge) { Stop-Process -Id $edge.Id -Force -ErrorAction SilentlyContinue }
@@ -273,6 +285,8 @@ try {
   }
   $sonora = Start-Process -FilePath $Exe -ArgumentList '--force-renderer-accessibility' -PassThru
   if (-not (Wait-Named 'Sign in' 25)) { throw 'Sign in did not appear' }
+  $sonoraWindow = (Get-Process -Id $sonora.Id).MainWindowHandle
+  if ($sonoraWindow -ne [IntPtr]::Zero) { [ProofInput]::SetForegroundWindow($sonoraWindow) | Out-Null }
   Click-Ui (Find-Named 'Sign in')
   if (-not (Wait-Named 'Create session' 10)) { throw 'Session list did not appear' }
   Click-Ui (Find-Named 'Create session')
