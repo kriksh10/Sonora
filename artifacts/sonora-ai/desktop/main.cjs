@@ -575,6 +575,28 @@ function startVisualProofCapture() {
   if (!localE2E || !process.argv.includes('--visual-proof')) return;
   const server = http.createServer(async (req, res) => {
     try {
+      if (req.url.startsWith('/window') && win && !win.isDestroyed()) {
+        const image = await win.webContents.capturePage();
+        if (!image || image.isEmpty()) { res.writeHead(503); res.end(); return; }
+        const png = image.toPNG();
+        const bounds = win.getBounds();
+        const scale = screen.getPrimaryDisplay().scaleFactor || 1;
+        const size = image.getSize();
+        const bitmap = image.toBitmap();
+        const px = Math.max(0, Math.min(size.width - 1, Math.floor(size.width / 2)));
+        const py = Math.max(0, Math.min(size.height - 1, Math.floor(size.height / 2)));
+        const alpha = bitmap[(py * size.width + px) * 4 + 3] ?? 0;
+        res.writeHead(200, {
+          'Content-Type': 'image/png', 'Content-Length': png.length,
+          'X-Win-X': String(Math.round(bounds.x * scale)),
+          'X-Win-Y': String(Math.round(bounds.y * scale)),
+          'X-Win-W': String(Math.round(bounds.width * scale)),
+          'X-Win-H': String(Math.round(bounds.height * scale)),
+          'X-Center-Alpha': String(alpha),
+        });
+        res.end(png);
+        return;
+      }
       const display = screen.getPrimaryDisplay();
       const width = Math.max(1, Math.round(display.size.width * (display.scaleFactor || 1)));
       const height = Math.max(1, Math.round(display.size.height * (display.scaleFactor || 1)));

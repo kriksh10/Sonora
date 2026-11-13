@@ -52,12 +52,32 @@ public static class ProofInput {
 function Save-Screen([string]$Name) {
   $path = Join-Path $OutDir $Name
   if ($script:UseComposedCapture) {
+    $bgPath = Join-Path $OutDir 'background-only.png'
     try {
-      Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:4181/shot' -OutFile $path -TimeoutSec 15
-      Write-Host "screenshot $Name composed"
+      $req = [System.Net.HttpWebRequest]::Create('http://127.0.0.1:4181/window')
+      $req.Timeout = 15000
+      $resp = $req.GetResponse()
+      $wx = [int]$resp.Headers['X-Win-X']
+      $wy = [int]$resp.Headers['X-Win-Y']
+      $ww = [int]$resp.Headers['X-Win-W']
+      $wh = [int]$resp.Headers['X-Win-H']
+      $alpha = $resp.Headers['X-Center-Alpha']
+      $ms = New-Object System.IO.MemoryStream
+      $resp.GetResponseStream().CopyTo($ms)
+      $resp.Close()
+      $ms.Position = 0
+      $bg = [System.Drawing.Image]::FromFile($bgPath)
+      $bmp = New-Object System.Drawing.Bitmap $bg.Width, $bg.Height
+      $g = [System.Drawing.Graphics]::FromImage($bmp)
+      $g.DrawImage($bg, 0, 0, $bg.Width, $bg.Height)
+      $fg = [System.Drawing.Image]::FromStream($ms)
+      $g.DrawImage($fg, $wx, $wy, $ww, $wh)
+      $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
+      $g.Dispose(); $bmp.Dispose(); $bg.Dispose(); $fg.Dispose(); $ms.Dispose()
+      Write-Host "screenshot $Name alpha=$alpha at $wx,$wy ${ww}x${wh}"
       return
     } catch {
-      Write-Host "composed capture failed: $($_.Exception.Message)"
+      Write-Host "alpha composite failed: $($_.Exception.Message)"
     }
   }
   $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
