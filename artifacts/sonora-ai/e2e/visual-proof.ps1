@@ -27,6 +27,7 @@ public static class ProofInput {
   public const uint MOUSEEVENTF_ABSOLUTE = 0x8000;
   [DllImport("user32.dll")] public static extern int GetSystemMetrics(int n);
   [DllImport("user32.dll")] public static extern uint SendInput(uint n, INPUT[] inputs, int cb);
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
   [StructLayout(LayoutKind.Sequential)] public struct MOUSEINPUT {
     public int dx, dy; public uint mouseData, dwFlags, time; public IntPtr extra;
   }
@@ -130,6 +131,32 @@ function Find-Named([string]$Name) {
   $items = @(Find-AllNamed $Name)
   if ($items.Count -eq 0) { return $null }
   return $items[0]
+}
+
+function Find-StartButton {
+  $root = Get-SonoraRoot
+  if (-not $root) { return $null }
+  $all = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+  for ($i = 0; $i -lt $all.Count; $i++) {
+    $item = $all.Item($i)
+    if ($item.Current.Name -ne 'Start') { continue }
+    if ($item.Current.ControlType.ProgrammaticName -notmatch 'Button') { continue }
+    $rect = $item.Current.BoundingRectangle
+    if ($rect.Width -ge 8 -and $rect.Height -ge 8 -and -not $item.Current.IsOffscreen) { return $item }
+  }
+  return $null
+}
+
+function Write-SonoraNames {
+  $root = Get-SonoraRoot
+  if (-not $root) { Write-Host 'UI: no Sonora window'; return }
+  $all = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+  $names = @()
+  for ($i = 0; $i -lt [Math]::Min(30, $all.Count); $i++) {
+    $n = $all.Item($i).Current.Name
+    if ($n) { $names += $n }
+  }
+  Write-Host ("UI: " + ($names -join ' | '))
 }
 
 function Find-Exact([string]$Name) {
@@ -254,10 +281,24 @@ try {
   $createButtons = @(Find-AllNamed 'Create session')
   if ($createButtons.Count -eq 0) { throw 'Create session missing' }
   Click-Ui $createButtons[$createButtons.Count - 1]
-  $start = Wait-Exact 'Start' 12
-  if (-not $start) { throw 'Start missing' }
+  $start = $null
+  $startUntil = (Get-Date).AddSeconds(12)
+  while ((Get-Date) -lt $startUntil -and -not $start) {
+    $start = Find-StartButton
+    if (-not $start) { Start-Sleep -Milliseconds 250 }
+  }
+  if (-not $start) { Write-SonoraNames; throw 'Start missing' }
+  $sonoraRoot = Get-SonoraRoot
+  if ($sonoraRoot) {
+    $handle = [IntPtr]$sonoraRoot.Current.NativeWindowHandle
+    if ($handle -ne [IntPtr]::Zero) { [ProofInput]::SetForegroundWindow($handle) | Out-Null }
+  }
   Click-Ui $start
-  if (-not (Wait-Named 'End session' 8)) { throw 'Live overlay did not open' }
+  if (-not (Wait-Named 'End session' 8)) {
+    $again = Find-StartButton
+    if ($again) { Click-Ui $again }
+  }
+  if (-not (Wait-Named 'End session' 8)) { Write-SonoraNames; throw 'Live overlay did not open' }
 
   $opacityReadings = @{}
   foreach ($percent in @(15, 45, 95)) {
