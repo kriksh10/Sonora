@@ -114,15 +114,22 @@ function Get-SonoraRoot {
   return $best
 }
 
-function Find-Named([string]$Name) {
+function Find-AllNamed([string]$Name) {
   $root = Get-SonoraRoot
-  if (-not $root) { return $null }
+  $items = @()
+  if (-not $root) { return $items }
   $all = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
   for ($i = 0; $i -lt $all.Count; $i++) {
     $n = $all.Item($i).Current.Name
-    if ($n -and ($n -eq $Name -or $n.StartsWith("$Name ") -or $n.Contains($Name))) { return $all.Item($i) }
+    if ($n -and ($n -eq $Name -or $n.StartsWith("$Name ") -or $n.Contains($Name))) { $items += $all.Item($i) }
   }
-  return $null
+  return $items
+}
+
+function Find-Named([string]$Name) {
+  $items = @(Find-AllNamed $Name)
+  if ($items.Count -eq 0) { return $null }
+  return $items[0]
 }
 
 function Find-Exact([string]$Name) {
@@ -131,6 +138,16 @@ function Find-Exact([string]$Name) {
   $all = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
   for ($i = 0; $i -lt $all.Count; $i++) {
     if ($all.Item($i).Current.Name -eq $Name) { return $all.Item($i) }
+  }
+  return $null
+}
+
+function Wait-Exact([string]$Name, [int]$Seconds = 8) {
+  $until = (Get-Date).AddSeconds($Seconds)
+  while ((Get-Date) -lt $until) {
+    $found = Find-Exact $Name
+    if ($found) { return $found }
+    Start-Sleep -Milliseconds 250
   }
   return $null
 }
@@ -234,8 +251,10 @@ try {
   Click-Ui $company
   [System.Windows.Forms.SendKeys]::SendWait('Northwind')
   Start-Sleep -Milliseconds 200
-  Click-Ui (Find-Named 'Create session')
-  $start = Wait-Named 'Start' 8
+  $createButtons = @(Find-AllNamed 'Create session')
+  if ($createButtons.Count -eq 0) { throw 'Create session missing' }
+  Click-Ui $createButtons[$createButtons.Count - 1]
+  $start = Wait-Exact 'Start' 12
   if (-not $start) { throw 'Start missing' }
   Click-Ui $start
   if (-not (Wait-Named 'End session' 8)) { throw 'Live overlay did not open' }
