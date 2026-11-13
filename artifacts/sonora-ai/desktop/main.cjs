@@ -182,9 +182,12 @@ function setCollapsed(value) {
     win.setMinimumSize?.(72, 72);
     win.setBounds({ x: expandedBounds.x, y: expandedBounds.y, width: 72, height: 72 });
     win.setResizable?.(false);
+    // An opaque plate keeps the whole icon a hit target. Transparent pixels fall through on Windows.
+    win.setBackgroundColor?.('#19373a');
   } else if (expandedBounds) {
     const minimum = expandedMinimum || [390, 620];
     win.setMinimumSize?.(minimum[0], minimum[1]);
+    clearWindowPlate();
     win.setBounds(expandedBounds);
     win.setResizable?.(true);
   }

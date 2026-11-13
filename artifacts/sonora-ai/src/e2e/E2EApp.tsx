@@ -150,9 +150,9 @@ export default function E2EApp() {
 
   const askRef = useRef(ask);
   askRef.current = ask;
-  const noteShot = () => {
+  const noteShot = (shortcut = false) => {
     shotCount.current += 1;
-    setNotice(`Screenshot attached ${shotCount.current}`);
+    setNotice(shortcut ? `Screenshot attached ${shotCount.current}.` : "Screenshot attached.");
   };
   const commandRef = useRef({ question, latest, answer, history });
   commandRef.current = { question, latest, answer, history };
@@ -178,7 +178,7 @@ export default function E2EApp() {
       else if (result.type === "screenshot") void (async () => {
         const image = await window.sonoraDesktop?.captureScreen?.();
         if (!image) { setError("Screenshot was not captured."); return; }
-        noteShot();
+        noteShot(true);
         await askRef.current(current.question.trim() || current.latest || "Explain what is visible in this screenshot.");
       })();
     });
