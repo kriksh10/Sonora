@@ -827,9 +827,9 @@ try {
   $lattice = Add-E2EItem 'Lattice resume' 'Lattice resume body' '' 'ready'
   $orbit = Add-E2EItem 'Orbit brief' '' 'Orbit brief body' 'ready'
   $liveDesk = Add-E2EItem 'Live desk' '' '' 'active'
-  Start-Sleep -Seconds 2
-  $seeded = [bool]((Wait-Named 'Cedar archive' 4) -and (Wait-Named 'Lattice resume' 2) -and (Wait-Named 'Orbit brief' 2) -and (Wait-Named 'Live desk' 2))
-  Add-Scenario 'Library items are listed' $seeded ''
+  $counted = Wait-Named 'Session count 5' 8
+  $seeded = [bool]($counted -and (Wait-Named 'Cedar archive' 4) -and (Wait-Named 'Lattice resume' 2) -and (Wait-Named 'Orbit brief' 2) -and (Wait-Named 'Live desk' 2))
+  Add-Scenario 'Library items are listed' $seeded $(if ($counted) { 'count=5' } else { 'session count did not reach 5' })
   if (-not $seeded) { throw 'Seeded sessions did not appear in the list.' }
   Click-Exact 'Delete session Cedar archive' | Out-Null
   $confirmSession = Wait-Named 'Confirm delete' 3

@@ -98,7 +98,7 @@ export default function E2EApp() {
   }, []);
 
   const refresh = async () => {
-    const response = await fetch("/api/sessions", { credentials: "include" });
+    const response = await fetch("/api/sessions", { credentials: "include", cache: "no-store" });
     if (response.status === 401) { setSignedIn(false); return; }
     const data = await response.json() as CallSession[];
     setSessions(data);
@@ -224,6 +224,7 @@ export default function E2EApp() {
       <p id="sonora-hover" aria-label={hoverLabel} style={{ position: "absolute", width: 1, height: 1, overflow: "hidden" }}>{hoverLabel}</p>
       <p id="sonora-filter" aria-label={`Filter ${filter}`} style={{ position: "absolute", width: 1, height: 1, overflow: "hidden" }}>{filter}</p>
       <p id="sonora-theme" aria-label={`Theme ${theme}`} style={{ position: "absolute", width: 1, height: 1, overflow: "hidden" }}>{theme}</p>
+      <p id="sonora-session-count" aria-label={`Session count ${sessions.length}`} style={{ position: "absolute", width: 1, height: 1, overflow: "hidden" }}>{sessions.length}</p>
       <p id="sonora-scale" aria-label={`Display scale ${Math.round((typeof window !== "undefined" ? window.devicePixelRatio : 1) * 100)}`} style={{ position: "absolute", width: 1, height: 1, overflow: "hidden" }} />
       <main className="sonora-workspace dp-app text-[#e7e8eb]">
         {!signedIn ? (
