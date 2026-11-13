@@ -75,6 +75,7 @@ public static class SonoraInput {
     return "0x" + style.ToString("X") + " " + string.Join(",", parts);
   }
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+  [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string cls, string title);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr child, string cls, string title);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
@@ -1283,10 +1284,19 @@ try {
       $bits = $row.Split('|', 3)
       if ($bits.Length -lt 2 -or $bits[1] -ne 'Electron_NotifyIconHostWindow') { continue }
       $hostWindow = [IntPtr][int64]$bits[0]
-      foreach ($iconId in @(2, 1, 3)) {
-        [SonoraInput]::PostMessage($hostWindow, 0x8001, [IntPtr]$iconId, [IntPtr]0x201) | Out-Null
-        Start-Sleep -Milliseconds 400
+      foreach ($iconId in 2..16) {
+        [SonoraInput]::SendMessage($hostWindow, 0x8001, [IntPtr]$iconId, [IntPtr]0x201) | Out-Null
+        Start-Sleep -Milliseconds 200
         if ([SonoraInput]::IsWindowVisible($hwnd)) { $restoredTray = $true; break }
+      }
+      if (-not $restoredTray) {
+        [SonoraInput]::SendMessage($hostWindow, 0x8001, [IntPtr]2, [IntPtr]0x204) | Out-Null
+        Start-Sleep -Milliseconds 400
+        $openName = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'Open Sonora')
+        $open = $null
+        try { $open = $popupRoot.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $openName) } catch {}
+        if ($open) { [void](Click-Center $open); Start-Sleep -Milliseconds 400 }
+        if ([SonoraInput]::IsWindowVisible($hwnd)) { $restoredTray = $true }
       }
     }
     $trayNotes.Add('tray-message')

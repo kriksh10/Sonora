@@ -178,8 +178,8 @@ export default function E2EApp() {
       else if (result.type === "screenshot") void (async () => {
         const image = await window.sonoraDesktop?.captureScreen?.();
         if (!image) { setError("Screenshot was not captured."); return; }
-        noteShot(true);
         await askRef.current(current.question.trim() || current.latest || "Explain what is visible in this screenshot.");
+        noteShot(true);
       })();
     });
   }, []);
@@ -264,8 +264,8 @@ export default function E2EApp() {
             onScreenshot={() => void (async () => {
               const image = await window.sonoraDesktop?.captureScreen?.();
               if (!image) { setError("Screenshot was not captured."); return; }
-              noteShot();
               await ask(latest || question || "Explain what is visible in this screenshot.");
+              noteShot();
             })()}
             onPreferences={() => { setSettingsOpen(true); setNotice("Answer settings"); }}
             onReadiness={() => { setReadinessOpen(true); setNotice("Readiness check is ready. Audio stays off until you start it."); }}
