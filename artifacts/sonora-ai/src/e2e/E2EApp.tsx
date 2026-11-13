@@ -78,6 +78,12 @@ export default function E2EApp() {
 
   useEffect(() => { applySonoraTheme(theme); }, [theme]);
 
+  useEffect(() => {
+    if (!signedIn || live) return;
+    const timer = window.setInterval(() => { void refresh(); }, 1000);
+    return () => window.clearInterval(timer);
+  }, [signedIn, live]);
+
   useEffect(() => { void window.sonoraDesktop?.setLiveShortcuts?.(live); }, [live]);
 
   useEffect(() => {
