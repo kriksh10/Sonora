@@ -251,23 +251,43 @@ try {
 
   $edgePath = "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe"
   if (-not (Test-Path $edgePath)) { $edgePath = "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe" }
-  $htmlUri = ([Uri](Resolve-Path $ReferenceHtml).Path).AbsoluteUri
+  # Edge --app refuses file:// and opens a blank tab. Serve the page over HTTP so the query selects 15/45/95.
+  $serverJs = Join-Path $OutDir 'reference-server.js'
+  @(
+    "const http = require('http');"
+    "const fs = require('fs');"
+    "const file = process.argv[2];"
+    "http.createServer((req, res) => {"
+    "  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });"
+    "  res.end(fs.readFileSync(file));"
+    "}).listen(4179, '127.0.0.1');"
+  ) | Set-Content -Path $serverJs -Encoding ascii
+  $htmlPath = (Resolve-Path $ReferenceHtml).Path
+  Start-Process -FilePath node -ArgumentList @($serverJs, $htmlPath) -WindowStyle Hidden
+  $ready = $false
+  foreach ($i in 1..20) {
+    try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:4179/ -TimeoutSec 2 | Out-Null; $ready = $true; break } catch { Start-Sleep -Milliseconds 200 }
+  }
+  if (-not $ready) { throw 'Reference page server did not start' }
   foreach ($percent in @(15, 45, 95)) {
     Get-Process msedge -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 400
-    $profile = Join-Path $OutDir 'edge-profile'
+    $profile = Join-Path $OutDir "edge-profile-$percent"
     $edge = Start-Process -FilePath $edgePath -ArgumentList @(
       "--user-data-dir=$profile", '--no-first-run', '--no-default-browser-check', '--disable-sync',
-      "--app=$htmlUri?opacity=$percent", '--window-size=900,760', '--window-position=140,40'
+      "--app=http://127.0.0.1:4179/?opacity=$percent", '--window-size=900,760', '--window-position=140,40'
     ) -PassThru
     $title = ''
-    $until = (Get-Date).AddSeconds(8)
+    $until = (Get-Date).AddSeconds(15)
     while ((Get-Date) -lt $until) {
       $proc = Get-Process msedge -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -match 'Reference opacity' } | Select-Object -First 1
       if ($proc) { $title = $proc.MainWindowTitle; break }
       Start-Sleep -Milliseconds 300
     }
-    if (-not $title) { throw "Reference page did not open for $percent. Last edge titles: $((Get-Process msedge -ErrorAction SilentlyContinue | Select-Object -ExpandProperty MainWindowTitle) -join ' | ')" }
+    if (-not $title) {
+      Save-Screen ("reference-failed-{0}.png" -f $percent)
+      throw "Reference page did not open for $percent. Last edge titles: $((Get-Process msedge -ErrorAction SilentlyContinue | Select-Object -ExpandProperty MainWindowTitle) -join ' | ')"
+    }
     Start-Sleep -Milliseconds 400
     Save-Screen ("reference-opacity-{0}.png" -f $percent)
   }
