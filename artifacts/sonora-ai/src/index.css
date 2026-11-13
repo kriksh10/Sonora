@@ -15,7 +15,8 @@ html.sonora-desktop, html.sonora-desktop body, html.sonora-desktop #root { backg
 html.sonora-desktop, html.sonora-desktop body, html.sonora-desktop .dp-app, html.sonora-desktop .dp-app *, html.sonora-desktop .sonora-window-bar, html.sonora-desktop .sonora-window-bar * { cursor: default; }
 html.sonora-collapsed .sonora-window-bar > :not(.sonora-dock) { display: none !important; }
 html.sonora-collapsed #root > :not(.sonora-window-bar) { display: none !important; }
-html.sonora-collapsed .sonora-window-bar { justify-content: center; min-height: 72px; border: 0; background: transparent; -webkit-app-region: drag; app-region: drag; }
+html.sonora-collapsed, html.sonora-collapsed body, html.sonora-collapsed #root { background-color: #1e1e1e !important; }
+html.sonora-collapsed .sonora-window-bar { justify-content: center; width: 72px; height: 72px; min-height: 72px; border: 0; background: #1e1e1e; -webkit-app-region: drag; app-region: drag; }
 html.sonora-collapsed .sonora-dock { display: inline-flex; align-items: center; justify-content: center; -webkit-app-region: no-drag; app-region: no-drag; }
 .sonora-dock { display: none; width: 56px; height: 56px; border: 0; border-radius: 18px; background: #1e1e1e; color: #f7f8f8; font-weight: 700; cursor: pointer; }
 .sonora-scroll-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }

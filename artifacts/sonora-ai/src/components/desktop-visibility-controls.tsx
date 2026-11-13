@@ -16,7 +16,7 @@ export default function DesktopVisibilityControls() {
   const [opacityError, setOpacityError] = useState("");
   const [shortcutError, setShortcutError] = useState("");
   const opacityControl = useRef<ReturnType<typeof createBackgroundOpacity> | null>(null);
-  const drag = useRef({ moved: false, x: 0, y: 0 });
+  const drag = useRef({ active: false, moved: false, x: 0, y: 0 });
 
   useEffect(() => {
     if (!bridge) return;
@@ -64,6 +64,26 @@ export default function DesktopVisibilityControls() {
     };
   }, [bridge]);
 
+  useEffect(() => {
+    const move = (event: MouseEvent) => {
+      if (!drag.current.active) return;
+      const dx = event.screenX - drag.current.x;
+      const dy = event.screenY - drag.current.y;
+      if (Math.abs(dx) + Math.abs(dy) < 1) return;
+      if (Math.abs(dx) + Math.abs(dy) >= 4) drag.current.moved = true;
+      drag.current.x = event.screenX;
+      drag.current.y = event.screenY;
+      void bridge?.moveCollapsed?.(dx, dy);
+    };
+    const up = () => { drag.current.active = false; };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    return () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+  }, [bridge]);
+
   useLayoutEffect(() => {
     if (!bridge || !bar.current) return;
     const update = () => document.documentElement.style.setProperty("--sonora-titlebar-height", `${bar.current?.getBoundingClientRect().height ?? 44}px`);
@@ -87,20 +107,9 @@ export default function DesktopVisibilityControls() {
   return (
     <aside ref={bar} aria-label="Desktop window controls" className="sonora-window-bar sonora-overlay-controls">
       <button type="button" className="sonora-dock" aria-label="Sonora listening" title="Sonora listening. Drag to move. Click to restore."
-        onPointerDown={event => {
-          if (!state?.collapsed) return;
-          drag.current = { moved: false, x: event.screenX, y: event.screenY };
-          event.currentTarget.setPointerCapture(event.pointerId);
-        }}
-        onPointerMove={event => {
-          if (!state?.collapsed || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
-          const dx = event.screenX - drag.current.x;
-          const dy = event.screenY - drag.current.y;
-          if (Math.abs(dx) + Math.abs(dy) < 1) return;
-          if (Math.abs(dx) + Math.abs(dy) >= 4) drag.current.moved = true;
-          drag.current.x = event.screenX;
-          drag.current.y = event.screenY;
-          void bridge.moveCollapsed?.(dx, dy);
+        onMouseDown={event => {
+          if (!state?.collapsed || event.button !== 0) return;
+          drag.current = { active: true, moved: false, x: event.screenX, y: event.screenY };
         }}
         onClick={() => {
           if (drag.current.moved) { drag.current.moved = false; return; }

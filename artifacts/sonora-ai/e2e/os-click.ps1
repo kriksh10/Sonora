@@ -907,19 +907,19 @@ try {
   if ($listeningIcon) {
     $beforeDrag = New-Object SonoraInput+RECT
     [SonoraInput]::GetWindowRect($hwnd, [ref]$beforeDrag) | Out-Null
-    $iconBox = $listeningIcon.Current.BoundingRectangle
-    $x1 = [int]($iconBox.X + $iconBox.Width / 2)
-    $y1 = [int]($iconBox.Y + $iconBox.Height / 2)
-    [SonoraInput]::Drag($x1, $y1, $x1 + 70, $y1 + 30)
+    $x1 = [int](($beforeDrag.Left + $beforeDrag.Right) / 2)
+    $y1 = [int](($beforeDrag.Top + $beforeDrag.Bottom) / 2)
+    [SonoraInput]::Drag($x1, $y1, $x1 + 80, $y1 + 40)
     Start-Sleep -Milliseconds 300
     $afterDrag = New-Object SonoraInput+RECT
     [SonoraInput]::GetWindowRect($hwnd, [ref]$afterDrag) | Out-Null
     $dragged = ([math]::Abs($afterDrag.Left - $beforeDrag.Left) -ge 20) -or ([math]::Abs($afterDrag.Top - $beforeDrag.Top) -ge 20)
     Add-Scenario 'The listening icon is draggable' ($dragged -and [SonoraInput]::IsWindowVisible($hwnd)) "from=$($beforeDrag.Left),$($beforeDrag.Top) to=$($afterDrag.Left),$($afterDrag.Top)"
   } else { Add-Scenario 'The listening icon is draggable' $false 'icon missing' }
-  $listeningIcon = Find-Exact 'Sonora listening'
-  if ($listeningIcon) { Click-Element $listeningIcon; Start-Sleep -Milliseconds 500 }
-  else { [SonoraKeys]::CollapseChord(); Start-Sleep -Milliseconds 500 }
+  $iconRect = New-Object SonoraInput+RECT
+  [SonoraInput]::GetWindowRect($hwnd, [ref]$iconRect) | Out-Null
+  [SonoraInput]::Click([int](($iconRect.Left + $iconRect.Right) / 2), [int](($iconRect.Top + $iconRect.Bottom) / 2))
+  Start-Sleep -Milliseconds 500
   $restoredHeight = Get-WindowHeight $hwnd
   Add-Scenario 'Clicking the listening icon restores the overlay' ($restoredHeight -gt 240) "height=$restoredHeight"
   Send-Chord ([byte[]](0x11, 0x48))
