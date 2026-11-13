@@ -101,7 +101,7 @@ test('dragging is confined to handle and range has keyboard semantics and compat
   assert.match(css, /\[class\*="bg-\[#0"\]/);
   assert.match(css, /\[class\*="bg-black\/"\]/);
   assert.match(css, /\.sonora-window-popover, \.sonora-window-popover \* \{ -webkit-app-region: no-drag;/);
-  assert.match(css, /html\.sonora-desktop, html\.sonora-desktop body, html\.sonora-desktop #root \{ background-color: rgba\(0, 0, 0, 0\.004\) !important;/);
+  assert.match(css, /html\.sonora-desktop, html\.sonora-desktop body, html\.sonora-desktop #root \{ background: transparent !important;/);
   assert.match(css, /background-color: var\(--sonora-glass\) !important;/);
   assert.match(css, /backdrop-filter: blur\(18px\) saturate\(1\.35\)/);
   assert.match(css, /html\.sonora-desktop \.lsv-answer-pane \.lsv-scroll/);
@@ -111,9 +111,11 @@ test('dragging is confined to handle and range has keyboard semantics and compat
   assert.match(main, /transparent: true/);
   assert.match(main, /frame: false/);
   assert.match(main, /thickFrame: false/);
-  assert.match(main, /backgroundColor: HIT_FLOOR/);
-  assert.match(main, /setBackgroundColor\?\.\(HIT_FLOOR\)/);
-  assert.match(main, /const HIT_FLOOR = '#01000000'/);
+  assert.match(main, /backgroundColor: WINDOW_CLEAR/);
+  assert.match(main, /setBackgroundColor\?\.\(WINDOW_CLEAR\)/);
+  assert.match(main, /const WINDOW_CLEAR = '#00000000'/);
+  assert.doesNotMatch(main, /setBackgroundColor\?\.\('#19373a'\)/);
+  assert.doesNotMatch(main, /#01000000/);
   assert.match(main, /win\.setIgnoreMouseEvents\(false\)/);
   assert.doesNotMatch(main, /\.setOpacity\(/);
   assert.doesNotMatch(workspace, /rgba\(16,17,19,var\(--sonora-background-opacity/);

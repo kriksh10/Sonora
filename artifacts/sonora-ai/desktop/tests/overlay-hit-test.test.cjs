@@ -68,7 +68,7 @@ test('packaged shell keeps visible UI clickable and stays above other windows', 
   assert.doesNotMatch(preload, /--sonora-e2e/);
   assert.match(css, /-webkit-app-region: no-drag/);
   assert.doesNotMatch(css, /rgba\(0, 0, 0, 0\.04\)/);
-  assert.match(css, /rgba\(30, 30, 30, var\(--sonora-card-opacity/);
+  assert.match(css, /background: var\(--sonora-glass\) !important/);
   assert.match(css, /backdrop-filter: none !important/);
   assert.match(css, /\.dp-tabs button, \.dp-pill \{[^}]*background: #2a2b2f/);
   assert.match(overlay, /liveAnswerQuestion/);

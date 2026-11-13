@@ -153,12 +153,10 @@ function broadcast() {
   if (win && !win.isDestroyed()) win.webContents.send('overlay:state-changed', state());
   updateTray();
 }
-const HIT_FLOOR = '#01000000';
+const WINDOW_CLEAR = '#00000000';
 function clearWindowPlate() {
   if (!win || win.isDestroyed()) return;
-  // Alpha 0 makes Windows treat the whole layered window as click-through.
-  // 1/255 is invisible and is still a hit target.
-  win.setBackgroundColor?.(HIT_FLOOR);
+  win.setBackgroundColor?.(WINDOW_CLEAR);
   if (process.platform === 'win32') win.setBackgroundMaterial?.('none');
 }
 function show() {
@@ -183,8 +181,7 @@ function setCollapsed(value) {
     win.setMinimumSize?.(72, 72);
     win.setBounds({ x: expandedBounds.x, y: expandedBounds.y, width: 72, height: 72 });
     win.setResizable?.(false);
-    // An opaque plate keeps the whole icon a hit target. Transparent pixels fall through on Windows.
-    win.setBackgroundColor?.('#19373a');
+    clearWindowPlate();
   } else if (expandedBounds) {
     const minimum = expandedMinimum || [390, 620];
     win.setMinimumSize?.(minimum[0], minimum[1]);
@@ -460,7 +457,7 @@ function createWindow() {
     minWidth: Math.min(390, bounds.width), minHeight: Math.min(620, bounds.height), show: false,
     // thickFrame, rounded corners, and Win11 Mica paint an opaque backing behind a frameless window.
     frame: false, thickFrame: false, roundedCorners: false,
-    transparent: true, backgroundColor: HIT_FLOOR, backgroundMaterial: 'none', resizable: true, alwaysOnTop: true,
+    transparent: true, backgroundColor: WINDOW_CLEAR, backgroundMaterial: 'none', resizable: true, alwaysOnTop: true,
     // toolbar sets WS_EX_TOOLWINDOW on Windows, so the window stays out of the taskbar, Alt+Tab, and Task View.
     hiddenInMissionControl: true,
     ...(process.platform === 'win32' ? { type: 'toolbar' } : {}),

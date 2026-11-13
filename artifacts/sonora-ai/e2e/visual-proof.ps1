@@ -393,7 +393,7 @@ try {
     }
   }
   if (-not (Wait-Named 'End session' 8)) { Write-SonoraNames; throw 'Live overlay did not open' }
-  $script:UseComposedCapture = $true
+  $script:UseComposedCapture = $false
 
   $opacityReadings = [ordered]@{}
   foreach ($percent in @(15, 45, 95)) {
