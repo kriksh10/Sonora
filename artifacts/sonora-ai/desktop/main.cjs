@@ -156,7 +156,8 @@ function broadcast() {
 const WINDOW_CLEAR = '#00000000';
 function clearWindowPlate() {
   if (!win || win.isDestroyed()) return;
-  win.setBackgroundColor?.(WINDOW_CLEAR);
+  // Changing the plate after creation paints it opaque white on Windows.
+  // The constructor color is the transparent one.
   if (process.platform === 'win32') win.setBackgroundMaterial?.('none');
 }
 function show() {

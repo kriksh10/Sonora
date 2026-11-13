@@ -112,9 +112,8 @@ test('dragging is confined to handle and range has keyboard semantics and compat
   assert.match(main, /frame: false/);
   assert.match(main, /thickFrame: false/);
   assert.match(main, /backgroundColor: WINDOW_CLEAR/);
-  assert.match(main, /setBackgroundColor\?\.\(WINDOW_CLEAR\)/);
   assert.match(main, /const WINDOW_CLEAR = '#00000000'/);
-  assert.doesNotMatch(main, /setBackgroundColor\?\.\('#19373a'\)/);
+  assert.doesNotMatch(main, /setBackgroundColor/);
   assert.doesNotMatch(main, /#01000000/);
   assert.match(main, /win\.setIgnoreMouseEvents\(false\)/);
   assert.doesNotMatch(main, /\.setOpacity\(/);
