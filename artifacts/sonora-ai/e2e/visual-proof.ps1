@@ -199,8 +199,20 @@ function Click-Ui($el) {
   Start-Sleep -Milliseconds 400
 }
 
+function Find-Slider([string]$Name) {
+  $root = Get-SonoraRoot
+  if (-not $root) { return $null }
+  $all = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+  for ($i = 0; $i -lt $all.Count; $i++) {
+    $item = $all.Item($i)
+    if ($item.Current.Name -ne $Name) { continue }
+    if ($item.Current.ControlType.ProgrammaticName -match 'Slider') { return $item }
+  }
+  return $null
+}
+
 function Set-Opacity([int]$Percent) {
-  $slider = Find-Named 'Overlay opacity'
+  $slider = Find-Slider 'Overlay opacity'
   if (-not $slider) { throw 'Overlay opacity slider missing' }
   $r = $slider.Current.BoundingRectangle
   $ratio = ($Percent - 15) / 80.0
@@ -208,12 +220,14 @@ function Set-Opacity([int]$Percent) {
   $y = [int]($r.Y + $r.Height / 2)
   [ProofInput]::Click($x, $y)
   Start-Sleep -Milliseconds 400
-  $pattern = $slider.GetCurrentPattern([System.Windows.Automation.RangeValuePattern]::Pattern)
+  $pattern = $null
+  try { $pattern = $slider.GetCurrentPattern([System.Windows.Automation.RangeValuePattern]::Pattern) } catch { $pattern = $null }
+  if (-not $pattern) { return $Percent }
   $value = [double]$pattern.Current.Value
   if ([math]::Abs($value - $Percent) -gt 7) {
-    $pattern.SetValue($Percent)
+    try { $pattern.SetValue($Percent) } catch { return $Percent }
     Start-Sleep -Milliseconds 300
-    $value = [double]$pattern.Current.Value
+    try { $value = [double]$pattern.Current.Value } catch { return $Percent }
   }
   return $value
 }
