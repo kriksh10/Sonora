@@ -50,6 +50,7 @@ export default function DesktopLiveOverlay(props: {
   const [answerEnd, setAnswerEnd] = useState(true);
   const [answerOverflow, setAnswerOverflow] = useState(false);
   const [scrollTop, setScrollTop] = useState(0);
+  const [metrics, setMetrics] = useState("Answer metrics height=0px visible=0 of 0");
   const markAnswer = () => {
     const el = answerPane.current;
     if (!el) return;
@@ -58,7 +59,35 @@ export default function DesktopLiveOverlay(props: {
     setAnswerEnd(!overflow || el.scrollTop + el.clientHeight >= el.scrollHeight - 8);
     setScrollTop(Math.round(el.scrollTop));
   };
-  useEffect(() => { markAnswer(); }, [props.answer]);
+  useEffect(() => {
+    markAnswer();
+    const el = answerPane.current;
+    if (!el) return;
+    const frame = requestAnimationFrame(() => {
+      el.scrollTop = 0;
+      const words = (props.answer || "").trim().split(/\s+/).filter(Boolean);
+      const body = el.querySelector(".sonora-answer-body") ?? el;
+      const view = el.getBoundingClientRect();
+      let visible = 0;
+      const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+      let node = walker.nextNode();
+      while (node) {
+        const raw = node.textContent || "";
+        const pattern = /\S+/g;
+        let match: RegExpExecArray | null;
+        while ((match = pattern.exec(raw))) {
+          const range = document.createRange();
+          range.setStart(node, match.index);
+          range.setEnd(node, match.index + match[0].length);
+          const rect = range.getClientRects()[0];
+          if (rect && rect.bottom > view.top + 2 && rect.top < view.bottom - 2) visible += 1;
+        }
+        node = walker.nextNode();
+      }
+      setMetrics(`Answer metrics height=${Math.round(el.clientHeight)}px visible=${visible} of ${words.length}`);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [props.answer]);
   useEffect(() => {
     const toggle = () => setChat(value => !value);
     window.addEventListener("sonora-toggle-chat", toggle);
@@ -162,8 +191,9 @@ export default function DesktopLiveOverlay(props: {
           <p className="sonora-scroll-status" aria-label={`Answer scroll position ${scrollTop}`}>Answer scroll position {scrollTop}</p>
           <div ref={answerPane} className="dp-answer-scroll" tabIndex={0} onScroll={markAnswer} aria-label={props.answer ? (answerEnd ? "Answer end visible" : "Answer scrollable") : "Answer pending"}>
             <h3>Answer: {headline}</h3>
-            {props.answer ? <SafeMarkdown text={props.answer} /> : <p>Ask, or let Auto Answer respond when the interviewer finishes.</p>}
+            {props.answer ? <div className="sonora-answer-body"><SafeMarkdown text={props.answer} /></div> : <p>Ask, or let Auto Answer respond when the interviewer finishes.</p>}
           </div>
+          <p className="sonora-scroll-status" aria-label={metrics}>{metrics}</p>
           {props.error && <p role="alert">{props.error}</p>}
           {props.notice && <p role="status">{props.notice}</p>}
           <footer className="dp-foot">

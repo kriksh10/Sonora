@@ -85,9 +85,15 @@ const server = http.createServer(async (req, res) => {
       if (mode === 'offline') { req.socket.on('error', () => {}); req.socket.destroy(); return; }
       if (mode === 'timeout') return;
       const body = await readBody(req);
-      if (typeof body.question === 'string' && body.question.toLowerCase().includes('six hundred')) {
-        const words = Array.from({ length: 600 }, (_, index) => `word${index + 1}`);
-        return send(res, 200, { answer: `${words.join(' ')} ENDWORD`, model: 'e2e' });
+      if (typeof body.question === 'string') {
+        const asked = body.question.toLowerCase();
+        const proofLength = asked.includes('six hundred') ? 600 : asked.includes('two hundred') ? 200 : asked.includes('sixty words') ? 60 : 0;
+        if (proofLength) {
+          const lexicon = ['clear', 'glass', 'panel', 'solid', 'answer', 'scroll', 'opacity', 'window', 'chrome', 'text', 'card', 'fill'];
+          const words = Array.from({ length: proofLength }, (_, index) => `${lexicon[index % lexicon.length]}${index + 1}`);
+          const tail = proofLength === 600 ? ' ENDWORD' : '';
+          return send(res, 200, { answer: `${words.join(' ')}${tail}`, model: 'e2e' });
+        }
       }
       return send(res, 200, { answer: `Heard: ${body.question}`, model: 'e2e' });
     }
