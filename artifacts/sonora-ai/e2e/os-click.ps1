@@ -807,7 +807,7 @@ try {
     return $text | ConvertFrom-Json
   }
   function Add-E2EItem([string]$Title, [string]$Resume, [string]$Document, [string]$Status) {
-    $payload = @{ title = $Title; company = $Title; resumeText = $Resume; documentsText = $Document; status = $Status } | ConvertTo-Json -Compress
+    $payload = @{ title = $Title; company = $Title; resumeText = $Resume; documentsText = $Document; status = $Status; sessionType = 'mock' } | ConvertTo-Json -Compress
     return Send-MockJson $payload
   }
   function Remove-E2EItem([string]$Id) {
