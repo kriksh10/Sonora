@@ -169,6 +169,14 @@ html.sonora-desktop :is(
   -webkit-backdrop-filter: blur(18px) saturate(1.35);
   backdrop-filter: blur(18px) saturate(1.35);
 }
+html.sonora-desktop #root > main.sonora-workspace.dp-app,
+html.sonora-desktop .dp-overlay {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
 html.sonora-desktop .sonora-workspace:has(.lsv-root) {
   background: transparent !important;
   background-color: transparent !important;
