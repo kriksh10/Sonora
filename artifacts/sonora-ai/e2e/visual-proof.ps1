@@ -191,7 +191,13 @@ function Wait-Named([string]$Name, [int]$Seconds = 8) {
 
 function Click-Ui($el) {
   if (-not $el) { throw 'Missing UI element' }
-  try { $el.GetCurrentPattern([System.Windows.Automation.ScrollItemPattern]::Pattern).ScrollIntoView() } catch {}
+  $prev = $ErrorActionPreference
+  $ErrorActionPreference = 'SilentlyContinue'
+  $scroll = $null
+  if ($el.TryGetCurrentPattern([System.Windows.Automation.ScrollItemPattern]::Pattern, [ref]$scroll)) {
+    $scroll.ScrollIntoView()
+  }
+  $ErrorActionPreference = $prev
   Start-Sleep -Milliseconds 150
   $r = $el.Current.BoundingRectangle
   if ($r.Width -lt 1) { throw "No box for $($el.Current.Name)" }
@@ -220,15 +226,20 @@ function Set-Opacity([int]$Percent) {
   $y = [int]($r.Y + $r.Height / 2)
   [ProofInput]::Click($x, $y)
   Start-Sleep -Milliseconds 400
+  $prev = $ErrorActionPreference
+  $ErrorActionPreference = 'SilentlyContinue'
   $pattern = $null
-  try { $pattern = $slider.GetCurrentPattern([System.Windows.Automation.RangeValuePattern]::Pattern) } catch { $pattern = $null }
-  if (-not $pattern) { return $Percent }
+  if (-not $slider.TryGetCurrentPattern([System.Windows.Automation.RangeValuePattern]::Pattern, [ref]$pattern)) {
+    $ErrorActionPreference = $prev
+    return $Percent
+  }
   $value = [double]$pattern.Current.Value
   if ([math]::Abs($value - $Percent) -gt 7) {
-    try { $pattern.SetValue($Percent) } catch { return $Percent }
+    $pattern.SetValue($Percent)
     Start-Sleep -Milliseconds 300
-    try { $value = [double]$pattern.Current.Value } catch { return $Percent }
+    $value = [double]$pattern.Current.Value
   }
+  $ErrorActionPreference = $prev
   return $value
 }
 
@@ -266,7 +277,7 @@ try {
   $edgePath = "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe"
   if (-not (Test-Path $edgePath)) { $edgePath = "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe" }
   # Edge --app refuses file:// and opens a blank tab. Serve the page over HTTP so the query selects 15/45/95.
-  $serverJs = Join-Path $OutDir 'reference-server.js'
+  $serverJs = Join-Path $env:TEMP 'sonora-reference-server.js'
   @(
     "const http = require('http');"
     "const fs = require('fs');"
@@ -286,7 +297,7 @@ try {
   foreach ($percent in @(15, 45, 95)) {
     Get-Process msedge -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 400
-    $profile = Join-Path $OutDir "edge-profile-$percent"
+    $profile = Join-Path $env:TEMP "sonora-edge-profile-$percent"
     $edge = Start-Process -FilePath $edgePath -ArgumentList @(
       "--user-data-dir=$profile", '--no-first-run', '--no-default-browser-check', '--disable-sync',
       "--app=http://127.0.0.1:4179/?opacity=$percent", '--window-size=900,760', '--window-position=140,40'
@@ -302,7 +313,7 @@ try {
       Save-Screen ("reference-failed-{0}.png" -f $percent)
       throw "Reference page did not open for $percent. Last edge titles: $((Get-Process msedge -ErrorAction SilentlyContinue | Select-Object -ExpandProperty MainWindowTitle) -join ' | ')"
     }
-    Start-Sleep -Milliseconds 400
+    Start-Sleep -Milliseconds 1500
     Save-Screen ("reference-opacity-{0}.png" -f $percent)
   }
   if ($edge) { Stop-Process -Id $edge.Id -Force -ErrorAction SilentlyContinue }
@@ -347,7 +358,9 @@ try {
   if (-not (Wait-Named 'End session' 8)) {
     $again = Find-StartButton
     if ($again) {
-      try { $again.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke() } catch { Click-Ui $again }
+      $invoke = $null
+      if ($again.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$invoke)) { $invoke.Invoke() }
+      else { Click-Ui $again }
     }
   }
   if (-not (Wait-Named 'End session' 8)) { Write-SonoraNames; throw 'Live overlay did not open' }
