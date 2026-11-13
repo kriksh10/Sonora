@@ -37,6 +37,19 @@ function note(line) {
   }
 }
 
+function makeSession(body) {
+  const status = body.status === 'active' || body.status === 'ended' || body.status === 'ready' ? body.status : 'ready';
+  return {
+    id: body.id || `s${sessions.length + 1}`, sessionType: body.sessionType || 'interview', title: body.title || 'Untitled',
+    company: body.company || null, description: body.description || '', resumeText: body.resumeText || '',
+    documentsText: body.documentsText || '', instructions: '', answerPreference: 'balanced', model: 'e2e',
+    language: 'English', autoAnswer: true, saveTranscript: true, status, transcript: [],
+    createdAt: new Date().toISOString(),
+    startedAt: status === 'active' ? new Date().toISOString() : null,
+    endedAt: status === 'ended' ? new Date().toISOString() : null,
+  };
+}
+
 function serverOperatingPoint() {
   const source = fs.readFileSync(path.resolve(here, '../../api-server/src/lib/speechmatics.ts'), 'utf8');
   const match = source.match(/operating_point:\s*"([^"]+)"/);
@@ -65,16 +78,23 @@ const server = http.createServer(async (req, res) => {
       if (!authed) return send(res, 401, { error: 'Sign-in expired. Reconnect by signing in again; your current answer stays visible.' });
       return send(res, 200, sessions);
     }
+    if (url.pathname === '/api/e2e/seed' && req.method === 'POST') {
+      const body = await readBody(req);
+      if (body.id) {
+        const index = sessions.findIndex(item => item.id === body.id);
+        if (index < 0) return send(res, 404, { error: 'Session not found.' });
+        if (body.remove === true) sessions.splice(index, 1);
+        else if (body.status) sessions[index].status = body.status;
+        return send(res, 200, { ok: true });
+      }
+      const session = makeSession(body);
+      sessions.unshift(session);
+      return send(res, 200, session);
+    }
     if (url.pathname === '/api/sessions' && req.method === 'POST') {
       if (!authed) return send(res, 401, { error: 'Sign in first.' });
       const body = await readBody(req);
-      const session = {
-        id: `s${sessions.length + 1}`, sessionType: body.sessionType || 'interview', title: body.title || 'Untitled',
-        company: body.company || null, description: body.description || '', resumeText: body.resumeText || '',
-        documentsText: body.documentsText || '', instructions: '', answerPreference: 'balanced', model: 'e2e',
-        language: 'English', autoAnswer: true, saveTranscript: true, status: 'ready', transcript: [],
-        createdAt: new Date().toISOString(), startedAt: null, endedAt: null,
-      };
+      const session = makeSession(body);
       sessions.unshift(session);
       return send(res, 200, session);
     }
@@ -98,7 +118,26 @@ const server = http.createServer(async (req, res) => {
       }
       return send(res, 200, { answer: `Heard: ${body.question}`, model: 'e2e' });
     }
+    const savedText = url.pathname.match(/^\/api\/sessions\/([^/]+)\/(resume|documents)$/);
+    if (savedText && req.method === 'DELETE') {
+      if (!authed) return send(res, 401, { error: 'Sign in first.' });
+      const session = sessions.find(item => item.id === savedText[1]);
+      if (!session) return send(res, 404, { error: 'Session not found.' });
+      if (savedText[2] === 'resume') session.resumeText = '';
+      else session.documentsText = '';
+      return send(res, 200, session);
+    }
     const ended = url.pathname.match(/^\/api\/sessions\/([^/]+)$/);
+    if (ended && req.method === 'DELETE') {
+      if (!authed) return send(res, 401, { error: 'Sign in first.' });
+      const index = sessions.findIndex(item => item.id === ended[1]);
+      if (index < 0) return send(res, 404, { error: 'Session not found.' });
+      if (sessions[index].status === 'active') return send(res, 409, { error: 'End this session before deleting it.' });
+      sessions.splice(index, 1);
+      res.writeHead(204);
+      res.end();
+      return;
+    }
     if (ended && req.method === 'PATCH') {
       if (!authed) return send(res, 401, { error: 'Sign in first.' });
       const body = await readBody(req);

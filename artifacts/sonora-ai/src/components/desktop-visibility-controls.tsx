@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { EyeOff, GripHorizontal, Minus, Pin, Settings2, ShieldCheck, Square } from "lucide-react";
 import DesktopMaintenance from "@/components/desktop-maintenance";
 import DesktopHotkeysSheet from "@/components/desktop-hotkeys-sheet";
@@ -16,7 +16,7 @@ export default function DesktopVisibilityControls() {
   const [opacityError, setOpacityError] = useState("");
   const [shortcutError, setShortcutError] = useState("");
   const opacityControl = useRef<ReturnType<typeof createBackgroundOpacity> | null>(null);
-  const drag = useRef({ active: false, moved: false, x: 0, y: 0 });
+  const drag = useRef({ active: false, moved: false, x: 0, y: 0, originX: 0, originY: 0 });
 
   useEffect(() => {
     if (!bridge) return;
@@ -64,25 +64,21 @@ export default function DesktopVisibilityControls() {
     };
   }, [bridge]);
 
-  useEffect(() => {
-    const move = (event: MouseEvent) => {
-      if (!drag.current.active) return;
-      const dx = event.screenX - drag.current.x;
-      const dy = event.screenY - drag.current.y;
-      if (Math.abs(dx) + Math.abs(dy) < 1) return;
-      if (Math.abs(dx) + Math.abs(dy) >= 4) drag.current.moved = true;
-      drag.current.x = event.screenX;
-      drag.current.y = event.screenY;
-      void bridge?.moveCollapsed?.(dx, dy);
-    };
-    const up = () => { drag.current.active = false; };
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
-    return () => {
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
-    };
-  }, [bridge]);
+  const dragDistance = (event: ReactPointerEvent<HTMLElement>) => {
+    const scale = window.devicePixelRatio || 1;
+    return Math.hypot(event.screenX - drag.current.originX, event.screenY - drag.current.originY) / scale;
+  };
+  const pointerMove = (event: ReactPointerEvent<HTMLElement>) => {
+    if (!drag.current.active) return;
+    if (dragDistance(event) >= 4) drag.current.moved = true;
+    void bridge?.dragCollapsed?.("move");
+  };
+  const pointerUp = (event: ReactPointerEvent<HTMLElement>) => {
+    if (!drag.current.active) return;
+    if (dragDistance(event) >= 4) drag.current.moved = true;
+    drag.current.active = false;
+    void bridge?.dragCollapsed?.("end");
+  };
 
   useLayoutEffect(() => {
     if (!bridge || !bar.current) return;
@@ -107,10 +103,14 @@ export default function DesktopVisibilityControls() {
   return (
     <aside ref={bar} aria-label="Desktop window controls" className="sonora-window-bar sonora-overlay-controls">
       <button type="button" className="sonora-dock" aria-label="Sonora listening" title="Sonora listening. Drag to move. Click to restore."
-        onMouseDown={event => {
+        onPointerDown={event => {
           if (!state?.collapsed || event.button !== 0) return;
-          drag.current = { active: true, moved: false, x: event.screenX, y: event.screenY };
+          event.currentTarget.setPointerCapture(event.pointerId);
+          drag.current = { active: true, moved: false, x: event.screenX, y: event.screenY, originX: event.screenX, originY: event.screenY };
+          void bridge.dragCollapsed?.("start");
         }}
+        onPointerMove={pointerMove}
+        onPointerUp={pointerUp}
         onClick={() => {
           if (drag.current.moved) { drag.current.moved = false; return; }
           void run(() => bridge.minimize!());

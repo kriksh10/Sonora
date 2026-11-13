@@ -7,7 +7,7 @@ html.sonora-desktop .sonora-workspace.dp-app {
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  color: #f5f6f7;
+  color: var(--sonora-ink, #f5f6f7);
   font-family: Inter, "Segoe UI", sans-serif;
   font-size: 13px;
 }
@@ -23,7 +23,7 @@ html.sonora-desktop .sonora-workspace.dp-app {
   backdrop-filter: none !important;
   border: 1px solid rgba(255, 255, 255, .14);
   border-radius: 14px;
-  color: #f7f7f8;
+  color: var(--sonora-ink, #f7f7f8);
 }
 .dp-app { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 12px; box-sizing: border-box; }
 .dp-app > * { flex: 1; min-height: 0; min-width: 0; }
@@ -94,8 +94,8 @@ html.sonora-desktop .sonora-workspace.dp-app {
 .dp-overlay { display: flex; flex-direction: column; gap: 10px; flex: 1; height: auto; min-height: 0; padding: 8px; box-sizing: border-box; overflow: hidden; background: transparent !important; }
 .dp-bar, .dp-strip, .dp-card { padding: 8px 10px; }
 .dp-bar { position: relative; z-index: 5; display: flex; align-items: center; gap: 8px; min-height: 46px;
-  background: color-mix(in srgb, #1e1e1e calc(var(--sonora-chrome-opacity, .35) * 100%), transparent) !important;
-  background-color: color-mix(in srgb, #1e1e1e calc(var(--sonora-chrome-opacity, .35) * 100%), transparent) !important; }
+  background: color-mix(in srgb, var(--sonora-fill, #1e1e1e) calc(var(--sonora-chrome-opacity, .35) * 100%), transparent) !important;
+  background-color: color-mix(in srgb, var(--sonora-fill, #1e1e1e) calc(var(--sonora-chrome-opacity, .35) * 100%), transparent) !important; }
 .dp-scroll-chevrons { display: flex; justify-content: flex-end; gap: 6px; }
 .dp-scroll-chevrons button { border: 0; border-radius: 8px; background: #2a2b2f; color: #f7f8f8; width: 28px; height: 28px; cursor: default; }
 .dp-dots { display: flex; gap: 5px; }
@@ -177,3 +177,65 @@ html.sonora-desktop .dp-dialog textarea, html.sonora-desktop .dp-dialog select {
 .dp-chat { padding: 0 4px 4px; }
 html.sonora-desktop .dp-dialog { border-radius: 16px; font-family: Inter, "Segoe UI", sans-serif; font-size: 13px; }
 html.sonora-desktop .dp-app * { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.35) transparent; }
+
+html.sonora-desktop[data-sonora-theme="light"] .dp-glass,
+html.sonora-desktop[data-sonora-theme="light"] .dp-dialog,
+html.sonora-desktop[data-sonora-theme="light"] .dp-menu-pop,
+html.sonora-desktop[data-sonora-theme="light"] .sonora-window-popover,
+html.sonora-desktop[data-sonora-theme="light"] .dp-bar,
+html.sonora-desktop[data-sonora-theme="light"] .dp-strip,
+html.sonora-desktop[data-sonora-theme="light"] .dp-card,
+html.sonora-desktop[data-sonora-theme="light"] .sonora-window-bar {
+  color: var(--sonora-ink);
+  border-color: rgba(23, 25, 29, .14);
+}
+html.sonora-desktop[data-sonora-theme="light"] .dp-label,
+html.sonora-desktop[data-sonora-theme="light"] .dp-head p,
+html.sonora-desktop[data-sonora-theme="light"] .dp-tools,
+html.sonora-desktop[data-sonora-theme="light"] .dp-table th,
+html.sonora-desktop[data-sonora-theme="light"] .dp-group td,
+html.sonora-desktop[data-sonora-theme="light"] .dp-user,
+html.sonora-desktop[data-sonora-theme="light"] .dp-list p,
+html.sonora-desktop[data-sonora-theme="light"] .dp-words,
+html.sonora-desktop[data-sonora-theme="light"] .dp-foot,
+html.sonora-desktop[data-sonora-theme="light"] .dp-select-legend {
+  color: var(--sonora-muted);
+}
+html.sonora-desktop[data-sonora-theme="light"] .dp-nav-btn,
+html.sonora-desktop[data-sonora-theme="light"] .dp-brand button,
+html.sonora-desktop[data-sonora-theme="light"] .dp-icon-btn,
+html.sonora-desktop[data-sonora-theme="light"] .dp-table td,
+html.sonora-desktop[data-sonora-theme="light"] .dp-search,
+html.sonora-desktop[data-sonora-theme="light"] .dp-row-btn,
+html.sonora-desktop[data-sonora-theme="light"] .dp-menu-pop label,
+html.sonora-desktop[data-sonora-theme="light"] .sonora-window-drag-handle {
+  color: var(--sonora-ink);
+}
+html.sonora-desktop[data-sonora-theme="light"] .dp-nav-btn:hover,
+html.sonora-desktop[data-sonora-theme="light"] .dp-nav-btn.is-active,
+html.sonora-desktop[data-sonora-theme="light"] .dp-row-btn:hover,
+html.sonora-desktop[data-sonora-theme="light"] .dp-icon-btn:hover,
+html.sonora-desktop[data-sonora-theme="light"] .dp-brand button:hover {
+  background: rgba(23, 25, 29, .06);
+  color: #17191d;
+}
+html.sonora-desktop[data-sonora-theme="light"] .dp-search,
+html.sonora-desktop[data-sonora-theme="light"] .dp-menu-pop select,
+html.sonora-desktop[data-sonora-theme="light"] .dp-chat textarea,
+html.sonora-desktop[data-sonora-theme="light"] .dp-dialog input,
+html.sonora-desktop[data-sonora-theme="light"] .dp-dialog textarea,
+html.sonora-desktop[data-sonora-theme="light"] .dp-dialog select,
+html.sonora-desktop[data-sonora-theme="light"] .dp-select-trigger,
+html.sonora-desktop[data-sonora-theme="light"] .dp-select-list {
+  background: color-mix(in srgb, #fff calc(var(--sonora-card-opacity, 0.45) * 100%), transparent) !important;
+  color: #17191d;
+  border-color: rgba(23, 25, 29, .16) !important;
+}
+html.sonora-desktop[data-sonora-theme="light"] .dp-select-option { color: #17191d; }
+html.sonora-desktop[data-sonora-theme="light"] .dp-select-option:hover,
+html.sonora-desktop[data-sonora-theme="light"] .dp-select-option.is-active { background: rgba(23, 25, 29, .08); color: #17191d; }
+html.sonora-desktop[data-sonora-theme="light"] .dp-table td,
+html.sonora-desktop[data-sonora-theme="light"] .dp-list article,
+html.sonora-desktop[data-sonora-theme="light"] .dp-plan { border-color: rgba(23, 25, 29, .12); }
+html.sonora-desktop[data-sonora-theme="light"] .dp-chip.ended { color: #3c4540; }
+html.sonora-desktop[data-sonora-theme="light"] .sonora-window-popover { background: var(--sonora-glass); color: #17191d; }

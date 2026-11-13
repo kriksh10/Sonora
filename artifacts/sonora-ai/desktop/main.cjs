@@ -20,6 +20,8 @@ let alwaysOnTop = true;
 let collapsed = false;
 let expandedBounds = null;
 let expandedMinimum = null;
+let collapsedDrag = null;
+const COLLAPSED = 72;
 let snapPlace = { col: 1, row: 0 };
 let liveShortcuts = false;
 let trayMenu = [];
@@ -80,11 +82,21 @@ function state() {
     fontScale: fontScaleValue, transcriptOpen, clickThrough, openAtLogin, hotkeys: hotkeySummary(hotkeyState),
     update: updates.status() };
 }
+function boundsToSave() {
+  if (!win || win.isDestroyed()) return null;
+  if (collapsed && expandedBounds) {
+    const icon = win.getBounds();
+    try {
+      return safeBounds({ x: icon.x, y: icon.y, width: expandedBounds.width, height: expandedBounds.height }, screen.getAllDisplays());
+    } catch { return { ...expandedBounds, x: icon.x, y: icon.y }; }
+  }
+  return win.getBounds();
+}
 function persistWindow() {
   if (!preferencesPath || !win || win.isDestroyed()) return;
   try {
     fs.writeFileSync(`${preferencesPath}.tmp`, JSON.stringify({
-      bounds: win.getBounds(), backgroundOpacity, opacityVersion: 3, fontScale: fontScaleValue,
+      bounds: boundsToSave(), backgroundOpacity, opacityVersion: 3, fontScale: fontScaleValue,
       transcriptOpen, clickThrough, openAtLogin, hotkeys: hotkeyOverrides,
     }), { mode: 0o600 });
     fs.renameSync(`${preferencesPath}.tmp`, preferencesPath);
@@ -170,26 +182,61 @@ function show() {
   syncTray();
   broadcast();
 }
+let enforcingCollapsed = false;
+function enforceCollapsedSize() {
+  if (enforcingCollapsed || !collapsed || !win || win.isDestroyed()) return;
+  const box = win.getBounds();
+  if (box.width === COLLAPSED && box.height === COLLAPSED) return;
+  // Echoing getBounds() here is what blew the icon up: Windows reports the old
+  // minimum (a tall overlay) as soon as a drag starts. Always write the icon size.
+  enforcingCollapsed = true;
+  try {
+    win.setMinimumSize?.(72, 72);
+    win.setMaximumSize?.(COLLAPSED, COLLAPSED);
+    win.setBounds({ x: box.x, y: box.y, width: COLLAPSED, height: COLLAPSED });
+  } finally { enforcingCollapsed = false; }
+}
+function placeCollapsed(x, y) {
+  if (!win || win.isDestroyed()) return;
+  const nextX = Math.round(x);
+  const nextY = Math.round(y);
+  // setPosition leaves the size alone. setBounds with a stored width is what grew the icon.
+  if (typeof win.setPosition === 'function') win.setPosition(nextX, nextY);
+  else win.setBounds({ x: nextX, y: nextY, width: COLLAPSED, height: COLLAPSED });
+  enforceCollapsedSize();
+}
 function setCollapsed(value) {
   if (!win || win.isDestroyed()) return;
   const next = Boolean(value);
   if (next === collapsed) { broadcast(); return; }
+  // Flip first so a resize event during the bounds change cannot restore the tall size.
+  collapsed = next;
+  collapsedDrag = null;
   if (next) {
     expandedBounds = win.getBounds();
     try { expandedMinimum = win.getMinimumSize?.() || [390, 620]; } catch { expandedMinimum = [390, 620]; }
     // The normal answer pane cannot shrink below 620px. The listening icon can.
     win.setMinimumSize?.(72, 72);
-    win.setBounds({ x: expandedBounds.x, y: expandedBounds.y, width: 72, height: 72 });
+    win.setMaximumSize?.(COLLAPSED, COLLAPSED);
+    win.setBounds({ x: expandedBounds.x, y: expandedBounds.y, width: COLLAPSED, height: COLLAPSED });
     win.setResizable?.(false);
+    // setResizable(false) on Windows reapplies the previous minimum. Lock the icon again.
+    win.setMinimumSize?.(72, 72);
+    win.setMaximumSize?.(COLLAPSED, COLLAPSED);
+    enforceCollapsedSize();
     clearWindowPlate();
   } else if (expandedBounds) {
+    const icon = win.getBounds();
     const minimum = expandedMinimum || [390, 620];
+    win.setResizable?.(true);
+    win.setMaximumSize?.(10000, 10000);
     win.setMinimumSize?.(minimum[0], minimum[1]);
     clearWindowPlate();
-    win.setBounds(expandedBounds);
-    win.setResizable?.(true);
+    let restored = { x: icon.x, y: icon.y, width: expandedBounds.width, height: expandedBounds.height };
+    try { restored = safeBounds(restored, screen.getAllDisplays()); } catch { /* keep the icon anchor */ }
+    win.setBounds(restored);
+    expandedBounds = restored;
   }
-  collapsed = next;
   broadcast();
 }
 function conceal() {
@@ -250,8 +297,28 @@ function moveCollapsed(dx, dy) {
   if (!collapsed || !win || win.isDestroyed()) return state();
   if (typeof dx !== 'number' || typeof dy !== 'number' || !Number.isFinite(dx) || !Number.isFinite(dy)) throw new Error('Expected a move.');
   const box = win.getBounds();
-  win.setBounds({ x: Math.round(box.x + dx), y: Math.round(box.y + dy), width: box.width, height: box.height });
+  // Deltas are DIP. Do not pass width or height: that reapplied the expanded size.
+  placeCollapsed(box.x + dx, box.y + dy);
   return state();
+}
+function dragCollapsed(phase) {
+  if (!collapsed || !win || win.isDestroyed()) return { moved: false };
+  if (phase !== 'start' && phase !== 'move' && phase !== 'end') throw new Error('Expected a drag.');
+  const cursor = screen.getCursorScreenPoint();
+  if (phase === 'start' || !collapsedDrag) {
+    const box = win.getBounds();
+    collapsedDrag = {
+      grabX: cursor.x - box.x, grabY: cursor.y - box.y,
+      startX: cursor.x, startY: cursor.y, moved: false,
+    };
+    if (phase === 'start') return { moved: false };
+  }
+  const distance = Math.hypot(cursor.x - collapsedDrag.startX, cursor.y - collapsedDrag.startY);
+  if (distance >= 4) collapsedDrag.moved = true;
+  if (phase === 'move' && collapsedDrag.moved) placeCollapsed(cursor.x - collapsedDrag.grabX, cursor.y - collapsedDrag.grabY);
+  const moved = collapsedDrag.moved === true;
+  if (phase === 'end') collapsedDrag = null;
+  return { moved };
 }
 function destroyTray() {
   if (tray && !tray.isDestroyed?.()) tray.destroy?.();
@@ -333,6 +400,7 @@ function registerIpc() {
   handle('overlay:hide', () => { hide(); return state(); });
   handle('overlay:minimize', () => { setCollapsed(!collapsed); return state(); });
   handle('overlay:move-collapsed', (dx, dy) => moveCollapsed(dx, dy));
+  handle('overlay:drag-collapsed', phase => dragCollapsed(phase));
   handle('overlay:set-live-shortcuts', value => {
     liveShortcuts = value === true;
     activateHotkeys();
@@ -505,10 +573,17 @@ function createWindow() {
     try { if (win.isMinimized?.()) win.restore(); } catch { /* stay expanded in the window */ }
     setCollapsed(true);
   });
+  win.on('will-resize', (event, newBounds) => {
+    if (!collapsed || !newBounds) return;
+    if (newBounds.width === COLLAPSED && newBounds.height === COLLAPSED) return;
+    event.preventDefault();
+  });
   win.on('moved', remember);
-  win.on('resized', remember);
+  win.on('resized', () => { if (collapsed) enforceCollapsedSize(); else remember(); });
   const recoverPosition = () => {
-    if (!win.isDestroyed()) win.setBounds(safeBounds(win.getBounds(), screen.getAllDisplays()));
+    if (win.isDestroyed()) return;
+    if (collapsed) { enforceCollapsedSize(); return; }
+    win.setBounds(safeBounds(win.getBounds(), screen.getAllDisplays()));
   };
   screen.on('display-removed', recoverPosition);
   screen.on('display-metrics-changed', recoverPosition);
@@ -561,7 +636,7 @@ function createWindow() {
   });
   win.webContents.on('did-finish-load', () => {
     try { app.setAccessibilitySupportEnabled(true); } catch (error) { bootLog(`accessibility ${error}`); }
-    bootLog(`did-finish-load ${win.webContents.getURL()}`);
+    bootLog(`did-finish-load ${win.webContents.getURL()} scale=${screen.getPrimaryDisplay?.().scaleFactor ?? 1}`);
   });
   configurePermissions();
   win.once('ready-to-show', show);
@@ -641,6 +716,10 @@ try {
 } catch { /* The ready handler reports a missing release configuration. */ }
 if (e2e) localE2E = true;
 allowLocalE2ENetwork();
+const forcedScale = process.argv.find(arg => arg.startsWith('--force-device-scale-factor='));
+if (forcedScale && typeof app.commandLine?.appendSwitch === 'function') {
+  app.commandLine.appendSwitch('force-device-scale-factor', forcedScale.split('=')[1] || '1');
+}
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else {

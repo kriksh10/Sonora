@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronLeft, FileText, LogOut, Mic, Plus, Search } from "lucide-react";
+import { ChevronLeft, FileText, LogOut, Mic, Plus, Search, Trash2 } from "lucide-react";
 import type { CallSession } from "@workspace/api-client-react";
 import { creditsForSession } from "@/lib/pricing";
 
@@ -49,9 +49,37 @@ export default function DesktopSessions(props: {
   freeSessionsUsed: number;
   unlimitedUntilMs: number | null;
   upgradeHref: string;
+  onRefresh?: () => Promise<void> | void;
+  onDeleteSession: (session: CallSession) => Promise<void>;
+  onDeleteResume: (session: CallSession) => Promise<void>;
+  onDeleteDocument: (session: CallSession) => Promise<void>;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [panel, setPanel] = useState<Panel>("sessions");
+  const [pending, setPending] = useState<{ kind: "session" | "resume" | "document" | "live"; session: CallSession } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [dialogError, setDialogError] = useState("");
+  const openPanel = (next: Panel) => {
+    setPanel(next);
+    void props.onRefresh?.();
+  };
+  const askDelete = (kind: "session" | "resume" | "document", session: CallSession) => {
+    setDialogError("");
+    setPending({ kind: kind === "session" && session.status === "active" ? "live" : kind, session });
+  };
+  const confirmDelete = async () => {
+    if (!pending || pending.kind === "live" || busy) return;
+    setBusy(true);
+    setDialogError("");
+    try {
+      if (pending.kind === "session") await props.onDeleteSession(pending.session);
+      else if (pending.kind === "resume") await props.onDeleteResume(pending.session);
+      else await props.onDeleteDocument(pending.session);
+      setPending(null);
+    } catch (cause) {
+      setDialogError(cause instanceof Error ? cause.message : "Could not delete that item.");
+    } finally { setBusy(false); }
+  };
   const live = props.allSessions.some(session => session.status === "active");
   const active = props.sessions.filter(session => session.status !== "ended");
   const past = props.sessions.filter(session => session.status === "ended");
@@ -78,6 +106,7 @@ export default function DesktopSessions(props: {
         {session.status === "ended"
           ? <button className="dp-row-btn" onClick={() => { props.onView(session); setPanel("transcript"); }}>View transcript</button>
           : <button className="dp-row-btn" onClick={() => props.onJoin(session)}>{session.status === "active" ? "Join" : "Start"}</button>}
+        <button type="button" className="dp-row-btn" aria-label={`Delete session ${session.title || "Untitled session"}`} title="Delete session" onClick={() => askDelete("session", session)}><Trash2 size={14} /> Delete</button>
       </td>
     </tr>
   );
@@ -92,9 +121,9 @@ export default function DesktopSessions(props: {
         </div>
         {!collapsed && <div className="dp-label">Interview Assistant</div>}
         <button className="dp-nav-btn" onClick={props.onCreate}><Plus size={15} />{!collapsed && "Create session"}</button>
-        <button className={`dp-nav-btn ${panel === "sessions" ? "is-active" : ""}`} onClick={() => setPanel("sessions")}><Mic size={15} />{!collapsed && "Call Sessions"}{!collapsed && live && <span className="dp-live-badge">Live</span>}</button>
-        <button className={`dp-nav-btn ${panel === "resumes" ? "is-active" : ""}`} onClick={() => setPanel("resumes")}><FileText size={15} />{!collapsed && "Resumes"}</button>
-        <button className={`dp-nav-btn ${panel === "documents" ? "is-active" : ""}`} onClick={() => setPanel("documents")}><FileText size={15} />{!collapsed && "Documents"}</button>
+        <button className={`dp-nav-btn ${panel === "sessions" ? "is-active" : ""}`} onClick={() => openPanel("sessions")}><Mic size={15} />{!collapsed && "Call Sessions"}{!collapsed && live && <span className="dp-live-badge">Live</span>}</button>
+        <button className={`dp-nav-btn ${panel === "resumes" ? "is-active" : ""}`} onClick={() => openPanel("resumes")}><FileText size={15} />{!collapsed && "Resumes"}</button>
+        <button className={`dp-nav-btn ${panel === "documents" ? "is-active" : ""}`} onClick={() => openPanel("documents")}><FileText size={15} />{!collapsed && "Documents"}</button>
         {!collapsed && <div className="dp-label">Prepare</div>}
         <button className="dp-nav-btn" onClick={props.onMock}><Mic size={15} />{!collapsed && "Mock Interview"}</button>
         {!collapsed && <div className="dp-side-foot">
@@ -115,7 +144,13 @@ export default function DesktopSessions(props: {
             <div className="dp-head"><div><h1>{panel === "resumes" ? "Resumes" : "Documents"}</h1><p>Text saved on your Sonora sessions. Nothing here is shared.</p></div></div>
             <div className="dp-list">
               {(panel === "resumes" ? resumes : documents).map(session => (
-                <article key={session.id}><strong>{session.title}</strong><p>{panel === "resumes" ? session.resumeText : session.documentsText}</p></article>
+                <article key={session.id}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <strong style={{ flex: 1 }}>{session.title}</strong>
+                    <button type="button" className="dp-row-btn" aria-label={`Delete ${panel === "resumes" ? "resume" : "document"} ${session.title}`} title={panel === "resumes" ? "Delete resume" : "Delete document"} onClick={() => askDelete(panel === "resumes" ? "resume" : "document", session)}><Trash2 size={14} /> Delete</button>
+                  </div>
+                  <p>{panel === "resumes" ? session.resumeText : session.documentsText}</p>
+                </article>
               ))}
               {(panel === "resumes" ? resumes : documents).length === 0 && <p>Nothing saved yet. Add it when you create a session.</p>}
             </div>
@@ -165,6 +200,29 @@ export default function DesktopSessions(props: {
           </>
         )}
       </section>
+      {pending && (
+        <div role="presentation" style={{ position: "fixed", inset: 0, display: "grid", placeItems: "center", zIndex: 40 }}>
+          <div className="dp-glass dp-dialog" role="dialog" aria-label={pending.kind === "live" ? "End this session before deleting it." : "Confirm delete"} style={{ width: 380, padding: 20 }}>
+            {pending.kind === "live" ? (
+              <>
+                <h2>End this session before deleting it.</h2>
+                <p>{pending.session.title} is live. End it from the overlay, then delete it here.</p>
+                <button type="button" onClick={() => setPending(null)}>Close</button>
+              </>
+            ) : (
+              <>
+                <h2>Delete this {pending.kind}?</h2>
+                <p>“{pending.session.title}” will be removed from your list. This cannot be undone.</p>
+                {dialogError && <p role="alert">{dialogError}</p>}
+                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                  <button type="button" disabled={busy} onClick={() => setPending(null)}>Cancel</button>
+                  <button type="button" disabled={busy} onClick={() => void confirmDelete()}>{busy ? "Deleting…" : `Delete ${pending.kind}`}</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

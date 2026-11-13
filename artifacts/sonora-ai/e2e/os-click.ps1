@@ -175,6 +175,37 @@ public static class SonoraInput {
     up[0].type = 0; up[0].mi.dx = ax2; up[0].mi.dy = ay2; up[0].mi.dwFlags = MOUSEEVENTF_LEFTUP | MOUSEEVENTF_ABSOLUTE;
     if (SendInput(1, up, Marshal.SizeOf(typeof(INPUT))) != 1) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
   }
+  static void AbsolutePoint(int x, int y, out int ax, out int ay) {
+    int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    int vw = Math.Max(1, GetSystemMetrics(SM_CXVIRTUALSCREEN));
+    int vh = Math.Max(1, GetSystemMetrics(SM_CYVIRTUALSCREEN));
+    ax = (int)Math.Round((x - vx) * 65535.0 / Math.Max(1, vw - 1));
+    ay = (int)Math.Round((y - vy) * 65535.0 / Math.Max(1, vh - 1));
+  }
+  public static void DragSteps(int x1, int y1, int x2, int y2, int steps) {
+    if (steps < 2) steps = 2;
+    int ax, ay;
+    AbsolutePoint(x1, y1, out ax, out ay);
+    INPUT[] down = new INPUT[2];
+    down[0].type = 0; down[0].mi.dx = ax; down[0].mi.dy = ay; down[0].mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
+    down[1].type = 0; down[1].mi.dx = ax; down[1].mi.dy = ay; down[1].mi.dwFlags = MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_ABSOLUTE;
+    if (SendInput(2, down, Marshal.SizeOf(typeof(INPUT))) != 2) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+    System.Threading.Thread.Sleep(50);
+    for (int i = 1; i <= steps; i++) {
+      int x = x1 + ((x2 - x1) * i / steps);
+      int y = y1 + ((y2 - y1) * i / steps);
+      AbsolutePoint(x, y, out ax, out ay);
+      INPUT[] move = new INPUT[1];
+      move[0].type = 0; move[0].mi.dx = ax; move[0].mi.dy = ay; move[0].mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
+      if (SendInput(1, move, Marshal.SizeOf(typeof(INPUT))) != 1) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+      System.Threading.Thread.Sleep(20);
+    }
+    AbsolutePoint(x2, y2, out ax, out ay);
+    INPUT[] up = new INPUT[1];
+    up[0].type = 0; up[0].mi.dx = ax; up[0].mi.dy = ay; up[0].mi.dwFlags = MOUSEEVENTF_LEFTUP | MOUSEEVENTF_ABSOLUTE;
+    if (SendInput(1, up, Marshal.SizeOf(typeof(INPUT))) != 1) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+  }
 }
 public static class SonoraKeys {
   [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, System.UIntPtr dwExtraInfo);
@@ -750,8 +781,83 @@ try {
   }
   Select-Theme 'Light'
   Add-Scenario 'Control: Light theme toggle' ([bool](Wait-Named 'Light selected' 3)) ''
+  Save-Screen 'theme-light.png'
   Select-Theme 'Dark'
   Add-Scenario 'Control: Dark theme toggle' ([bool](Wait-Named 'Dark selected' 3)) ''
+  Save-Screen 'theme-dark.png'
+  Select-Theme 'Light'
+  Add-Scenario 'Theme light is applied' ([bool]((Wait-Named 'Theme light' 3) -and (Find-Exact 'Light selected'))) ''
+
+  function Add-E2EItem([string]$Title, [string]$Resume, [string]$Document, [string]$Status) {
+    $payload = @{ title = $Title; company = $Title; resumeText = $Resume; documentsText = $Document; status = $Status } | ConvertTo-Json
+    return Invoke-RestMethod -Method POST -Uri 'http://127.0.0.1:4173/api/e2e/seed' -Body $payload -ContentType 'application/json; charset=utf-8'
+  }
+  function Remove-E2EItem([string]$Id) {
+    $payload = @{ id = $Id; remove = $true } | ConvertTo-Json
+    Invoke-RestMethod -Method POST -Uri 'http://127.0.0.1:4173/api/e2e/seed' -Body $payload -ContentType 'application/json; charset=utf-8' | Out-Null
+  }
+  function Wait-Absent([string]$Name, [int]$Seconds = 4) {
+    $until = (Get-Date).AddSeconds($Seconds)
+    do {
+      if (-not (Find-Element $Name)) { return $true }
+      Start-Sleep -Milliseconds 200
+    } while ((Get-Date) -lt $until)
+    return -not (Find-Element $Name)
+  }
+  $cedar = Add-E2EItem 'Cedar archive' '' '' 'ready'
+  $lattice = Add-E2EItem 'Lattice resume' 'Lattice resume body' '' 'ready'
+  $orbit = Add-E2EItem 'Orbit brief' '' 'Orbit brief body' 'ready'
+  $liveDesk = Add-E2EItem 'Live desk' '' '' 'active'
+  Click-Exact 'Call Sessions' | Out-Null
+  $seeded = [bool]((Wait-Named 'Cedar archive' 4) -and (Wait-Named 'Lattice resume' 2) -and (Wait-Named 'Orbit brief' 2) -and (Wait-Named 'Live desk' 2))
+  Add-Scenario 'Library items are listed' $seeded ''
+  Click-Exact 'Delete session Cedar archive' | Out-Null
+  $confirmSession = Wait-Named 'Confirm delete' 3
+  Save-Screen 'delete-session-confirm.png'
+  if ($confirmSession) { Click-Exact 'Delete session' | Out-Null }
+  $cedarGone = Wait-Absent 'Cedar archive'
+  Add-Scenario 'Delete session confirms and removes it' ([bool]($confirmSession -and $cedarGone -and (Find-Element 'Northwind interview'))) "gone=$cedarGone"
+  Click-Exact 'Resumes' | Out-Null
+  $resumeShown = Wait-Named 'Lattice resume body' 3
+  if ($resumeShown) {
+    Click-Exact 'Delete resume Lattice resume' | Out-Null
+    Save-Screen 'delete-resume-confirm.png'
+    Click-Exact 'Delete resume' | Out-Null
+  }
+  $resumeGone = Wait-Absent 'Lattice resume body'
+  Click-Exact 'Call Sessions' | Out-Null
+  $latticeRemains = [bool](Wait-Named 'Lattice resume' 3)
+  Add-Scenario 'Delete resume confirms and removes it' ([bool]($resumeShown -and $resumeGone -and $latticeRemains)) "shown=$([bool]$resumeShown) gone=$resumeGone sessionRemains=$latticeRemains"
+  if ($latticeRemains) {
+    Click-Exact 'Delete session Lattice resume' | Out-Null
+    Click-Exact 'Delete session' | Out-Null
+    Start-Sleep -Milliseconds 400
+  }
+  Click-Exact 'Documents' | Out-Null
+  $docShown = Wait-Named 'Orbit brief body' 3
+  if ($docShown) {
+    Click-Exact 'Delete document Orbit brief' | Out-Null
+    Save-Screen 'delete-document-confirm.png'
+    Click-Exact 'Delete document' | Out-Null
+  }
+  $docGone = Wait-Absent 'Orbit brief body'
+  Click-Exact 'Call Sessions' | Out-Null
+  $orbitRemains = [bool](Wait-Named 'Orbit brief' 3)
+  Add-Scenario 'Delete document confirms and removes it' ([bool]($docShown -and $docGone -and $orbitRemains)) "shown=$([bool]$docShown) gone=$docGone sessionRemains=$orbitRemains"
+  if ($orbitRemains) {
+    Click-Exact 'Delete session Orbit brief' | Out-Null
+    Click-Exact 'Delete session' | Out-Null
+    Start-Sleep -Milliseconds 400
+  }
+  Click-Exact 'Delete session Live desk' | Out-Null
+  $blocked = Wait-Named 'End this session before deleting it.' 3
+  Save-Screen 'delete-live-blocked.png'
+  if (Find-Exact 'Close') { Click-Exact 'Close' | Out-Null }
+  $liveRemains = [bool](Find-Element 'Live desk')
+  Add-Scenario 'Deleting a live session is blocked' ([bool]($blocked -and $liveRemains)) "blocked=$([bool]$blocked) remains=$liveRemains"
+  if ($liveDesk.id) { Remove-E2EItem $liveDesk.id }
+  Click-Exact 'Call Sessions' | Out-Null
+  Start-Sleep -Milliseconds 400
 
   function Set-Slider([double]$Ratio) {
     [SonoraInput]::RaiseWithoutFocus($hwnd) | Out-Null
@@ -876,6 +982,7 @@ try {
     $enhanced = [bool](Select-String -Path $env:SONORA_MOCK_LOG -Pattern 'operating_point enhanced' -Quiet)
   }
   Add-Scenario 'Control: Listen starts transcription' ([bool]($listening -and $enhanced)) "enhanced=$enhanced"
+  Save-Screen 'theme-light-overlay.png'
   Click-Exact 'Pause' | Out-Null
   $pausedNote = Wait-Named 'Listening paused' 4
   $sessionStillOpen = [bool](Find-VisibleButton 'End session')
@@ -904,18 +1011,33 @@ try {
   $listeningIcon = Wait-Named 'Sonora listening' 3
   Add-Scenario 'Ctrl+H collapses the live overlay to a listening icon' ([bool]([SonoraInput]::IsWindowVisible($hwnd) -and $collapsedHeight -le 140 -and $collapsedHeight -ge 40 -and $listeningIcon)) "full=$fullHeight collapsed=$collapsedHeight"
   Save-Screen '05d-collapsed.png'
+  function Get-WindowBox([IntPtr]$handle) {
+    $box = New-Object SonoraInput+RECT
+    [SonoraInput]::GetWindowRect($handle, [ref]$box) | Out-Null
+    return [pscustomobject]@{ X = [int]$box.Left; Y = [int]$box.Top; W = [int]($box.Right - $box.Left); H = [int]($box.Bottom - $box.Top) }
+  }
+  function Invoke-IconDrag([IntPtr]$handle, [int]$dx, [int]$dy, [string]$label) {
+    $before = Get-WindowBox $handle
+    $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+    $x1 = [int]($before.X + ($before.W / 2))
+    $y1 = [int]($before.Y + ($before.H / 2))
+    $x2 = [Math]::Max($screen.Left + 30, [Math]::Min($screen.Right - 30, $x1 + $dx))
+    $y2 = [Math]::Max($screen.Top + 30, [Math]::Min($screen.Bottom - 30, $y1 + $dy))
+    if ([Math]::Abs($x2 - $x1) -lt 250 -and [Math]::Abs($dx) -ge 300) { $x2 = [Math]::Max($screen.Left + 30, [Math]::Min($screen.Right - 30, $x1 - $dx)) }
+    if ([Math]::Abs($y2 - $y1) -lt 250 -and [Math]::Abs($dy) -ge 300) { $y2 = [Math]::Max($screen.Top + 30, [Math]::Min($screen.Bottom - 30, $y1 - $dy)) }
+    [SonoraInput]::DragSteps($x1, $y1, $x2, $y2, 12)
+    Start-Sleep -Milliseconds 400
+    $after = Get-WindowBox $handle
+    $moved = ([Math]::Abs($after.X - $before.X) -ge 200) -or ([Math]::Abs($after.Y - $before.Y) -ge 200)
+    $same = ($after.W -eq $before.W) -and ($after.H -eq $before.H) -and $after.W -ge 40 -and $after.W -le 160 -and $after.H -ge 40 -and $after.H -le 160
+    Add-Scenario "Collapsed drag $label keeps size and moves" ($moved -and $same -and [SonoraInput]::IsWindowVisible($handle)) "before=$($before.W)x$($before.H)@$($before.X),$($before.Y) after=$($after.W)x$($after.H)@$($after.X),$($after.Y)"
+    return $same -and $moved
+  }
   $dragged = $false
   if ($listeningIcon) {
-    $beforeDrag = New-Object SonoraInput+RECT
-    [SonoraInput]::GetWindowRect($hwnd, [ref]$beforeDrag) | Out-Null
-    $x1 = [int](($beforeDrag.Left + $beforeDrag.Right) / 2)
-    $y1 = [int](($beforeDrag.Top + $beforeDrag.Bottom) / 2)
-    [SonoraInput]::Drag($x1, $y1, $x1 + 80, $y1 + 40)
-    Start-Sleep -Milliseconds 300
-    $afterDrag = New-Object SonoraInput+RECT
-    [SonoraInput]::GetWindowRect($hwnd, [ref]$afterDrag) | Out-Null
-    $dragged = ([math]::Abs($afterDrag.Left - $beforeDrag.Left) -ge 20) -or ([math]::Abs($afterDrag.Top - $beforeDrag.Top) -ge 20)
-    Add-Scenario 'The listening icon is draggable' ($dragged -and [SonoraInput]::IsWindowVisible($hwnd)) "from=$($beforeDrag.Left),$($beforeDrag.Top) to=$($afterDrag.Left),$($afterDrag.Top)"
+    $dragged = (Invoke-IconDrag $hwnd 320 0 'right 300') -and (Invoke-IconDrag $hwnd -320 0 'left 300') -and (Invoke-IconDrag $hwnd 0 320 'down 300') -and (Invoke-IconDrag $hwnd 0 -320 'up 300')
+    Save-Screen '05d-dragged.png'
+    Add-Scenario 'The listening icon is draggable' ([bool]($dragged -and [SonoraInput]::IsWindowVisible($hwnd))) '300px right, left, down, and up'
   } else { Add-Scenario 'The listening icon is draggable' $false 'icon missing' }
   $iconRect = New-Object SonoraInput+RECT
   [SonoraInput]::GetWindowRect($hwnd, [ref]$iconRect) | Out-Null
@@ -1349,6 +1471,17 @@ try {
   $again = Start-Sonora @('--force-renderer-accessibility')
   Start-Sleep -Seconds 4
   $hwnd2 = $again.hwnd
+  if (Wait-Named 'Sign in' 12) { Click-Element (Find-Exact 'Sign in') | Out-Null }
+  $backHome = Wait-Named 'Call Sessions' 12
+  Add-Scenario 'Theme persists after restart' ([bool]($backHome -and (Find-Exact 'Light selected') -and (Find-Exact 'Theme light'))) ''
+  Save-Screen 'theme-light-restart.png'
+  if ($backHome) { Click-Exact 'Resumes' | Out-Null }
+  $resumeStillGone = -not (Find-Element 'Lattice resume body')
+  if ($backHome) { Click-Exact 'Documents' | Out-Null }
+  $documentStillGone = -not (Find-Element 'Orbit brief body')
+  if ($backHome) { Click-Exact 'Call Sessions' | Out-Null }
+  $sessionStillGone = -not (Find-Element 'Cedar archive')
+  Add-Scenario 'Deleted session, resume, and document stay gone after restart' ([bool]($backHome -and $resumeStillGone -and $documentStillGone -and $sessionStillGone -and (Find-Element 'Northwind interview'))) "resume=$resumeStillGone document=$documentStillGone session=$sessionStillGone"
   $rect2 = New-Object SonoraInput+RECT
   [SonoraInput]::GetWindowRect($hwnd2, [ref]$rect2) | Out-Null
   $before = Click-Count
@@ -1359,6 +1492,38 @@ try {
   $after = Click-Count
   Add-Scenario 'Restart still receives OS clicks' ($after -eq $before) "new pass-through=$($after - $before)"
   Save-Screen '06-restart.png'
+
+  Stop-Sonora
+  Start-Sleep -Seconds 1
+  $scaled = Start-Sonora @('--force-renderer-accessibility', '--force-device-scale-factor=1.5')
+  Start-Sleep -Seconds 3
+  $scaleHwnd = $scaled.hwnd
+  [SonoraInput]::SetWindowPos($scaleHwnd, [IntPtr]::Zero, 80, 40, 0, 0, 0x0041) | Out-Null
+  $scaleLabel = ''
+  $scaleUntil = (Get-Date).AddSeconds(8)
+  while ((Get-Date) -lt $scaleUntil -and -not $scaleLabel) {
+    $scaleNode = Find-Element 'Display scale'
+    if ($scaleNode) { $scaleLabel = $scaleNode.Current.Name }
+    else { Start-Sleep -Milliseconds 250 }
+  }
+  Add-Scenario '150% display scale is active' ($scaleLabel -eq 'Display scale 150') $scaleLabel
+  if (Wait-Named 'Sign in' 8) { Click-Element (Find-Exact 'Sign in') | Out-Null; Wait-Named 'Call Sessions' 10 | Out-Null }
+  Click-Exact 'Minimize' | Out-Null
+  $scaledIcon = Wait-Named 'Sonora listening' 4
+  $scaledBefore = Get-WindowBox $scaleHwnd
+  $scaledDrags = $false
+  if ($scaledIcon) {
+    $scaledDrags = (Invoke-IconDrag $scaleHwnd 320 0 '150% right 300') -and (Invoke-IconDrag $scaleHwnd -320 0 '150% left 300') -and (Invoke-IconDrag $scaleHwnd 0 320 '150% down 300') -and (Invoke-IconDrag $scaleHwnd 0 -320 '150% up 300')
+    Save-Screen 'collapsed-drag-150.png'
+  }
+  Add-Scenario 'Collapsed drag at 150% keeps the icon size' ([bool]($scaledIcon -and $scaledDrags)) "scale=$scaleLabel before=$($scaledBefore.W)x$($scaledBefore.H)"
+  if ($scaledIcon) {
+    $icon = Get-WindowBox $scaleHwnd
+    [SonoraInput]::Click([int]($icon.X + ($icon.W / 2)), [int]($icon.Y + ($icon.H / 2)))
+    Start-Sleep -Milliseconds 500
+  }
+  $scaledRestored = Get-WindowHeight $scaleHwnd
+  Add-Scenario 'Clicking the 150% icon restores the overlay' ($scaledRestored -gt 240) "height=$scaledRestored before=$($scaledBefore.W)x$($scaledBefore.H)"
 }
 finally {
   $failed = @($scenarios | Where-Object { -not $_.pass })

@@ -4,9 +4,13 @@ import { ErrorBoundary } from '@/components/error-boundary';
 
 import './index.css';
 import './desktop-parakeet.css';
+import { applySonoraTheme, readSonoraTheme } from '@/lib/theme';
 
 // Apply before the first paint so Windows does not composite an opaque body color.
-if (window.sonoraDesktop) document.documentElement.classList.add('sonora-desktop');
+if (window.sonoraDesktop) {
+  document.documentElement.classList.add('sonora-desktop');
+  applySonoraTheme(readSonoraTheme());
+}
 
 const root = createRoot(document.getElementById('root')!, {
   // Keeps caught errors off reportError(), which would raise the dev overlay.

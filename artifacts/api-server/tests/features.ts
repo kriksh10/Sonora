@@ -77,8 +77,29 @@ try {
   const created = await request("POST", "/sessions", "member", body, 201);
   const route = `/sessions/${created.id}`;
   await request("GET", route, "owner", undefined, 404); // Admin has no private-history bypass.
-  await request("DELETE", route, "member", undefined, 409);
+  await request("DELETE", route, "owner", undefined, 404);
+  await request("DELETE", route, null, undefined, 401);
+  const library = await request("POST", "/sessions", "member", {
+    ...body, title: "Library clutter", resumeText: "Resume to remove", documentsText: "Document to remove",
+  }, 201);
+  await request("DELETE", `/sessions/${library.id}/resume`, "owner", undefined, 404);
+  await request("DELETE", `/sessions/${library.id}/documents`, null, undefined, 401);
+  const withoutResume = await request("DELETE", `/sessions/${library.id}/resume`, "member");
+  assert.equal(withoutResume.resumeText, "");
+  assert.equal(withoutResume.documentsText, "Document to remove");
+  const withoutDocument = await request("DELETE", `/sessions/${library.id}/documents`, "member");
+  assert.equal(withoutDocument.documentsText, "");
+  assert.equal(withoutDocument.resumeText, "");
+  const stillListed = await request("GET", "/sessions", "member");
+  assert.equal(stillListed.some((item: { id: string; resumeText: string; documentsText: string }) => item.id === library.id && item.resumeText === "" && item.documentsText === ""), true);
+  await request("DELETE", `/sessions/${library.id}`, "member", undefined, 204);
+  await request("GET", `/sessions/${library.id}`, "member", undefined, 404);
+  await request("DELETE", `/sessions/${library.id}`, "member", undefined, 404);
   await request("PATCH", route, "member", { status: "active", roundNumber: 1 });
+  await request("DELETE", route, "member", undefined, 409);
+  const live = await request("GET", route, "member");
+  assert.equal(live.status, "active");
+  assert.equal(live.resumeText, body.resumeText);
   await request("POST", `${route}/transcript`, "member", { text: "Round one saved", role: "user", source: "typed", roundNumber: 1 });
   await request("PATCH", route, "member", { status: "ended", roundNumber: 1 });
   await request("POST", `${route}/restart`, "owner", { requestId: randomUUID() }, 404);
