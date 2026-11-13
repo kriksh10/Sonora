@@ -92,7 +92,9 @@
 .lsv-note-bar.ok{color:#c9f0b8}
 .lsv-link{background:none;border:0;padding:0;color:var(--lsv-green);font-size:.68rem;text-decoration:underline;cursor:pointer}
 .lsv-answer-pane{background:var(--lsv-solid);border-color:rgba(255,255,255,.14)}
-.lsv-answer-pane .lsv-scroll{background:var(--lsv-solid)}
+.lsv-answer-pane .lsv-scroll{min-height:320px;background:var(--lsv-solid)}
+.lsv-chevrons{display:flex;justify-content:flex-end;gap:.35rem;padding:.35rem .75rem 0}
+.lsv-chevrons button{border:0;border-radius:.45rem;background:#2a2b2f;color:#f7f8f8;width:28px;height:28px;cursor:default}
 .lsv-pane[aria-label=Transcript]{background:var(--lsv-solid-2)}
 .lsv-md{font-size:1.05rem;line-height:1.6;overflow-wrap:anywhere;color:#f1f2f4}
 .lsv-md p{margin:0 0 .65rem}

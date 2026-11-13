@@ -162,6 +162,12 @@ public static class SonoraKeys {
     keybd_event(0x10, 0, 2, System.UIntPtr.Zero);
     keybd_event(0x11, 0, 2, System.UIntPtr.Zero);
   }
+  public static void CollapseChord() {
+    keybd_event(0x11, 0, 0, System.UIntPtr.Zero);
+    keybd_event(0x48, 0, 0, System.UIntPtr.Zero);
+    keybd_event(0x48, 0, 2, System.UIntPtr.Zero);
+    keybd_event(0x11, 0, 2, System.UIntPtr.Zero);
+  }
 }
 "@
 
@@ -425,6 +431,8 @@ try {
   Write-Host "runner $($os.Caption) $($os.Version)"
   $launched = Start-Sonora @('--force-renderer-accessibility')
   $hwnd = $launched.hwnd
+  $windowTitle = [SonoraInput]::Title($hwnd)
+  Add-Scenario 'Task Manager process name stays Sonora' ($launched.proc.ProcessName -like 'Sonora*' -and $windowTitle -match 'Sonora') "process=$($launched.proc.ProcessName) title=$windowTitle"
   Write-Host 'PHASE live-ui'
   Start-Sleep -Seconds 6
   if ($Full) {
@@ -550,9 +558,9 @@ try {
     Start-Sleep -Milliseconds 250
     $hover = Find-Element 'Hover'
     if ($hover) { $hoverName = $hover.Current.Name }
-    if ($hoverName -match 'cursor pointer' -and $hoverName -notmatch 'Hover idle') { break }
+    if ($hoverName -match 'cursor default' -and $hoverName -notmatch 'Hover idle') { break }
   }
-  $hoverOk = $hoverName -match 'Hover ' -and $hoverName -notmatch 'Hover idle' -and $hoverName -match 'cursor pointer'
+  $hoverOk = $hoverName -match 'Hover ' -and $hoverName -notmatch 'Hover idle' -and $hoverName -match 'cursor default'
   Add-Scenario 'Real mouse moves for 10 seconds change hover and cursor' $hoverOk $hoverName
   $interview = $null
   foreach ($candidate in @(Find-All 'Interview')) {
@@ -780,7 +788,10 @@ try {
         $fgProc = (Get-Process -Id $fgPid -ErrorAction SilentlyContinue).ProcessName
         $ok = ($panelPassed -eq 0) -and ($marginPassed -eq 0) -and (($fg2Name -like 'Sonora*') -or ($fgProc -like 'Sonora*'))
         Add-Scenario $label $ok "panel=$panelPassed margin=$marginPassed foreground=$fg2Name total=$($after - $before)"
-        if ($pin -and $focus) { Save-Screen ("opacity-{0}.png" -f [int]($ratio * 100)) }
+        if ($pin -and $focus) {
+          $shownOpacity = switch ($ratio) { 0 { 15 } 0.5 { 55 } default { 95 } }
+          Save-Screen ("opacity-{0}.png" -f $shownOpacity)
+        }
       }
     }
   }
@@ -837,6 +848,22 @@ try {
   Click-Exact 'Resume' | Out-Null
   $resumed = Wait-Named 'Stop listening' 8
   Add-Scenario 'Control: Resume starts listening again' ([bool]($resumed -and (Find-Exact 'Pause'))) ''
+  function Get-WindowHeight([IntPtr]$handle) {
+    $box = New-Object SonoraInput+RECT
+    [SonoraInput]::GetWindowRect($handle, [ref]$box) | Out-Null
+    return ($box.Bottom - $box.Top)
+  }
+  $fullHeight = Get-WindowHeight $hwnd
+  [SonoraKeys]::CollapseChord()
+  Start-Sleep -Milliseconds 700
+  $collapsedHeight = Get-WindowHeight $hwnd
+  $listeningIcon = Wait-Named 'Sonora listening' 3
+  Add-Scenario 'Ctrl+H collapses the live overlay to a listening icon' ([bool]([SonoraInput]::IsWindowVisible($hwnd) -and $collapsedHeight -le 140 -and $collapsedHeight -ge 40 -and $listeningIcon)) "full=$fullHeight collapsed=$collapsedHeight"
+  Save-Screen '05d-collapsed.png'
+  if ($listeningIcon) { Click-Element $listeningIcon; Start-Sleep -Milliseconds 500 }
+  else { [SonoraKeys]::CollapseChord(); Start-Sleep -Milliseconds 500 }
+  $restoredHeight = Get-WindowHeight $hwnd
+  Add-Scenario 'Clicking the listening icon restores the overlay' ($restoredHeight -gt 240) "height=$restoredHeight"
   Click-Exact 'Stop listening' | Out-Null
   Add-Scenario 'Control: Stop listening turns transcription off' ([bool](Wait-Named 'Audio transcription stopped' 4)) ''
   Click-Exact 'Listen' | Out-Null
@@ -1014,139 +1041,140 @@ try {
   $stayedHidden = -not [SonoraInput]::IsWindowVisible($hwnd)
   Add-Scenario 'Eye hides the Sonora window and it stays hidden' ($hidden -and $stayedHidden) "hidden=$hidden stayed=$stayedHidden"
   Save-Screen '05b-hidden.png'
-  Start-Process -FilePath $Exe -ArgumentList '--force-renderer-accessibility' | Out-Null
-  $shown = $false
-  $showUntil = (Get-Date).AddSeconds(15)
-  while ((Get-Date) -lt $showUntil) {
-    if ([SonoraInput]::IsWindowVisible($hwnd)) { $shown = $true; break }
-    Start-Sleep -Milliseconds 300
-  }
-  Add-Scenario 'Opening Sonora again shows the hidden window' $shown ''
-  Save-Screen '05c-shown.png'
-  Click-Exact 'Minimize' | Out-Null
-  Start-Sleep -Milliseconds 700
-  $minHidden = -not [SonoraInput]::IsWindowVisible($hwnd)
-  $minStyle = [SonoraInput]::ExStyle($hwnd)
+  $hiddenStyle = [SonoraInput]::ExStyle($hwnd)
   $screenBottom = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Bottom
-  $trayRoots = @()
-  foreach ($pair in @(@('Shell_TrayWnd', $null), @('NotifyIconOverflowWindow', $null))) {
-    $hwndTray = [SonoraInput]::FindWindow($pair[0], $pair[1])
-    if ($hwndTray -and $hwndTray -ne [IntPtr]::Zero) {
-      try { $trayRoots += [System.Windows.Automation.AutomationElement]::FromHandle($hwndTray) } catch {}
-    }
+  $trayHostBefore = [bool](@([SonoraInput]::OverlayWindows()) | Where-Object { $_ -match 'NotifyIcon' })
+  $taskbar = $false
+  $taskRootHwnd = [SonoraInput]::FindWindow('Shell_TrayWnd', $null)
+  if ($taskRootHwnd -and $taskRootHwnd -ne [IntPtr]::Zero) {
+    try {
+      $taskbarRoot = [System.Windows.Automation.AutomationElement]::FromHandle($taskRootHwnd)
+      $buttonType = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)
+      $buttons = $taskbarRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants, $buttonType)
+      for ($i = 0; $i -lt $buttons.Count; $i++) {
+        $name = $buttons.Item($i).Current.Name
+        if ($name -notmatch 'Sonora') { continue }
+        $br = $buttons.Item($i).Current.BoundingRectangle
+        if ($br.Width -gt 80 -and $br.Y -gt ($screenBottom - 120)) { $taskbar = $true; break }
+      }
+    } catch {}
   }
-  $trayEl = $null
-  $trayNames = @()
-  foreach ($trayRoot in $trayRoots) {
-    $named = $trayRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
-    for ($i = 0; $i -lt $named.Count; $i++) {
-      $name = $named.Item($i).Current.Name
-      if ($name) { $trayNames += $name }
-      if ($name -match 'Sonora') { $trayEl = $named.Item($i); break }
-    }
-    if ($trayEl) { break }
-  }
-  if (-not $trayEl) {
-    foreach ($trayRoot in $trayRoots) {
-      $named = $trayRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
-      for ($i = 0; $i -lt $named.Count; $i++) {
-        if ($named.Item($i).Current.Name -eq 'Show Hidden Icons') {
-          $cr = $named.Item($i).Current.BoundingRectangle
-          if ($cr.Width -ge 4) { [SonoraInput]::Click([int]($cr.X + $cr.Width / 2), [int]($cr.Y + $cr.Height / 2)); Start-Sleep -Milliseconds 500 }
-          break
-        }
+  Add-Scenario 'Closing the window keeps Sonora out of the taskbar and shows the tray' ($hidden -and $stayedHidden -and $hiddenStyle -match 'WS_EX_TOOLWINDOW' -and $hiddenStyle -notmatch 'WS_EX_APPWINDOW' -and -not $taskbar -and $trayHostBefore) "style=$hiddenStyle taskbar=$taskbar tray=$trayHostBefore"
+  $restoredTray = $false
+  $trayNotes = New-Object System.Collections.Generic.List[string]
+  function Get-TrayRoots {
+    $roots = @()
+    foreach ($pair in @(@('Shell_TrayWnd', $null), @('NotifyIconOverflowWindow', $null), @('TopLevelWindowForOverflowXamlIsland', $null))) {
+      $handle = [SonoraInput]::FindWindow($pair[0], $pair[1])
+      if ($handle -and $handle -ne [IntPtr]::Zero) {
+        try { $roots += [System.Windows.Automation.AutomationElement]::FromHandle($handle) } catch {}
       }
     }
-    $overflow = [SonoraInput]::FindWindow('NotifyIconOverflowWindow', $null)
-    $listed = @([SonoraInput]::OverlayWindows())
-    $trayNames += $listed
-    foreach ($row in $listed) {
-      $bits = $row.Split('|', 3)
-      if ($bits.Length -lt 3) { continue }
-      if ($bits[1] -match 'Overflow|Notify' -or $bits[2] -match 'Sonora') {
-        $candidate = [IntPtr][int64]$bits[0]
-        if (-not $overflow -or $overflow -eq [IntPtr]::Zero) { $overflow = $candidate }
-      }
-    }
-    if ($overflow -and $overflow -ne [IntPtr]::Zero) {
+    return $roots
+  }
+  function Get-TrayItems($roots) {
+    $items = @()
+    foreach ($root in @($roots)) {
       try {
-        $overflowRoot = [System.Windows.Automation.AutomationElement]::FromHandle($overflow)
-        $named = $overflowRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
-        for ($i = 0; $i -lt $named.Count; $i++) {
-          $name = $named.Item($i).Current.Name
-          if ($name) { $trayNames += $name }
-          if ($name -match 'Sonora') { $trayEl = $named.Item($i); break }
-        }
-        if (-not $trayEl) { $trayEl = $overflowRoot }
-        $script:trayHost = $overflowRoot
+        $named = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+        for ($i = 0; $i -lt $named.Count; $i++) { $items += $named.Item($i) }
       } catch {}
     }
+    return $items
   }
-  $tray = $false
-  if ($trayEl) {
-    $tr = $trayEl.Current.BoundingRectangle
-    $tray = $tr.Width -ge 4
+  function Click-Center($item) {
+    $rect = $item.Current.BoundingRectangle
+    if ($rect.Width -lt 4 -or $rect.Height -lt 4) { return $false }
+    [SonoraInput]::Click([int]($rect.X + $rect.Width / 2), [int]($rect.Y + $rect.Height / 2))
+    return $true
   }
-  $taskbar = $false
-  $taskbarRoot = $trayRoots | Select-Object -First 1
-  if ($taskbarRoot) {
-  $buttonType = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)
-  $buttons = $taskbarRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants, $buttonType)
-  for ($i = 0; $i -lt $buttons.Count; $i++) {
-    $name = $buttons.Item($i).Current.Name
-    if ($name -notmatch 'Sonora') { continue }
-    $br = $buttons.Item($i).Current.BoundingRectangle
-    if ($br.Width -gt 80 -and $br.Y -gt ($screenBottom - 120)) { $taskbar = $true; break }
+  $items = @(Get-TrayItems (Get-TrayRoots))
+  foreach ($item in $items) {
+    $label = ''
+    try { $label = [string]$item.Current.Name } catch {}
+    if ($label -match 'Show [Hh]idden [Ii]cons') { [void](Click-Center $item); Start-Sleep -Milliseconds 700 }
   }
+  $items = @(Get-TrayItems (Get-TrayRoots))
+  $preferred = @()
+  $fallback = @()
+  foreach ($item in $items) {
+    $label = ''
+    $help = ''
+    try { $label = [string]$item.Current.Name } catch {}
+    try { $help = [string]$item.Current.HelpText } catch {}
+    if ($label) { $trayNotes.Add($label) }
+    $rect = $item.Current.BoundingRectangle
+    $small = $rect.Width -ge 8 -and $rect.Width -le 80 -and $rect.Height -ge 8 -and $rect.Height -le 80
+    if (-not $small) { continue }
+    if ($label -match 'Sonora' -or $help -match 'Sonora') { $preferred += $item }
+    elseif ($label -notmatch '^(Start|Search|Task View|Show hidden icons|Show Hidden Icons)$') { $fallback += $item }
   }
-  $traySample = (($trayNames | Where-Object { $_ -match 'Sonora|Overflow|Hidden|Notify' } | Select-Object -Unique | Select-Object -First 12) -join ' | ')
-  Add-Scenario 'Minimize leaves no taskbar or Alt+Tab entry and keeps a tray icon' ($minHidden -and $minStyle -match 'WS_EX_TOOLWINDOW' -and $minStyle -notmatch 'WS_EX_APPWINDOW' -and -not $taskbar -and $tray) "hidden=$minHidden style=$minStyle taskbar=$taskbar tray=$tray names=$traySample"
-  $restoredTray = $false
-  $rootSearch = [System.Windows.Automation.AutomationElement]::RootElement
-  $wanted = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'Sonora tray')
-  $findUntil = (Get-Date).AddSeconds(3)
-  while ((Get-Date) -lt $findUntil -and -not $restoredTray) {
-    $namedIcon = $rootSearch.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $wanted)
-    if ($namedIcon) {
-      $ir = $namedIcon.Current.BoundingRectangle
-      if ($ir.Width -ge 4) {
-        [SonoraInput]::Click([int]($ir.X + $ir.Width / 2), [int]($ir.Y + $ir.Height / 2))
-        Start-Sleep -Milliseconds 500
-        if ([SonoraInput]::IsWindowVisible($hwnd)) { $restoredTray = $true }
-      }
-    }
-    if (-not $restoredTray) { Start-Sleep -Milliseconds 300 }
-  }
-  $clickTargets = @()
-  if ($script:trayHost) { $clickTargets += $script:trayHost }
-  if ($trayEl) { $clickTargets += $trayEl }
-  if ($script:trayHost) {
-    $kids = $script:trayHost.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
-    for ($i = 0; $i -lt $kids.Count; $i++) { $clickTargets += $kids.Item($i) }
-  }
-  foreach ($target in $clickTargets) {
+  $popupRoot = [System.Windows.Automation.AutomationElement]::RootElement
+  $openName = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'Open')
+  foreach ($item in @($preferred + $fallback | Select-Object -First 16)) {
     if ($restoredTray) { break }
-    $tr = $target.Current.BoundingRectangle
-    if ($tr.Width -lt 4 -or $tr.Height -lt 4 -or $tr.Width -gt 200) { continue }
-    $cx = [int]($tr.X + $tr.Width / 2); $cy = [int]($tr.Y + $tr.Height / 2)
-    [SonoraInput]::Click($cx, $cy)
+    if (-not (Click-Center $item)) { continue }
     Start-Sleep -Milliseconds 400
     if ([SonoraInput]::IsWindowVisible($hwnd)) { $restoredTray = $true; break }
-    [SonoraInput]::RightClick($cx, $cy)
+    $rect = $item.Current.BoundingRectangle
+    [SonoraInput]::RightClick([int]($rect.X + $rect.Width / 2), [int]($rect.Y + $rect.Height / 2))
     Start-Sleep -Milliseconds 400
-    $show = Find-Exact 'Show Sonora'
-    if ($show) { Click-Element $show; Start-Sleep -Milliseconds 400 }
+    $open = $null
+    try { $open = $popupRoot.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $openName) } catch {}
+    if ($open) { [void](Click-Center $open); Start-Sleep -Milliseconds 500 }
     if ([SonoraInput]::IsWindowVisible($hwnd)) { $restoredTray = $true }
   }
-  $trayUntil = (Get-Date).AddSeconds(6)
-  while ((Get-Date) -lt $trayUntil) { if ([SonoraInput]::IsWindowVisible($hwnd)) { $restoredTray = $true; break }; Start-Sleep -Milliseconds 250 }
-  Add-Scenario 'Tray click restores the window' $restoredTray ''
-  if ($restoredTray) { Click-Exact 'Minimize' | Out-Null; Start-Sleep -Milliseconds 500 }
-  [SonoraKeys]::RestoreChord()
-  $restoredKey = $false
-  $keyUntil = (Get-Date).AddSeconds(6)
-  while ((Get-Date) -lt $keyUntil) { if ([SonoraInput]::IsWindowVisible($hwnd)) { $restoredKey = $true; break }; Start-Sleep -Milliseconds 250 }
-  Add-Scenario 'Hotkey restores the minimized window' $restoredKey ''
+  if (-not $restoredTray) {
+    $overflow = [SonoraInput]::FindWindow('NotifyIconOverflowWindow', $null)
+    if ($overflow -and $overflow -ne [IntPtr]::Zero) {
+      $overflowRect = New-Object SonoraInput+RECT
+      [SonoraInput]::GetWindowRect($overflow, [ref]$overflowRect) | Out-Null
+      $overflowWidth = $overflowRect.Right - $overflowRect.Left
+      $overflowHeight = $overflowRect.Bottom - $overflowRect.Top
+      $clicks = 0
+      if ($overflowWidth -gt 20 -and $overflowWidth -lt 500 -and $overflowHeight -gt 20 -and $overflowHeight -lt 500) {
+        for ($y = $overflowRect.Top + 18; $y -lt ($overflowRect.Bottom - 8) -and -not $restoredTray -and $clicks -lt 24; $y += 28) {
+          for ($x = $overflowRect.Left + 18; $x -lt ($overflowRect.Right - 8) -and -not $restoredTray -and $clicks -lt 24; $x += 28) {
+            [SonoraInput]::Click($x, $y)
+            $clicks += 1
+            Start-Sleep -Milliseconds 250
+            if ([SonoraInput]::IsWindowVisible($hwnd)) { $restoredTray = $true }
+          }
+        }
+      }
+      $trayNotes.Add("overflow ${overflowWidth}x${overflowHeight} clicks=$clicks")
+    }
+  }
+  $trayGone = -not [bool](@([SonoraInput]::OverlayWindows()) | Where-Object { $_ -match 'NotifyIcon' })
+  $traySample = (($trayNotes | Select-Object -Unique | Select-Object -First 16) -join ' | ')
+  Add-Scenario 'Tray click restores the window and removes the tray' ($restoredTray -and $trayGone) "restored=$restoredTray trayGone=$trayGone names=$traySample"
+  if (-not $restoredTray) {
+    Start-Process -FilePath $Exe -ArgumentList '--force-renderer-accessibility' | Out-Null
+    $showUntil = (Get-Date).AddSeconds(15)
+    while ((Get-Date) -lt $showUntil) {
+      if ([SonoraInput]::IsWindowVisible($hwnd)) { break }
+      Start-Sleep -Milliseconds 300
+    }
+  }
+  $shown = [SonoraInput]::IsWindowVisible($hwnd)
+  Add-Scenario 'Opening Sonora again shows the hidden window' $shown ''
+  Save-Screen '05c-shown.png'
+  if ($shown) {
+    Click-Exact 'Minimize' | Out-Null
+    Start-Sleep -Milliseconds 700
+    $collapsedHeight = Get-WindowHeight $hwnd
+    $listeningIcon = Wait-Named 'Sonora listening' 3
+    $stillShown = [SonoraInput]::IsWindowVisible($hwnd)
+    Add-Scenario 'Minimize collapses to a listening icon inside the same window' ([bool]($stillShown -and $collapsedHeight -le 140 -and $collapsedHeight -ge 40 -and $listeningIcon)) "height=$collapsedHeight"
+    Save-Screen '05e-minimized.png'
+    if ($listeningIcon) { Click-Element $listeningIcon; Start-Sleep -Milliseconds 500 }
+    $grown = Get-WindowHeight $hwnd
+    Add-Scenario 'Clicking the listening icon restores the overlay' ($grown -gt 240) "height=$grown"
+  } else {
+    Add-Scenario 'Minimize collapses to a listening icon inside the same window' $false 'window stayed hidden'
+    Add-Scenario 'Clicking the listening icon restores the overlay' $false 'window stayed hidden'
+  }
+
 
   Stop-Sonora
   Start-Sleep -Seconds 1

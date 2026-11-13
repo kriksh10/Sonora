@@ -29,5 +29,7 @@ test("the live Gemini request asks for a long answer and continues when the prov
   const route = fs.readFileSync(path.resolve(__dirname, "../src/routes/sessions.ts"), "utf8");
   assert.match(route, /answerGenerationConfig\(session\.model, controller\.signal\)/);
   assert.match(route, /answerWasCutOff\(reason\)/);
+  assert.match(route, /capped/);
+  assert.doesNotMatch(route, /Answer exceeded the supported size/);
   assert.match(route, /chunkAnswerText\(chunk\)/);
 });

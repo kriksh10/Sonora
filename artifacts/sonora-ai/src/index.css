@@ -12,15 +12,23 @@
 .desktop-drag button, .desktop-drag a, .desktop-drag input, .desktop-drag select { -webkit-app-region: no-drag; }
 .desktop-drag textarea, .desktop-drag label, .desktop-drag details, .desktop-no-drag { -webkit-app-region: no-drag; }
 html.sonora-desktop, html.sonora-desktop body, html.sonora-desktop #root { background-color: rgba(0, 0, 0, 0.004) !important; margin: 0 !important; }
+html.sonora-desktop, html.sonora-desktop body, html.sonora-desktop .dp-app, html.sonora-desktop .dp-app *, html.sonora-desktop .sonora-window-bar, html.sonora-desktop .sonora-window-bar * { cursor: default; }
+html.sonora-collapsed .sonora-window-bar > :not(.sonora-dock) { display: none !important; }
+html.sonora-collapsed #root > :not(.sonora-window-bar) { display: none !important; }
+html.sonora-collapsed .sonora-window-bar { justify-content: center; min-height: 72px; border: 0; background: transparent; -webkit-app-region: drag; app-region: drag; }
+html.sonora-collapsed .sonora-dock { display: inline-flex; align-items: center; justify-content: center; -webkit-app-region: no-drag; app-region: no-drag; }
+.sonora-dock { display: none; width: 56px; height: 56px; border: 0; border-radius: 18px; background: #1e1e1e; color: #f7f8f8; font-weight: 700; cursor: default; }
 html.sonora-desktop, html.sonora-desktop body { height: 100% !important; width: 100% !important; overflow: hidden !important; }
 html.sonora-desktop #root { height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 html.sonora-desktop .sonora-window-bar { flex: 0 0 auto; }
 html.sonora-desktop #root > :not(.sonora-window-bar) { flex: 1 1 auto; min-height: 0; overflow: auto; }
 html.sonora-desktop {
-  --sonora-background-opacity: 0.4;
-  --sonora-panel-opacity: max(0.04, var(--sonora-background-opacity, 0.4));
+  --sonora-background-opacity: 0.45;
+  --sonora-card-opacity: var(--sonora-background-opacity, 0.45);
+  --sonora-chrome-opacity: max(0.05, calc(var(--sonora-card-opacity) - 0.10));
+  --sonora-panel-opacity: var(--sonora-card-opacity);
   --sonora-font-scale: 1;
-  --sonora-glass: rgba(30, 30, 30, var(--sonora-panel-opacity, 0.4));
+  --sonora-glass: color-mix(in srgb, #1e1e1e calc(var(--sonora-card-opacity, 0.45) * 100%), transparent);
   --background: 220 8% 8% / var(--sonora-panel-opacity, 0.4);
   --card: 220 8% 10% / var(--sonora-panel-opacity, 0.4);
   --popover: 220 8% 10% / var(--sonora-panel-opacity, 0.4);
@@ -78,6 +86,7 @@ html.sonora-desktop .sonora-window-action,
 html.sonora-desktop .lsv-btn,
 html.sonora-desktop .dp-primary,
 html.sonora-desktop .dp-end {
+  cursor: default;
   opacity: 1;
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
@@ -176,7 +185,7 @@ html.sonora-desktop .reference-modal-backdrop {
   backdrop-filter: none !important;
 }
 html.sonora-desktop .sonora-window-error { background: rgba(68, 30, 36, var(--sonora-background-opacity, .4)) !important; }
-.sonora-window-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: .5rem; min-height: 44px; padding: 6px 10px; color: #e7e8eb; border-bottom: 1px solid #ffffff18; background: rgba(30, 30, 30, var(--sonora-panel-opacity, .4)); -webkit-backdrop-filter: blur(18px) saturate(1.35); backdrop-filter: blur(18px) saturate(1.35); -webkit-app-region: no-drag; app-region: no-drag; }
+.sonora-window-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: .5rem; min-height: 44px; padding: 6px 10px; color: #e7e8eb; border-bottom: 1px solid #ffffff18; background: color-mix(in srgb, #1e1e1e calc(var(--sonora-chrome-opacity, .35) * 100%), transparent); -webkit-backdrop-filter: blur(18px) saturate(1.35); backdrop-filter: blur(18px) saturate(1.35); -webkit-app-region: no-drag; app-region: no-drag; }
 .sonora-window-bar button, .sonora-window-bar input, .sonora-window-bar label, .sonora-window-bar summary { position: relative; z-index: 1; -webkit-app-region: no-drag; app-region: no-drag; }
 .sonora-window-drag-handle { align-self: stretch; flex: 1; min-width: 70px; cursor: grab; user-select: none; }
 .sonora-window-popover, .sonora-window-popover * { -webkit-app-region: no-drag; }

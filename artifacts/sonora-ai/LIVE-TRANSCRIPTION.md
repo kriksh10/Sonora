@@ -4,7 +4,7 @@ The primary path for both supported desktop bridges and browser mic/meeting
 capture is continuous mono16kHz PCM → authenticated Sonora WebSocket →
 Speechmatics → partial/final/EOU events → Gemini streamed answer.
 
-Speechmatics realtime uses Enhanced (`operating_point` and `model`, $0.80 per audio hour) with partials,0.7s fixed final delay,600ms
+Speechmatics realtime uses Enhanced (`operating_point` and `model`, $0.80 per audio hour) with partials, a 0.7s fixed final delay (left at 0.7 rather than 1.5 until that latency is measured), 600ms
 end-of-utterance silence detection and the correct object-shaped custom vocabulary.
 Provider callbacks are forwarded immediately, even if no more audio arrives.
 Local600ms quiet detection can request ForceEndOfUtterance; only stable final

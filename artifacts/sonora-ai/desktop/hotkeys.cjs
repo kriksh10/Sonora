@@ -1,22 +1,21 @@
-// Global shortcut catalog. Accelerators use Electron's syntax.
-// Move stays on Ctrl/Cmd+Shift+arrows. Toggle stays on Ctrl/Cmd+Shift+Space.
+// Live-session shortcuts. They are registered only while a session is live,
+// so they do not take keys from other apps the rest of the time.
 const STEP = 48;
 const ACTIONS = Object.freeze([
-  { id: 'answer', label: 'Answer', accelerator: 'CommandOrControl+Shift+Enter', forward: true },
-  { id: 'alternate', label: 'Alternate answer', accelerator: 'CommandOrControl+Shift+A', forward: true },
-  { id: 'scrollUp', label: 'Scroll up', accelerator: 'CommandOrControl+Alt+Up', forward: true },
-  { id: 'scrollDown', label: 'Scroll down', accelerator: 'CommandOrControl+Alt+Down', forward: true },
-  { id: 'previous', label: 'Previous answer', accelerator: 'CommandOrControl+Alt+Left', forward: true },
-  { id: 'next', label: 'Next answer', accelerator: 'CommandOrControl+Alt+Right', forward: true },
-  { id: 'moveUp', label: 'Move overlay up', accelerator: 'CommandOrControl+Shift+Up', forward: false },
-  { id: 'moveDown', label: 'Move overlay down', accelerator: 'CommandOrControl+Shift+Down', forward: false },
-  { id: 'moveLeft', label: 'Move overlay left', accelerator: 'CommandOrControl+Shift+Left', forward: false },
-  { id: 'moveRight', label: 'Move overlay right', accelerator: 'CommandOrControl+Shift+Right', forward: false },
-  { id: 'hideShow', label: 'Hide / show', accelerator: 'CommandOrControl+Shift+H', forward: false },
-  { id: 'clearAnswers', label: 'Clear answers', accelerator: 'CommandOrControl+Shift+K', forward: true },
-  { id: 'clearTranscript', label: 'Clear transcript', accelerator: 'CommandOrControl+Shift+L', forward: true },
-  { id: 'screenshot', label: 'Screenshot', accelerator: 'CommandOrControl+Shift+S', forward: true },
-  { id: 'toggle', label: 'Toggle window', accelerator: 'CommandOrControl+Shift+Space', forward: false },
+  { id: 'answer', label: 'Answer', accelerator: 'CommandOrControl+Enter', forward: true },
+  { id: 'screenshot', label: 'Screenshot', accelerator: 'CommandOrControl+Shift+Enter', forward: true },
+  { id: 'scrollUp', label: 'Scroll up', accelerator: 'CommandOrControl+Up', forward: true },
+  { id: 'scrollDown', label: 'Scroll down', accelerator: 'CommandOrControl+Down', forward: true },
+  { id: 'previous', label: 'Previous answer', accelerator: 'CommandOrControl+Left', forward: true },
+  { id: 'next', label: 'Next answer', accelerator: 'CommandOrControl+Right', forward: true },
+  { id: 'clearAnswers', label: 'Clear answers', accelerator: 'CommandOrControl+Backspace', forward: true },
+  { id: 'clearTranscript', label: 'Clear transcript', accelerator: 'CommandOrControl+Shift+Backspace', forward: true },
+  { id: 'hideShow', label: 'Collapse overlay', accelerator: 'CommandOrControl+H', forward: false },
+  { id: 'chat', label: 'Chat', accelerator: 'CommandOrControl+Shift+Space', forward: true },
+  { id: 'snapUp', label: 'Snap up', accelerator: 'CommandOrControl+Shift+Up', forward: false },
+  { id: 'snapDown', label: 'Snap down', accelerator: 'CommandOrControl+Shift+Down', forward: false },
+  { id: 'snapLeft', label: 'Snap left', accelerator: 'CommandOrControl+Shift+Left', forward: false },
+  { id: 'snapRight', label: 'Snap right', accelerator: 'CommandOrControl+Shift+Right', forward: false },
 ]);
 
 const MODIFIERS = Object.freeze({
@@ -99,10 +98,24 @@ function nudgeBounds(bounds, direction, displays) {
   };
 }
 
+function snapBounds(bounds, direction, displays, place) {
+  const area = (displays || []).map(display => display.workArea).find(Boolean);
+  if (!area) throw new Error('No connected display.');
+  const at = place || { col: 1, row: 0 };
+  const rowBase = at.row > 0 ? 1 : 0;
+  const col = direction === 'snapLeft' ? (at.col + 2) % 3 : direction === 'snapRight' ? (at.col + 1) % 3 : at.col;
+  const row = direction === 'snapUp' || direction === 'snapDown' ? (rowBase === 0 ? 1 : 0) : rowBase;
+  const width = Math.min(area.width, Math.max(72, Number(bounds?.width) || 780));
+  const height = Math.min(area.height, Math.max(72, Number(bounds?.height) || 720));
+  const x = area.x + (col === 0 ? 0 : col === 2 ? area.width - width : Math.round((area.width - width) / 2));
+  const y = area.y + (row === 0 ? 0 : area.height - height);
+  return { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height), col, row };
+}
+
 function hotkeySummary(bindings) {
   return bindings.map(({ id, label, accelerator, registered }) => ({ id, label, accelerator, registered: Boolean(registered) }));
 }
 
 module.exports = {
-  ACTIONS, STEP, normalizeAccelerator, resolveHotkeys, registerHotkeys, nudgeBounds, hotkeySummary,
+  ACTIONS, STEP, normalizeAccelerator, resolveHotkeys, registerHotkeys, nudgeBounds, snapBounds, hotkeySummary,
 };

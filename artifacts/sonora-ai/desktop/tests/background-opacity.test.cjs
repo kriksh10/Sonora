@@ -48,9 +48,9 @@ test('failure restores confirmed value, explains failure and allows retry / opaq
   h.writes[0].reject(new Error('IPC failed')); await tick();
   assert.equal(h.values.at(-1), .65);
   assert.match(h.errors.at(-1), /not applied/);
-  h.controller.set(1); await tick();
-  h.writes[1].resolve(1); await tick();
-  assert.equal(h.values.at(-1), 1);
+  h.controller.set(0.95); await tick();
+  h.writes[1].resolve(0.95); await tick();
+  assert.equal(h.values.at(-1), 0.95);
   assert.equal(h.errors.at(-1), '');
 });
 
@@ -63,7 +63,7 @@ test('older failed write does not roll back newer intent; dispose ignores late r
   h.controller.dispose();
   const count = h.values.length;
   h.writes[1].resolve(.5); await tick();
-  h.controller.sync(.8); h.controller.set(1);
+  h.controller.sync(.8); h.controller.set(0.95);
   assert.equal(h.values.length, count);
 });
 
@@ -89,7 +89,7 @@ test('dragging is confined to handle and range has keyboard semantics and compat
   const workspace = fs.readFileSync(path.resolve(__dirname, '../../src/pages/interview-workspace.tsx'), 'utf8');
   assert.match(ui, /className="sonora-window-bar sonora-overlay-controls"/);
   assert.match(ui, /sonora-window-drag-handle desktop-drag/);
-  assert.match(ui, /type="range" min=\{minimumOpacity\} max="100" step="5"/);
+  assert.match(ui, /type="range" min=\{minimumOpacity\} max="95" step="10"/);
   assert.match(ui, /onChange=\{event => opacityControl.current\?\.set/);
   assert.match(ui, /className="sonora-slim-slider"/);
   assert.match(ui, /Opacity is unavailable in this installed app/);

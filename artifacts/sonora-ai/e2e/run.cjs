@@ -354,8 +354,8 @@ function requireApp(name) {
     const prefs = path.join(userData, 'window-preferences.json');
     const saved = fs.existsSync(prefs) ? JSON.parse(fs.readFileSync(prefs, 'utf8')) : {};
     saved.bounds = { x: 50000, y: 50000, width: 900, height: 640 };
-    saved.opacityVersion = 2;
-    saved.backgroundOpacity = saved.backgroundOpacity || 1;
+    saved.opacityVersion = 3;
+    saved.backgroundOpacity = 0.75;
     fs.writeFileSync(prefs, JSON.stringify(saved));
     const relaunched = await launch(exePath());
     try {

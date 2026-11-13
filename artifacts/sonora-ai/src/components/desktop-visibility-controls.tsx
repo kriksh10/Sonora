@@ -12,7 +12,7 @@ export default function DesktopVisibilityControls() {
   const [state, setState] = useState<DesktopState | null>(null);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
-  const [backgroundOpacity, setBackgroundOpacity] = useState(0.4);
+  const [backgroundOpacity, setBackgroundOpacity] = useState(0.45);
   const [opacityError, setOpacityError] = useState("");
   const [shortcutError, setShortcutError] = useState("");
   const opacityControl = useRef<ReturnType<typeof createBackgroundOpacity> | null>(null);
@@ -26,7 +26,7 @@ export default function DesktopVisibilityControls() {
         if (!bridge.setBackgroundOpacity) throw new Error("Native opacity unavailable.");
         const next = await bridge.setBackgroundOpacity(value);
         if (mounted) setState(next);
-        return next.backgroundOpacity ?? 0.4;
+        return next.backgroundOpacity ?? 0.45;
       },
       display: value => {
         setBackgroundOpacity(value);
@@ -35,26 +35,28 @@ export default function DesktopVisibilityControls() {
       error: setOpacityError,
     });
     opacityControl.current = control;
-    control.sync(0.4);
+    control.sync(0.45);
     let received = false;
     const off = bridge.onStateChange(next => {
       received = true;
       if (mounted) {
         setState(next);
-        control.sync(next.backgroundOpacity ?? 0.4);
+        control.sync(next.backgroundOpacity ?? 0.45);
+        document.documentElement.classList.toggle("sonora-collapsed", !!next.collapsed);
         document.documentElement.style.setProperty("--sonora-font-scale", String(next.fontScale ?? 1));
       }
     });
     void bridge.getState().then(next => {
       if (mounted && !received) {
         setState(next);
-        control.sync(next.backgroundOpacity ?? 0.4);
+        control.sync(next.backgroundOpacity ?? 0.45);
+        document.documentElement.classList.toggle("sonora-collapsed", !!next.collapsed);
         document.documentElement.style.setProperty("--sonora-font-scale", String(next.fontScale ?? 1));
       }
     }).catch(() => { if (mounted) setError("Desktop controls unavailable. Use the Sonora tray menu."); });
     return () => {
       mounted = false; off(); control.dispose(); opacityControl.current = null;
-      document.documentElement.classList.remove("sonora-desktop");
+      document.documentElement.classList.remove("sonora-desktop", "sonora-collapsed");
       document.documentElement.style.removeProperty("--sonora-background-opacity");
       document.documentElement.style.removeProperty("--sonora-titlebar-height");
       document.documentElement.style.removeProperty("--sonora-font-scale");
@@ -83,6 +85,8 @@ export default function DesktopVisibilityControls() {
 
   return (
     <aside ref={bar} aria-label="Desktop window controls" className="sonora-window-bar sonora-overlay-controls">
+      <button type="button" className="sonora-dock" aria-label="Sonora listening" title="Show the overlay"
+        onClick={() => void run(() => bridge.minimize!())}>S</button>
       <span className="sonora-window-drag-handle desktop-drag inline-flex items-center gap-1 text-xs font-semibold text-white/80" title="Drag here to move Sonora">
         <GripHorizontal size={17} /> Sonora
       </span>
@@ -99,13 +103,13 @@ export default function DesktopVisibilityControls() {
           className={`sonora-window-action ${state?.contentProtection ? "text-emerald-300" : ""}`}
           onClick={() => void run(() => bridge.setContentProtection(!state?.contentProtection))}><ShieldCheck size={14} /></button>
         <button type="button" disabled={!state || pending || !bridge.minimize} className="sonora-window-action" aria-label="Minimize"
-          title="Minimize to the tray. Sonora stays out of the taskbar, Alt+Tab, and Task View."
+          title="Collapse to a listening icon. Ctrl+H does the same during a live session."
           onClick={() => void run(() => bridge.minimize!())}><Minus size={14} /></button>
         <button type="button" disabled={!state || pending} className="sonora-window-action" aria-label="Hide Sonora"
-          title="Hide the Sonora window. Audio keeps running. Show it again from the tray icon. This is not the screen-share shield."
+          title="Close the window. The tray icon appears until you open Sonora again. Audio keeps running."
           onClick={() => void run(() => bridge.hide())}><EyeOff size={14} /></button>
         <label className="sonora-opacity-inline" title={`Overlay opacity ${Math.round(backgroundOpacity * 100)}%`}>
-          <input aria-label="Overlay opacity" type="range" min={minimumOpacity} max="100" step="5"
+          <input aria-label="Overlay opacity" type="range" min={minimumOpacity} max="95" step="10"
             value={Math.round(backgroundOpacity * 100)} disabled={!state || typeof bridge.setBackgroundOpacity !== "function"}
             onChange={event => opacityControl.current?.set(Number(event.target.value) / 100)}
             className="sonora-slim-slider" />
@@ -115,20 +119,17 @@ export default function DesktopVisibilityControls() {
           <div className="sonora-window-popover desktop-no-drag">
             <label className="block text-xs font-semibold">
               Background opacity · {Math.round(backgroundOpacity * 100)}%
-              <input aria-label="Background opacity" aria-describedby="sonora-opacity-help" type="range" min={minimumOpacity} max="100" step="5"
+              <input aria-label="Background opacity" aria-describedby="sonora-opacity-help" type="range" min={minimumOpacity} max="95" step="10"
                 value={Math.round(backgroundOpacity * 100)} disabled={!state || typeof bridge.setBackgroundOpacity !== "function"}
                 onChange={event => opacityControl.current?.set(Number(event.target.value) / 100)}
                 className="sonora-slim-slider mt-3 w-full" />
             </label>
-            <p id="sonora-opacity-help" className="mt-2">{minimumOpacity}% is the slider floor. Only the panel and glass fill change. Text and buttons stay solid. A 4% hit plate keeps clicks on Sonora. 100% is an opaque panel.</p>
-            {typeof bridge.setBackgroundOpacity === "function" && state && minimumOpacity === 45 &&
-              <p className="mt-2 text-amber-200">This older shell supports 45–100%. Rebuild and install version 0.3.1 or newer for the 15% setting.</p>}
-            {typeof bridge.setBackgroundOpacity === "function"
-              ? <button disabled={!state} className="sonora-window-action mt-1" onClick={() => opacityControl.current?.set(1)}>Use opaque background</button>
-              : <p role="status" className="mt-2 text-amber-200">Opacity is unavailable in this installed app. Rebuild and reinstall the latest Windows desktop kit; publishing the website alone cannot enable it.</p>}
+            <p id="sonora-opacity-help" className="mt-2">The slider runs from {minimumOpacity}% to 95% in steps of 10. Only the card and panel fill change. Text stays solid. The window bar sits 10 points lower than the cards. A 4% hit plate keeps clicks on Sonora.</p>
+            {typeof bridge.setBackgroundOpacity !== "function" &&
+              <p role="status" className="mt-2 text-amber-200">Opacity is unavailable in this installed app. Rebuild and reinstall the latest Windows desktop kit; publishing the website alone cannot enable it.</p>}
             {opacityError && <p role="alert" className="mt-2 text-amber-200">{opacityError}</p>}
             <p className="mt-3">Drag the Sonora handle on the left to move. Resize from the edges. Pin keeps the window above other apps.</p>
-            <p className="mt-2">Show again: tray → Show Sonora{state?.shortcutRegistered ? ` or ${bridge.shortcut}.` : ". Shortcut unavailable."}</p>
+            <p className="mt-2">Collapse shrinks this window to a listening icon. Hide closes it and shows the tray. Open the tray, or click the icon, to come back. Ctrl+H collapses and restores during a live session.</p>
             <p className="mt-2">{state?.contentProtection ? "Capture exclusion requested" : "Capture exclusion off"} — not guaranteed. macOS ScreenCaptureKit and some sharing apps may still capture Sonora. Transparency does not mean hidden from sharing.</p>
             <p className="mt-2">Hiding does not stop audio. Use Stop audio here or in the tray.</p>
             <label className="mt-3 block text-xs font-semibold">

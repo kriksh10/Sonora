@@ -17,7 +17,7 @@ html.sonora-desktop .sonora-workspace.dp-app {
   app-region: no-drag;
 }
 .dp-glass {
-  background: rgba(30, 30, 30, var(--sonora-panel-opacity, .72));
+  background: color-mix(in srgb, #1e1e1e calc(var(--sonora-card-opacity, var(--sonora-background-opacity, .45)) * 100%), transparent);
   -webkit-backdrop-filter: blur(18px) saturate(1.35);
   backdrop-filter: blur(18px) saturate(1.35);
   border: 1px solid rgba(255, 255, 255, .14);
@@ -101,7 +101,10 @@ html.sonora-desktop .sonora-workspace.dp-app {
 
 .dp-overlay { display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 0; padding: 8px; box-sizing: border-box; }
 .dp-bar, .dp-strip, .dp-card { padding: 8px 10px; }
-.dp-bar { position: relative; z-index: 5; display: flex; align-items: center; gap: 8px; min-height: 46px; }
+.dp-bar { position: relative; z-index: 5; display: flex; align-items: center; gap: 8px; min-height: 46px;
+  background: color-mix(in srgb, #1e1e1e calc(var(--sonora-chrome-opacity, .35) * 100%), transparent) !important; }
+.dp-scroll-chevrons { display: flex; justify-content: flex-end; gap: 6px; }
+.dp-scroll-chevrons button { border: 0; border-radius: 8px; background: #2a2b2f; color: #f7f8f8; width: 28px; height: 28px; cursor: default; }
 .dp-dots { display: flex; gap: 5px; }
 .dp-dots i { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,.28); display: block; }
 .dp-dots i.on { background: #3dd68c; }
@@ -169,7 +172,7 @@ html.sonora-desktop .dp-dialog textarea, html.sonora-desktop .dp-dialog select {
 .dp-card-tools .spacer { flex: 1; }
 .dp-q { margin: 12px 0 8px; font-size: 15px; }
 .dp-q button { border: 0; background: transparent; color: rgba(255,255,255,.7); cursor: pointer; vertical-align: -2px; }
-.dp-answer-scroll { flex: 1; min-height: 0; overflow: auto; font-size: 14px; line-height: 1.55; }
+.dp-answer-scroll { flex: 1; min-height: 320px; overflow-y: auto; font-size: 14px; line-height: 1.55; }
 .dp-answer-scroll h3 { margin: 0 0 6px; font-size: 15px; }
 .dp-foot { display: flex; align-items: center; gap: 8px; margin-top: 8px; color: rgba(255,255,255,.5); font-size: 12px; }
 .dp-foot button { border: 0; background: transparent; color: inherit; cursor: pointer; }

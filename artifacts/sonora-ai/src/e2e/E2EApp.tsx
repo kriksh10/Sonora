@@ -74,6 +74,8 @@ export default function E2EApp() {
     };
   }, []);
 
+  useEffect(() => { void window.sonoraDesktop?.setLiveShortcuts?.(live); }, [live]);
+
   useEffect(() => {
     const onTranscript = (event: Event) => {
       const text = (event as CustomEvent<{ text?: string }>).detail?.text?.trim() || "";

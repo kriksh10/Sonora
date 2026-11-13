@@ -99,7 +99,7 @@ export function createInterviewerQuestions({
       fragments = `${fragments} ${text}`.trim();
       turnEnded = endOfTurn;
       // Chunk delivery is not silence: a bounded turn deadline must survive
-      // subsequent chunks, otherwise 6-second arrivals reset an 8.5-second timer forever.
+      // subsequent chunks, otherwise later arrivals reset the 3-second quiet timer forever.
       if (deadline === undefined) deadline = setTimer(() => { if (generation === token) flush(); }, 15_000);
       if (fragments.length > 8000) {
         fragments = "";
@@ -112,8 +112,7 @@ export function createInterviewerQuestions({
       clearTimer(timer);
       // A pause or a punctuated question can be used quickly. Speech that is
       // still arriving gets one more chunk interval to collect its continuation.
-      timer = setTimer(() => { if (generation === token) flush(); },
-        endOfTurn ? 0 : /[?]\s*$/.test(fragments) ? 1500 : 8500);
+      timer = setTimer(() => { if (generation === token) flush(); }, endOfTurn ? 0 : 3000);
   };
   const pause = () => {
     if (!fragments.trim()) return;

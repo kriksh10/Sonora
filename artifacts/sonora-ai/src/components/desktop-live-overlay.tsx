@@ -48,13 +48,20 @@ export default function DesktopLiveOverlay(props: {
   const [copied, setCopied] = useState("");
   const answerPane = useRef<HTMLDivElement>(null);
   const [answerEnd, setAnswerEnd] = useState(true);
+  const [answerOverflow, setAnswerOverflow] = useState(false);
   const markAnswer = () => {
     const el = answerPane.current;
     if (!el) return;
-    const fits = el.scrollHeight <= el.clientHeight + 2;
-    setAnswerEnd(fits || el.scrollTop + el.clientHeight >= el.scrollHeight - 8);
+    const overflow = el.scrollHeight > el.clientHeight + 2;
+    setAnswerOverflow(overflow);
+    setAnswerEnd(!overflow || el.scrollTop + el.clientHeight >= el.scrollHeight - 8);
   };
   useEffect(() => { markAnswer(); }, [props.answer]);
+  useEffect(() => {
+    const toggle = () => setChat(value => !value);
+    window.addEventListener("sonora-toggle-chat", toggle);
+    return () => window.removeEventListener("sonora-toggle-chat", toggle);
+  }, []);
   const spoken = [...props.entries].reverse().find(entry => entry.role !== "assistant")?.text || "";
   const liveWords = props.paused
     ? "Paused. Transcription is off until you resume."
@@ -146,6 +153,10 @@ export default function DesktopLiveOverlay(props: {
           </div>
           <div className="dp-q"><b>Question:</b> {props.latestQuestion || props.question || "Waiting for a question"} <button type="button" aria-label="Copy question" onClick={() => { const text = props.latestQuestion || props.question || ""; setCopied(text); void navigator.clipboard?.writeText(text).catch(() => {}); }}><Copy size={13} /></button></div>
           {copied && <p role="status">Copied question: {copied}</p>}
+          {answerOverflow && <div className="dp-scroll-chevrons">
+            <button type="button" aria-label="Scroll answer up" onClick={() => answerPane.current?.scrollBy({ top: -200 })}>↑</button>
+            <button type="button" aria-label="Scroll answer down" onClick={() => answerPane.current?.scrollBy({ top: 200 })}>↓</button>
+          </div>}
           <div ref={answerPane} className="dp-answer-scroll" tabIndex={0} onScroll={markAnswer} aria-label={props.answer ? (answerEnd ? "Answer end visible" : "Answer scrollable") : "Answer pending"}>
             <h3>Answer: {headline}</h3>
             {props.answer ? <SafeMarkdown text={props.answer} /> : <p>Ask, or let Auto Answer respond when the interviewer finishes.</p>}

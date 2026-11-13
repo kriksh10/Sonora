@@ -340,6 +340,7 @@ router.post("/sessions/:id/answer", async (req, res, next) => {
         controller.signal.throwIfAborted();
         answer = "";
         let continuation = "";
+        let capped = false;
         for (let part = 0; part < ANSWER_CONTINUATIONS; part += 1) {
           const asked = continuation
             ? `${prompt}\n\nContinue the answer from the last sentence. Do not repeat text already written.\n\n${answer.slice(-2000)}`
@@ -362,19 +363,25 @@ router.post("/sessions/:id/answer", async (req, res, next) => {
               if (finish) reason = finish;
               const text = chunkAnswerText(chunk);
               if (!text) continue;
-              if (answer.length + piece.length + text.length > 24000) throw new Error("Answer exceeded the supported size.");
-              piece += text;
-              send({ content: text });
+              const room = 24000 - answer.length - piece.length;
+              if (room <= 0) { capped = true; break; }
+              const clipped = text.length > room ? text.slice(0, room) : text;
+              piece += clipped;
+              send({ content: clipped });
+              if (clipped.length < text.length) { capped = true; break; }
             }
           } else {
             const result = await ai.models.generateContent(request);
             reason = chunkFinishReason(result);
             piece = chunkAnswerText(result).trim();
-            if (answer.length + piece.length > 24000) throw new Error("Answer exceeded the supported size.");
+            if (answer.length + piece.length > 24000) {
+              piece = piece.slice(0, Math.max(0, 24000 - answer.length));
+              capped = true;
+            }
           }
           answer += piece;
           continuation = piece;
-          if (!answerWasCutOff(reason) || !piece) break;
+          if (capped || !answerWasCutOff(reason) || !piece) break;
         }
         break;
       } catch (cause) {

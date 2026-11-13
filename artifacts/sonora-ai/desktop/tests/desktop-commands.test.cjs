@@ -25,7 +25,8 @@ test('desktop commands ask, alternate, scroll, and walk answer history', () => {
   assert.equal(JSON.stringify(interpretDesktopCommand('answer', base)), JSON.stringify({ type: 'ask', question: 'What is a closure?', source: 'typed' }));
   assert.equal(interpretDesktopCommand('alternate', base).type, 'again');
   assert.equal(interpretDesktopCommand('alternate', { ...base, latestQuestion: '' }).type, 'ignore');
-  assert.equal(interpretDesktopCommand('scrollUp', base).top, -180);
+  assert.equal(interpretDesktopCommand('scrollUp', base).top, -200);
+  assert.equal(interpretDesktopCommand('chat', base).type, 'chat');
   assert.equal(neighborAnswer(base.assistantAnswers, 'second', -1), 'first');
   assert.equal(neighborAnswer(base.assistantAnswers, 'first', -1), null);
   assert.equal(JSON.stringify(interpretDesktopCommand('next', base)), JSON.stringify({ type: 'show-answer', answer: 'third' }));

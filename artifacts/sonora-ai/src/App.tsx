@@ -107,6 +107,7 @@ const clerkAppearance = {
 
 type DesktopState = {
   visible: boolean;
+  collapsed?: boolean;
   alwaysOnTop: boolean;
   contentProtection: boolean;
   captureActive: boolean;
@@ -133,6 +134,7 @@ type SonoraDesktopBridge = {
   show: () => Promise<DesktopState>;
   hide: () => Promise<DesktopState>;
   minimize?: () => Promise<DesktopState>;
+  setLiveShortcuts?: (value: boolean) => Promise<DesktopState>;
   toggle: () => Promise<DesktopState>;
   quit: () => Promise<void>;
   getState: () => Promise<DesktopState>;
