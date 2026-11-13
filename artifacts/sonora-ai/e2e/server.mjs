@@ -90,7 +90,8 @@ const server = http.createServer(async (req, res) => {
         const proofLength = asked.includes('six hundred') ? 600 : asked.includes('two hundred') ? 200 : asked.includes('sixty words') ? 60 : 0;
         if (proofLength) {
           const lexicon = ['clear', 'glass', 'panel', 'solid', 'answer', 'scroll', 'opacity', 'window', 'chrome', 'text', 'card', 'fill'];
-          const words = Array.from({ length: proofLength }, (_, index) => `${lexicon[index % lexicon.length]}${index + 1}`);
+          const count = proofLength === 600 ? 599 : proofLength;
+          const words = Array.from({ length: count }, (_, index) => `${lexicon[index % lexicon.length]}${index + 1}`);
           const tail = proofLength === 600 ? ' ENDWORD' : '';
           return send(res, 200, { answer: `${words.join(' ')}${tail}`, model: 'e2e' });
         }

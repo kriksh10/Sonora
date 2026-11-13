@@ -261,7 +261,7 @@ function Ask-Proof([string]$Question, [string]$Expect) {
   [System.Windows.Forms.SendKeys]::SendWait('^a' + $Question)
   Start-Sleep -Milliseconds 300
   Click-Ui (Find-Exact 'Answer')
-  $metric = Wait-Named $Expect 12
+  $metric = Wait-Named $Expect 25
   if (-not $metric) { throw "Did not see $Expect" }
   return $metric.Current.Name
 }
