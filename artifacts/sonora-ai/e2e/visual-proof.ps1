@@ -191,6 +191,8 @@ function Wait-Named([string]$Name, [int]$Seconds = 8) {
 
 function Click-Ui($el) {
   if (-not $el) { throw 'Missing UI element' }
+  try { $el.GetCurrentPattern([System.Windows.Automation.ScrollItemPattern]::Pattern).ScrollIntoView() } catch {}
+  Start-Sleep -Milliseconds 150
   $r = $el.Current.BoundingRectangle
   if ($r.Width -lt 1) { throw "No box for $($el.Current.Name)" }
   [ProofInput]::Click([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2))
@@ -296,7 +298,9 @@ try {
   Click-Ui $start
   if (-not (Wait-Named 'End session' 8)) {
     $again = Find-StartButton
-    if ($again) { Click-Ui $again }
+    if ($again) {
+      try { $again.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke() } catch { Click-Ui $again }
+    }
   }
   if (-not (Wait-Named 'End session' 8)) { Write-SonoraNames; throw 'Live overlay did not open' }
 
