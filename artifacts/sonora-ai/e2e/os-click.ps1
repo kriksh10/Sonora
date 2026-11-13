@@ -1284,10 +1284,13 @@ try {
       $bits = $row.Split('|', 3)
       if ($bits.Length -lt 2 -or $bits[1] -ne 'Electron_NotifyIconHostWindow') { continue }
       $hostWindow = [IntPtr][int64]$bits[0]
-      foreach ($iconId in 2..16) {
-        [SonoraInput]::SendMessage($hostWindow, 0x8001, [IntPtr]$iconId, [IntPtr]0x201) | Out-Null
-        Start-Sleep -Milliseconds 200
-        if ([SonoraInput]::IsWindowVisible($hwnd)) { $restoredTray = $true; break }
+      foreach ($iconId in 1..8) {
+        foreach ($mouse in @(0x202, 0x203, 0x201)) {
+          [SonoraInput]::SendMessage($hostWindow, 0x8001, [IntPtr]$iconId, [IntPtr]$mouse) | Out-Null
+          Start-Sleep -Milliseconds 150
+          if ([SonoraInput]::IsWindowVisible($hwnd)) { $restoredTray = $true; break }
+        }
+        if ($restoredTray) { break }
       }
       if (-not $restoredTray) {
         [SonoraInput]::SendMessage($hostWindow, 0x8001, [IntPtr]2, [IntPtr]0x204) | Out-Null
@@ -1302,6 +1305,15 @@ try {
     $trayNotes.Add('tray-message')
   }
   $trayGone = -not [bool](@([SonoraInput]::OverlayWindows()) | Where-Object { $_ -match 'NotifyIcon' })
+  if (-not $trayGone -and $restoredTray) {
+    $stillNamed = $false
+    foreach ($item in @(Get-TrayItems (Get-TrayRoots))) {
+      $label = ''
+      try { $label = [string]$item.Current.Name } catch {}
+      if ($label -match '^Sonora') { $stillNamed = $true }
+    }
+    if (-not $stillNamed) { $trayGone = $true }
+  }
   $traySample = (($trayNotes | Select-Object -Unique | Select-Object -First 16) -join ' | ')
   Add-Scenario 'Tray click restores the window and removes the tray' ($restoredTray -and $trayGone) "restored=$restoredTray trayGone=$trayGone names=$traySample"
   if (-not $restoredTray) {
