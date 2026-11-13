@@ -375,9 +375,9 @@ try {
   if (-not (Wait-Named 'End session' 8)) { Write-SonoraNames; throw 'Live overlay did not open' }
   $script:UseComposedCapture = $true
 
-  $opacityReadings = @{}
+  $opacityReadings = [ordered]@{}
   foreach ($percent in @(15, 45, 95)) {
-    $opacityReadings[$percent] = Set-Opacity $percent
+    $opacityReadings["$percent"] = Set-Opacity $percent
     Start-Sleep -Milliseconds 400
     Save-Screen ("sonora-opacity-{0}.png" -f $percent)
   }
