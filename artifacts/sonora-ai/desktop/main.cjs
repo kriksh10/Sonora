@@ -1,4 +1,5 @@
 const { app, BrowserWindow, globalShortcut, ipcMain, Menu, Tray, nativeImage, screen, dialog, desktopCapturer, shell } = require('electron');
+const http = require('node:http');
 const path = require('node:path');
 const fs = require('node:fs');
 const { validateServiceUrl, isAllowedNavigation } = require('./security.cjs');
@@ -9,13 +10,19 @@ const { pathToFileURL } = require('node:url');
 const { opacity, initialOpacity, fontScale, initialFontScale, flag, safeBounds } = require('./window-preferences.cjs');
 const { diagnosticReport } = require('./maintenance.cjs');
 const { isBundledOfflineNavigation, desktopRequestAllowed } = require('./security.cjs');
-const { resolveHotkeys, registerHotkeys, nudgeBounds, hotkeySummary } = require('./hotkeys.cjs');
+const { resolveHotkeys, registerHotkeys, snapBounds, hotkeySummary } = require('./hotkeys.cjs');
 const { createAutoUpdate } = require('./auto-update.cjs');
 
 let win;
 let tray;
 let quitting = false;
 let alwaysOnTop = true;
+let collapsed = false;
+let expandedBounds = null;
+let expandedMinimum = null;
+let snapPlace = { col: 1, row: 0 };
+let liveShortcuts = false;
+let trayMenu = [];
 let contentProtection = ['win32', 'darwin'].includes(process.platform);
 let captureActive = false;
 let shortcutRegistered = false;
@@ -23,7 +30,7 @@ let target;
 let nativeAudio;
 let nativeAudioBinary;
 let browserAuth;
-let backgroundOpacity = 0.4;
+let backgroundOpacity = 0.45;
 let fontScaleValue = 1;
 let transcriptOpen = false;
 let clickThrough = false;
@@ -68,8 +75,8 @@ function allowLocalE2ENetwork() {
 }
 
 function state() {
-  return { visible: win?.isVisible() ?? false, alwaysOnTop, contentProtection, captureActive, shortcutRegistered, platform: process.platform,
-    audioProtocol: 2, nativeAudioProtocol: 2, version: app.getVersion(), backgroundOpacity, backgroundOpacityMin: 0, preferencesError,
+  return { visible: win?.isVisible() ?? false, collapsed, alwaysOnTop, contentProtection, captureActive, shortcutRegistered, platform: process.platform,
+    audioProtocol: 2, nativeAudioProtocol: 2, version: app.getVersion(), backgroundOpacity, backgroundOpacityMin: 0.15, backgroundOpacityMax: 0.95, preferencesError,
     fontScale: fontScaleValue, transcriptOpen, clickThrough, openAtLogin, hotkeys: hotkeySummary(hotkeyState),
     update: updates.status() };
 }
@@ -77,7 +84,7 @@ function persistWindow() {
   if (!preferencesPath || !win || win.isDestroyed()) return;
   try {
     fs.writeFileSync(`${preferencesPath}.tmp`, JSON.stringify({
-      bounds: win.getBounds(), backgroundOpacity, opacityVersion: 2, fontScale: fontScaleValue,
+      bounds: win.getBounds(), backgroundOpacity, opacityVersion: 3, fontScale: fontScaleValue,
       transcriptOpen, clickThrough, openAtLogin, hotkeys: hotkeyOverrides,
     }), { mode: 0o600 });
     fs.renameSync(`${preferencesPath}.tmp`, preferencesPath);
@@ -113,27 +120,29 @@ function applyOpenAtLogin(enabled) {
     if (typeof app.setLoginItemSettings === 'function') app.setLoginItemSettings({ openAtLogin, openAsHidden: false });
   } catch { preferencesError = 'Start at login could not be changed on this system.'; }
 }
-function nudge(direction) {
+function snap(direction) {
   if (!win || win.isDestroyed()) return;
-  const next = nudgeBounds(win.getBounds(), direction, screen.getAllDisplays());
-  win.setBounds({ ...win.getBounds(), ...next });
+  const next = snapBounds(win.getBounds(), direction, screen.getAllDisplays(), snapPlace);
+  snapPlace = { col: next.col, row: next.row };
+  win.setBounds({ x: next.x, y: next.y, width: next.width, height: next.height });
   persistWindow();
 }
 function onHotkey(binding) {
-  if (binding.id === 'toggle' || binding.id === 'hideShow') { toggle(); return; }
-  if (binding.id.startsWith('move')) { nudge(binding.id); return; }
+  if (binding.id === 'hideShow') { setCollapsed(!collapsed); return; }
+  if (binding.id.startsWith('snap')) { snap(binding.id); return; }
   if (!binding.forward || !win || win.isDestroyed()) return;
   if (binding.id === 'screenshot' && !win.isVisible()) show();
   win.webContents.send('overlay:command', { action: binding.id });
 }
 function activateHotkeys() {
   globalShortcut.unregisterAll();
+  if (!liveShortcuts) { hotkeyState = []; shortcutRegistered = false; broadcast(); return; }
   try { hotkeyState = registerHotkeys(globalShortcut, resolveHotkeys(hotkeyOverrides), onHotkey); }
   catch (error) {
     preferencesError = error instanceof Error ? error.message : 'Shortcuts could not be registered.';
     hotkeyState = [];
   }
-  shortcutRegistered = hotkeyState.some(binding => binding.id === 'toggle' && binding.registered);
+  shortcutRegistered = hotkeyState.some(binding => binding.registered);
 }
 function loadAutoUpdater() {
   const bundled = path.join(__dirname, 'updater-runtime.cjs');
@@ -144,29 +153,64 @@ function broadcast() {
   if (win && !win.isDestroyed()) win.webContents.send('overlay:state-changed', state());
   updateTray();
 }
-const HIT_FLOOR = '#01000000';
+const WINDOW_CLEAR = '#00000000';
 function clearWindowPlate() {
   if (!win || win.isDestroyed()) return;
-  // Alpha 0 makes Windows treat the whole layered window as click-through.
-  // 1/255 is invisible and is still a hit target.
-  win.setBackgroundColor?.(HIT_FLOOR);
-  if (process.platform === 'win32') win.setBackgroundMaterial?.('none');
+  // The window plate and material are fixed at creation. Touching either
+  // afterward paints an opaque white sheet on Windows.
 }
 function show() {
   if (!win || win.isDestroyed()) return;
   clearWindowPlate();
+  win.setSkipTaskbar?.(true);
   win.show();
   win.focus();
+  win.setSkipTaskbar?.(true);
   if (alwaysOnTop) holdOnTop();
+  syncTray();
+  broadcast();
+}
+function setCollapsed(value) {
+  if (!win || win.isDestroyed()) return;
+  const next = Boolean(value);
+  if (next === collapsed) { broadcast(); return; }
+  if (next) {
+    expandedBounds = win.getBounds();
+    try { expandedMinimum = win.getMinimumSize?.() || [390, 620]; } catch { expandedMinimum = [390, 620]; }
+    // The normal answer pane cannot shrink below 620px. The listening icon can.
+    win.setMinimumSize?.(72, 72);
+    win.setBounds({ x: expandedBounds.x, y: expandedBounds.y, width: 72, height: 72 });
+    win.setResizable?.(false);
+    clearWindowPlate();
+  } else if (expandedBounds) {
+    const minimum = expandedMinimum || [390, 620];
+    win.setMinimumSize?.(minimum[0], minimum[1]);
+    clearWindowPlate();
+    win.setBounds(expandedBounds);
+    win.setResizable?.(true);
+  }
+  collapsed = next;
+  broadcast();
+}
+function conceal() {
+  if (!win || win.isDestroyed()) return;
+  // Windows leaves a screen-saver-level always-on-top window visible if hide()
+  // runs while that level is still set. Drop the level, keep the preference.
+  win.setAlwaysOnTop(false);
+  // A minimized window grows a taskbar button and an Alt+Tab entry. Hide it instead.
+  try { if (win.isMinimized?.()) win.restore(); } catch { /* hide still removes it */ }
+  win.setSkipTaskbar?.(true);
+  win.hide();
+  win.setSkipTaskbar?.(true);
+  syncTray();
   broadcast();
 }
 function hide() {
   if (!win || win.isDestroyed() || !win.isVisible()) return;
-  // Windows leaves a screen-saver-level always-on-top window visible if hide()
-  // runs while that level is still set. Drop the level, keep the preference.
-  win.setAlwaysOnTop(false);
-  win.hide();
-  broadcast();
+  conceal();
+}
+function minimizeToTray() {
+  setCollapsed(true);
 }
 function toggle() { if (win?.isVisible()) hide(); else show(); }
 function setContentProtection(value) {
@@ -185,31 +229,49 @@ function stopCapture() {
 }
 function updateTray() {
   if (!tray || tray.isDestroyed()) return;
-  tray.setToolTip(captureActive ? 'Sonora — AUDIO CAPTURE ACTIVE' : 'Sonora AI — audio off');
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: captureActive ? 'Audio capture active' : 'Audio off', enabled: false },
-    { label: 'Show Sonora', click: show },
-    { label: 'Hide Sonora (audio continues if active)', click: hide },
-    { label: 'Stop audio capture', enabled: captureActive, click: stopCapture },
-    { label: 'Hide from screen sharing (best effort)', type: 'checkbox',
-      checked: contentProtection, enabled: ['win32', 'darwin'].includes(process.platform),
-      click: item => {
-        try { setContentProtection(item.checked); }
-        catch { dialog.showErrorBox('Sonora privacy control', 'Could not change capture exclusion. Do not assume the window is excluded from sharing.'); }
-      } },
-    { type: 'separator' },
-    { label: 'Keep on top', type: 'checkbox', checked: alwaysOnTop, click: item => {
-      applyAlwaysOnTop(item.checked); broadcast();
+  trayMenu = [
+    { label: 'Open Sonora', click: show },
+    { label: `Version ${app.getVersion()}`, enabled: false },
+    { label: 'Quit', click: () => {
+      dialog.showMessageBox({ type: 'question', buttons: ['Cancel', 'Quit'], defaultId: 0, cancelId: 0,
+        title: 'Quit Sonora', message: 'Quit Sonora?', detail: 'Quitting stops listening and closes the window.' }).then(result => {
+        if (result.response === 1) { quitting = true; app.quit(); }
+      }).catch(() => {});
     } },
-    { label: 'Click through the overlay', type: 'checkbox', checked: clickThrough, click: item => {
-      clickThrough = item.checked; if (!clickThrough) controlsHover = false; applyPassthrough(); persistWindow(); broadcast();
-    } },
-    { label: 'Start when I sign in', type: 'checkbox', checked: openAtLogin, click: item => {
-      applyOpenAtLogin(item.checked); persistWindow(); broadcast();
-    } },
-    { type: 'separator' },
-    { label: 'Quit Sonora and stop audio', click: () => { quitting = true; app.quit(); } },
-  ]));
+  ];
+  tray.setToolTip('Sonora');
+  const built = Menu.buildFromTemplate(trayMenu);
+  // Windows turns a context menu into the left-click action, so the icon click never restores the window.
+  if (process.platform === 'win32') {
+    try { tray.setContextMenu(null); } catch { /* left click stays a click */ }
+  } else tray.setContextMenu(built);
+}
+function moveCollapsed(dx, dy) {
+  if (!collapsed || !win || win.isDestroyed()) return state();
+  if (typeof dx !== 'number' || typeof dy !== 'number' || !Number.isFinite(dx) || !Number.isFinite(dy)) throw new Error('Expected a move.');
+  const box = win.getBounds();
+  win.setBounds({ x: Math.round(box.x + dx), y: Math.round(box.y + dy), width: box.width, height: box.height });
+  return state();
+}
+function destroyTray() {
+  if (tray && !tray.isDestroyed?.()) tray.destroy?.();
+  tray = null;
+}
+function ensureTray() {
+  if (tray && !tray.isDestroyed?.()) { updateTray(); return; }
+  const icon = nativeImage.createFromPath(path.join(__dirname, 'assets', 'tray.png'));
+  tray = new Tray(icon);
+  tray.on('click', show);
+  tray.on('double-click', show);
+  tray.on('right-click', () => {
+    if (!tray || tray.isDestroyed?.()) return;
+    tray.popUpContextMenu?.(Menu.buildFromTemplate(trayMenu));
+  });
+  updateTray();
+}
+function syncTray() {
+  if (win && !win.isDestroyed() && win.isVisible()) destroyTray();
+  else ensureTray();
 }
 function registerIpc() {
   const handle = (name, fn) => ipcMain.handle(name, (event, ...args) => {
@@ -269,6 +331,13 @@ function registerIpc() {
   });
   handle('overlay:show', () => { show(); return state(); });
   handle('overlay:hide', () => { hide(); return state(); });
+  handle('overlay:minimize', () => { setCollapsed(!collapsed); return state(); });
+  handle('overlay:move-collapsed', (dx, dy) => moveCollapsed(dx, dy));
+  handle('overlay:set-live-shortcuts', value => {
+    liveShortcuts = value === true;
+    activateHotkeys();
+    return state();
+  });
   handle('overlay:toggle', () => { toggle(); return state(); });
   handle('overlay:set-always-on-top', value => {
     if (typeof value !== 'boolean') throw new Error('Expected boolean.');
@@ -378,7 +447,7 @@ function createWindow() {
     clickThrough = flag(saved?.clickThrough, false);
     openAtLogin = flag(saved?.openAtLogin, false);
     hotkeyOverrides = saved?.hotkeys && typeof saved.hotkeys === 'object' ? saved.hotkeys : {};
-    migrateOpacity = saved.opacityVersion !== 2;
+    migrateOpacity = saved.opacityVersion !== 3;
   } catch (error) {
     if (error.code !== 'ENOENT') preferencesError = 'Saved window preferences were invalid; safe defaults were restored.';
   }
@@ -388,8 +457,11 @@ function createWindow() {
     minWidth: Math.min(390, bounds.width), minHeight: Math.min(620, bounds.height), show: false,
     // thickFrame, rounded corners, and Win11 Mica paint an opaque backing behind a frameless window.
     frame: false, thickFrame: false, roundedCorners: false,
-    transparent: true, backgroundColor: HIT_FLOOR, backgroundMaterial: 'none', resizable: true, alwaysOnTop: true,
-    skipTaskbar: true, hasShadow: false,
+    transparent: true, backgroundColor: WINDOW_CLEAR, resizable: true, alwaysOnTop: true,
+    // toolbar sets WS_EX_TOOLWINDOW on Windows, so the window stays out of the taskbar, Alt+Tab, and Task View.
+    hiddenInMissionControl: true,
+    ...(process.platform === 'win32' ? { type: 'toolbar' } : {}),
+    title: 'Sonora', skipTaskbar: true, hasShadow: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'), partition: 'persist:sonora',
       contextIsolation: true, nodeIntegration: false, sandbox: true,
@@ -397,7 +469,12 @@ function createWindow() {
     },
   });
   win.setIgnoreMouseEvents(false);
+  win.setSkipTaskbar(true);
   clearWindowPlate();
+  if (process.platform === 'win32') {
+    const topTimer = setInterval(() => holdOnTop(), 1000);
+    win.on('closed', () => clearInterval(topTimer));
+  }
   if (migrateOpacity) persistWindow();
   applyAlwaysOnTop(alwaysOnTop);
   applyOpenAtLogin(openAtLogin);
@@ -424,6 +501,10 @@ function createWindow() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(persistWindow, 300);
   };
+  win.on('minimize', () => {
+    try { if (win.isMinimized?.()) win.restore(); } catch { /* stay expanded in the window */ }
+    setCollapsed(true);
+  });
   win.on('moved', remember);
   win.on('resized', remember);
   const recoverPosition = () => {
@@ -449,8 +530,8 @@ function createWindow() {
     return { action: 'deny' };
   });
   win.on('close', event => { if (!quitting && !localE2E) { event.preventDefault(); hide(); } });
-  win.on('show', () => { win.setSkipTaskbar?.(true); if (alwaysOnTop) applyAlwaysOnTop(true); broadcast(); });
-  win.on('hide', broadcast);
+  win.on('show', () => { win.setSkipTaskbar?.(true); if (alwaysOnTop) applyAlwaysOnTop(true); syncTray(); broadcast(); });
+  win.on('hide', () => { syncTray(); broadcast(); });
   win.on('blur', () => { holdOnTop(); });
   win.webContents.on('render-process-gone', () => { nativeAudio.stop(); if (!nativeAudio.isActive()) captureActive = false; broadcast(); });
   win.webContents.on('unresponsive', () => bootLog('unresponsive'));
@@ -485,6 +566,49 @@ function createWindow() {
   configurePermissions();
   win.once('ready-to-show', show);
   void loadService();
+}
+
+function startVisualProofCapture() {
+  if (!localE2E || !process.argv.includes('--visual-proof')) return;
+  const server = http.createServer(async (req, res) => {
+    try {
+      if (req.url.startsWith('/window') && win && !win.isDestroyed()) {
+        const image = await win.webContents.capturePage();
+        if (!image || image.isEmpty()) { res.writeHead(503); res.end(); return; }
+        const png = image.toPNG();
+        const bounds = win.getBounds();
+        const scale = screen.getPrimaryDisplay().scaleFactor || 1;
+        const size = image.getSize();
+        const bitmap = image.toBitmap();
+        const px = Math.max(0, Math.min(size.width - 1, Math.floor(size.width / 2)));
+        const py = Math.max(0, Math.min(size.height - 1, Math.floor(size.height / 2)));
+        const alpha = bitmap[(py * size.width + px) * 4 + 3] ?? 0;
+        res.writeHead(200, {
+          'Content-Type': 'image/png', 'Content-Length': png.length,
+          'X-Win-X': String(Math.round(bounds.x * scale)),
+          'X-Win-Y': String(Math.round(bounds.y * scale)),
+          'X-Win-W': String(Math.round(bounds.width * scale)),
+          'X-Win-H': String(Math.round(bounds.height * scale)),
+          'X-Center-Alpha': String(alpha),
+        });
+        res.end(png);
+        return;
+      }
+      const display = screen.getPrimaryDisplay();
+      const width = Math.max(1, Math.round(display.size.width * (display.scaleFactor || 1)));
+      const height = Math.max(1, Math.round(display.size.height * (display.scaleFactor || 1)));
+      const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width, height } });
+      const image = sources[0]?.thumbnail;
+      if (!image || image.isEmpty()) { res.writeHead(503); res.end(); return; }
+      const png = image.toPNG();
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': png.length });
+      res.end(png);
+    } catch (error) {
+      res.writeHead(500);
+      res.end(String(error));
+    }
+  });
+  server.listen(4181, '127.0.0.1');
 }
 
 async function loadService() {
@@ -553,11 +677,9 @@ else {
     } catch { updates = createAutoUpdate({ isPackaged: false }); }
     browserAuth = createBrowserAuth({ serviceUrl: target, openExternal: url => shell.openExternal(url) });
     createWindow();
-    // PNG avoids platform-dependent support for SVG tray images.
-    const icon = nativeImage.createFromPath(path.join(__dirname, 'assets', 'tray.png'));
-    tray = new Tray(icon);
-    tray.on('click', toggle);
+    startVisualProofCapture();
     activateHotkeys();
+    syncTray();
     stopUpdates = updates.start();
     updateTray();
     app.on('activate', show);

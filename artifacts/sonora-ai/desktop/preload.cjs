@@ -9,9 +9,12 @@ ipcRenderer.on('overlay:state-changed', (_event, state) => {
 contextBridge.exposeInMainWorld('sonoraDesktop', {
   isDesktop: true,
   platform: process.platform,
-  shortcut: 'Ctrl+Shift+Space',
+  shortcut: 'Ctrl+H',
+  setLiveShortcuts: value => ipcRenderer.invoke('overlay:set-live-shortcuts', Boolean(value)),
   show: () => ipcRenderer.invoke('overlay:show'),
   hide: () => ipcRenderer.invoke('overlay:hide'),
+  minimize: () => ipcRenderer.invoke('overlay:minimize'),
+  moveCollapsed: (dx, dy) => ipcRenderer.invoke('overlay:move-collapsed', dx, dy),
   toggle: () => ipcRenderer.invoke('overlay:toggle'),
   quit: () => ipcRenderer.invoke('overlay:quit'),
   getState: () => ipcRenderer.invoke('overlay:get-state'),

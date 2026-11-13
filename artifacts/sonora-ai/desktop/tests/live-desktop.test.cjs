@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const { EventEmitter } = require('node:events');
@@ -22,11 +23,11 @@ function load(file, globals = {}, external = []) {
 }
 
 test('opacity validates rather than silently accepting unsafe values', () => {
-  assert.equal(opacity(0), 0); assert.equal(opacity(.14), .14); assert.equal(opacity(.15), .15); assert.equal(opacity(1), 1);
-  for (const value of [NaN, Infinity, -1, 1.1, '0.8', undefined]) assert.throws(() => opacity(value));
-  assert.equal(initialOpacity(undefined), 0.4);
-  assert.equal(initialOpacity({ backgroundOpacity: 0.85 }), 0.4);
-  assert.equal(initialOpacity({ backgroundOpacity: 0.7, opacityVersion: 2 }), 0.7);
+  assert.equal(opacity(.15), .15); assert.equal(opacity(.45), .45); assert.equal(opacity(.95), .95);
+  for (const value of [NaN, Infinity, -1, 0, .14, 1, 1.1, '0.8', undefined]) assert.throws(() => opacity(value));
+  assert.equal(initialOpacity(undefined), 0.45);
+  assert.equal(initialOpacity({ backgroundOpacity: 0.85, opacityVersion: 2 }), 0.45);
+  assert.equal(initialOpacity({ backgroundOpacity: 0.75, opacityVersion: 3 }), 0.75);
 });
 
 test('saved window bounds recover across removed monitors, scaling, and invalid input', () => {
@@ -265,16 +266,19 @@ test('continuous six-second remote chunks cannot postpone automatic answers fore
     now = to;
   }
   router.push('Then you give me a brief about your', 'interviewer');
-  advance(6000); router.push('recent project and the tradeoffs', 'interviewer');
-  advance(12000); router.push('you considered', 'interviewer');
+  advance(2000); router.push('recent project and the tradeoffs', 'interviewer');
+  advance(4000); router.push('you considered', 'interviewer');
   assert.equal(sent.length, 0);
-  advance(15000); assert.equal(sent.length, 1);
+  advance(7000); assert.equal(sent.length, 1);
   assert.match(sent[0], /tradeoffs you considered/);
   advance(40000); assert.equal(sent.length, 1);
   router.push('Explain your next project', 'interviewer'); router.reset();
   advance(60000); assert.equal(sent.length, 1);
   assert.equal(isInterviewQuestion('Then you give me brief about your experience.'), true);
   assert.equal(isInterviewQuestion('Okay, can you hear me?'), false);
+  const workspace = fs.readFileSync(path.resolve(__dirname, '../../src/pages/interview-workspace.tsx'), 'utf8');
+  assert.match(workspace, /if \(answerInFlightRef\.current\) return;/);
+  assert.match(workspace, /while \(answerInFlightRef\.current \|\| settingsBusyRef\.current\)/);
 });
 
 test('busy answers retain bounded follow-up questions and surface overflow explicitly', async () => {
@@ -315,7 +319,8 @@ test('follow-latest pane follows growth, pauses for reading, jumps, resizes and 
     const tree = Pane({ resetKey, label: 'Transcript', children: 'Real content' });
     const scroll = tree.props.children[0];
     scroll.props.ref.current = element;
-    scroll.props.children.props.ref.current = {};
+    const content = Array.isArray(scroll.props.children) ? scroll.props.children[0] : scroll.props.children;
+    content.props.ref.current = {};
     effects.forEach(fn => fn());
     return { tree, scroll };
   }

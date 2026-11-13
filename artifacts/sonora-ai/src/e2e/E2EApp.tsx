@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CallSession, TranscriptEntry } from "@workspace/api-client-react";
 import DesktopVisibilityControls from "@/components/desktop-visibility-controls";
 import DesktopSessions from "@/components/desktop-sessions";
 import DesktopLiveOverlay from "@/components/desktop-live-overlay";
 import DesktopSelect from "@/components/desktop-select";
 import { requestAnswer } from "@/lib/answer-stream";
+import { interpretDesktopCommand } from "@/lib/desktop-commands";
 import { readSonoraTheme, type SonoraTheme } from "@/lib/theme";
 
 type Mode = "ok" | "401" | "500" | "timeout" | "offline" | "speechmatics";
@@ -38,6 +39,7 @@ export default function E2EApp() {
   const [company, setCompany] = useState("");
   const [formError, setFormError] = useState("");
   const [theme, setTheme] = useState<SonoraTheme>(() => readSonoraTheme());
+  const shotCount = useRef(0);
   const [lastClick, setLastClick] = useState("idle");
   const [hoverLabel, setHoverLabel] = useState("Hover idle");
   const [audioSource, setAudioSource] = useState<"microphone" | "system" | "both">("system");
@@ -73,6 +75,8 @@ export default function E2EApp() {
       window.removeEventListener("mousemove", onMove);
     };
   }, []);
+
+  useEffect(() => { void window.sonoraDesktop?.setLiveShortcuts?.(live); }, [live]);
 
   useEffect(() => {
     const onTranscript = (event: Event) => {
@@ -143,6 +147,42 @@ export default function E2EApp() {
       setError("Network offline. Sonora is still open; retry when you are connected.");
     }
   };
+
+  const askRef = useRef(ask);
+  askRef.current = ask;
+  const noteShot = (shortcut = false) => {
+    shotCount.current += 1;
+    setNotice(shortcut ? `Screenshot attached ${shotCount.current}.` : "Screenshot attached.");
+  };
+  const commandRef = useRef({ question, latest, answer, history });
+  commandRef.current = { question, latest, answer, history };
+  useEffect(() => {
+    const desktop = window.sonoraDesktop;
+    if (!desktop?.onCommand) return;
+    return desktop.onCommand(action => {
+      const current = commandRef.current;
+      const result = interpretDesktopCommand(action, {
+        question: current.question, latestQuestion: current.latest, recentPhoneText: "",
+        answer: current.answer, assistantAnswers: current.history, inputMode: "computer",
+      });
+      if (result.type === "ask") void askRef.current(result.question);
+      else if (result.type === "show-answer") { setAnswer(result.answer); setError(""); }
+      else if (result.type === "scroll") {
+        const pane = document.querySelector(".dp-answer-scroll");
+        if (pane instanceof HTMLElement) pane.scrollBy({ top: result.top });
+      } else if (result.type === "clear-answers") {
+        setAnswer(""); setLatest(""); setQuestion(""); setError(""); setNotice("Visible answers cleared.");
+      } else if (result.type === "clear-transcript") {
+        setEntries([]); setInterim(""); setNotice("Visible transcript cleared.");
+      } else if (result.type === "chat") window.dispatchEvent(new Event("sonora-toggle-chat"));
+      else if (result.type === "screenshot") void (async () => {
+        const image = await window.sonoraDesktop?.captureScreen?.();
+        if (!image) { setError("Screenshot was not captured."); return; }
+        await askRef.current(current.question.trim() || current.latest || "Explain what is visible in this screenshot.");
+        noteShot(true);
+      })();
+    });
+  }, []);
 
   const create = async () => {
     if (!company.trim()) { setFormError("Add a company or paste the job description."); return; }
@@ -225,7 +265,7 @@ export default function E2EApp() {
               const image = await window.sonoraDesktop?.captureScreen?.();
               if (!image) { setError("Screenshot was not captured."); return; }
               await ask(latest || question || "Explain what is visible in this screenshot.");
-              setNotice("Screenshot attached.");
+              noteShot();
             })()}
             onPreferences={() => { setSettingsOpen(true); setNotice("Answer settings"); }}
             onReadiness={() => { setReadinessOpen(true); setNotice("Readiness check is ready. Audio stays off until you start it."); }}

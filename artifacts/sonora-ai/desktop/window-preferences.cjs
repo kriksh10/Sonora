@@ -1,11 +1,13 @@
-const DEFAULT_OPACITY = 0.4;
-const OPACITY_VERSION = 2;
+const DEFAULT_OPACITY = 0.45;
+const OPACITY_VERSION = 3;
+const MIN_OPACITY = 0.15;
+const MAX_OPACITY = 0.95;
 
 function opacity(value) {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
-    throw new Error('Background opacity must be between 0% and 100%.');
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < MIN_OPACITY || value > MAX_OPACITY) {
+    throw new Error('Background opacity must be between 15% and 95%.');
   }
-  return value;
+  return Math.round(value * 100) / 100;
 }
 
 function initialOpacity(saved) {

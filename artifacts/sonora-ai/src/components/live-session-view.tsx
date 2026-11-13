@@ -415,7 +415,7 @@ export default function LiveSessionView(p: LiveSessionViewProps) {
                 state === "complete" ? "Answer ready" : live ? "Listening" : stateLabel}
             </em>
           </header>
-          <FollowLatestPane resetKey={p.session.id} label="Answer help" testId="answer-pane" jumpTestId="jump-to-latest-answer">
+          <FollowLatestPane resetKey={p.session.id} label="Answer help" testId="answer-pane" jumpTestId="jump-to-latest-answer" follow={false}>
             {p.latestQuestion && <div className="lsv-q"><b>Question:</b> {p.latestQuestion}</div>}
             {working && <div className="lsv-meta" role="status">{state === "streaming" ? "Streaming now." : "Waiting for the answer."} The previous one stays below until replaced.</div>}
             {shownAnswer ? (
@@ -426,7 +426,7 @@ export default function LiveSessionView(p: LiveSessionViewProps) {
           </FollowLatestPane>
           <div className="lsv-actions sonora-overlay-controls">
             <div className="lsv-seg" role="radiogroup" aria-label="Answer length">
-              {([["short", "Short"], ["balanced", "Balanced"], ["long", "Detailed"]] as const).map(([v, t]) => (
+              {([["short", "Short"], ["balanced", "Balanced"], ["long", "Long"]] as const).map(([v, t]) => (
                 <button key={v} type="button" role="radio" aria-checked={length === v} data-testid={`button-length-${v}`}
                   disabled={ended || working || !p.onLengthChange} onClick={() => p.onLengthChange?.(v)}>{t}</button>
               ))}

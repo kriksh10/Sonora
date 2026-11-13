@@ -15,12 +15,21 @@ function fixture(platform = 'win32') {
     show: () => { visible = true; }, focus() {}, hide: () => { visible = false; },
     setAlwaysOnTop(value) { this.top = value; }, top: false,
     setContentProtection: value => { protections.push(value); },
+    setVisibleOnAllWorkspaces() {}, moveTop() {},
+    bounds: { x: 10, y: 20, width: 800, height: 600 },
+    getBounds() { return { ...this.bounds }; },
+    setBounds(next) { this.bounds = { ...this.bounds, ...next }; },
+    setResizable() {}, setSkipTaskbar(value) { this.skip = value; },
+    isMinimized: () => false, restore() {},
     webContents: { send: (...args) => sends.push(args) },
   };
-  const tray = { isDestroyed: () => false, setToolTip() {}, setContextMenu: next => { menu = next; } };
+  const tray = { isDestroyed: () => false, destroy() { this.destroyed = true; }, destroyed: false, on() {}, setToolTip() {}, setContextMenu: next => { menu = next; } };
   const electron = {
     app: { isPackaged: true, getVersion: () => '0.3.0', requestSingleInstanceLock: () => false, quit() {}, on() {} },
     Menu: { buildFromTemplate: items => items },
+    nativeImage: { createFromPath: () => ({}) },
+    dialog: { showMessageBox: () => Promise.resolve({ response: 0 }) },
+    Tray: class { constructor() {} isDestroyed() { return false; } destroy() {} on() {} setToolTip() {} setContextMenu(next) { menu = next; } },
   };
   const context = vm.createContext({
     require: name => name === 'electron' ? electron : localRequire(name),
@@ -30,16 +39,13 @@ function fixture(platform = 'win32') {
   context.testWindow = window;
   context.testTray = tray;
   vm.runInContext('win = testWindow; tray = testTray; updateTray();', context);
-  return { context, window, protections, sends, menu: () => menu };
+  return { context, window, protections, sends, menu: () => vm.runInContext('trayMenu', context) };
 }
 
-test('tray capture exclusion and native state stay synchronized', () => {
+test('capture exclusion and native state stay synchronized', () => {
   const f = fixture();
-  const toggle = f.menu().find(item => item.label?.startsWith('Hide from screen sharing'));
-  assert.equal(toggle.checked, true);
-  toggle.click({ checked: false });
+  vm.runInContext('setContentProtection(false)', f.context);
   assert.deepEqual(f.protections, [false]);
-  assert.equal(f.menu().find(item => item.label?.startsWith('Hide from screen sharing')).checked, false);
   assert.equal(f.sends.at(-1)[1].contentProtection, false);
   assert.throws(() => vm.runInContext('setContentProtection("yes")', f.context), /Expected boolean/);
 });
@@ -51,9 +57,12 @@ test('hide releases screen-saver always-on-top before the window disappears and 
   assert.equal(f.window.isVisible(), false);
   vm.runInContext('holdOnTop();', f.context);
   assert.equal(f.window.top, false);
-  f.menu().find(item => item.label === 'Show Sonora').click();
+  assert.equal(f.menu().find(item => item.label === 'Open Sonora').label, 'Open Sonora');
+  assert.equal(f.menu().some(item => String(item.label).startsWith('Version ')), true);
+  f.menu().find(item => item.label === 'Open Sonora').click();
   assert.equal(f.window.isVisible(), true);
   assert.equal(f.window.top, true);
+  assert.equal(vm.runInContext('tray', f.context), null);
 });
 
 test('hide and tray restore preserve active audio and keep Stop available', () => {
@@ -61,17 +70,40 @@ test('hide and tray restore preserve active audio and keep Stop available', () =
   vm.runInContext('captureActive = true; hide();', f.context);
   assert.equal(f.window.isVisible(), false);
   assert.equal(f.sends.at(-1)[1].captureActive, true);
-  assert.equal(f.menu().find(item => item.label === 'Stop audio capture').enabled, true);
-  f.menu().find(item => item.label === 'Show Sonora').click();
+  assert.equal(f.menu().some(item => item.label === 'Open Sonora'), true);
+  f.menu().find(item => item.label === 'Open Sonora').click();
   assert.equal(f.window.isVisible(), true);
-  assert.equal(f.sends.at(-1)[1].captureActive, true);
+  assert.equal(vm.runInContext('captureActive', f.context), true);
 });
 
 test('unsupported platform does not offer capture exclusion', () => {
   const f = fixture('linux');
-  const toggle = f.menu().find(item => item.label?.startsWith('Hide from screen sharing'));
-  assert.equal(toggle.enabled, false);
-  assert.equal(toggle.checked, false);
+  vm.runInContext('setContentProtection(true)', f.context);
+  assert.equal(vm.runInContext('state().contentProtection', f.context), false);
+});
+
+test('minimize collapses inside the same window and the tray is only for a hidden window', () => {
+  const f = fixture();
+  vm.runInContext('setCollapsed(true);', f.context);
+  assert.equal(f.window.isVisible(), true);
+  assert.equal(f.window.bounds.width, 72);
+  assert.equal(f.window.bounds.height, 72);
+  vm.runInContext('onHotkey({ id: "hideShow", forward: false });', f.context);
+  assert.equal(f.window.bounds.width, 800);
+  vm.runInContext('hide();', f.context);
+  assert.equal(f.window.isVisible(), false);
+  assert.equal(f.menu().some(item => item.label === 'Quit'), true);
+  const main = fs.readFileSync(path.resolve(__dirname, '../main.cjs'), 'utf8');
+  assert.match(main, /setMinimumSize\?\.\(72, 72\)/);
+  assert.match(main, /setCollapsed\(true\)/);
+  assert.match(main, /tray\.on\('click', show\)/);
+  assert.match(main, /skipTaskbar: true/);
+  assert.match(main, /type: 'toolbar'/);
+  assert.match(main, /title: 'Sonora'/);
+  assert.match(main, /hiddenInMissionControl: true/);
+  assert.match(main, /setInterval\(\(\) => holdOnTop\(\), 1000\)/);
+  assert.doesNotMatch(main, /page-title-updated/);
+  assert.doesNotMatch(main, /createEmpty\(\)/);
 });
 
 test('failed native protection change does not falsely update requested state', () => {

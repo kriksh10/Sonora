@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Copy, Expand, MoreVertical, ThumbsDown, ThumbsUp, X } from "lucide-react";
 import type { CallSession, TranscriptEntry } from "@workspace/api-client-react";
 import SafeMarkdown from "@/components/safe-markdown";
@@ -46,6 +46,54 @@ export default function DesktopLiveOverlay(props: {
   const [answerOpen, setAnswerOpen] = useState(true);
   const [vote, setVote] = useState<"up" | "down" | null>(null);
   const [copied, setCopied] = useState("");
+  const answerPane = useRef<HTMLDivElement>(null);
+  const [answerEnd, setAnswerEnd] = useState(true);
+  const [answerOverflow, setAnswerOverflow] = useState(false);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [metrics, setMetrics] = useState("Answer metrics height=0px visible=0 of 0");
+  const markAnswer = () => {
+    const el = answerPane.current;
+    if (!el) return;
+    const overflow = el.scrollHeight > el.clientHeight + 2;
+    setAnswerOverflow(overflow);
+    setAnswerEnd(!overflow || el.scrollTop + el.clientHeight >= el.scrollHeight - 8);
+    setScrollTop(Math.round(el.scrollTop));
+  };
+  useEffect(() => {
+    markAnswer();
+    const el = answerPane.current;
+    if (!el) return;
+    const frame = requestAnimationFrame(() => {
+      const words = (props.answer || "").trim().split(/\s+/).filter(Boolean);
+      const view = el.getBoundingClientRect();
+      let visible = 0;
+      let stop = false;
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let node = walker.nextNode();
+      while (node && !stop) {
+        const raw = node.textContent || "";
+        const pattern = /\S+/g;
+        let match: RegExpExecArray | null;
+        while ((match = pattern.exec(raw))) {
+          const range = document.createRange();
+          range.setStart(node, match.index);
+          range.setEnd(node, match.index + match[0].length);
+          const rect = range.getClientRects()[0];
+          if (!rect) continue;
+          if (rect.top >= view.bottom - 2) { stop = true; break; }
+          if (rect.bottom > view.top + 2) visible += 1;
+        }
+        node = walker.nextNode();
+      }
+      setMetrics(`Answer metrics height=${Math.round(el.clientHeight)}px visible=${visible} of ${words.length}`);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [props.answer]);
+  useEffect(() => {
+    const toggle = () => setChat(value => !value);
+    window.addEventListener("sonora-toggle-chat", toggle);
+    return () => window.removeEventListener("sonora-toggle-chat", toggle);
+  }, []);
   const spoken = [...props.entries].reverse().find(entry => entry.role !== "assistant")?.text || "";
   const liveWords = props.paused
     ? "Paused. Transcription is off until you resume."
@@ -60,8 +108,6 @@ export default function DesktopLiveOverlay(props: {
     if (text) props.onAsk(text);
     else props.onAsk("");
   };
-  const headline = props.answer.split("\n").map(line => line.trim()).find(Boolean)?.replace(/^#+\s*/, "") || "No answer yet";
-
   return (
     <div className="dp-overlay">
       <header className="dp-glass dp-bar">
@@ -137,10 +183,16 @@ export default function DesktopLiveOverlay(props: {
           </div>
           <div className="dp-q"><b>Question:</b> {props.latestQuestion || props.question || "Waiting for a question"} <button type="button" aria-label="Copy question" onClick={() => { const text = props.latestQuestion || props.question || ""; setCopied(text); void navigator.clipboard?.writeText(text).catch(() => {}); }}><Copy size={13} /></button></div>
           {copied && <p role="status">Copied question: {copied}</p>}
-          <div className="dp-answer-scroll" aria-label={props.answer || "Answer pending"}>
-            <h3>Answer: {headline}</h3>
-            {props.answer ? <SafeMarkdown text={props.answer} /> : <p>Ask, or let Auto Answer respond when the interviewer finishes.</p>}
+          {answerOverflow && <div className="dp-scroll-chevrons">
+            <button type="button" aria-label="Scroll answer up" onClick={() => answerPane.current?.scrollBy({ top: -200 })}>↑</button>
+            <button type="button" aria-label="Scroll answer down" onClick={() => answerPane.current?.scrollBy({ top: 200 })}>↓</button>
+          </div>}
+          <p className="sonora-scroll-status" aria-label={`Answer scroll position ${scrollTop}`}>Answer scroll position {scrollTop}</p>
+          <div ref={answerPane} className="dp-answer-scroll" tabIndex={0} onScroll={markAnswer} aria-label={props.answer ? (answerEnd ? "Answer end visible" : "Answer scrollable") : "Answer pending"}>
+            <h3>{props.answer ? "Answer" : "No answer yet"}</h3>
+            {props.answer ? <div className="sonora-answer-body"><SafeMarkdown text={props.answer} /></div> : <p>Ask, or let Auto Answer respond when the interviewer finishes.</p>}
           </div>
+          <p className="sonora-scroll-status" aria-label={metrics}>{metrics}</p>
           {props.error && <p role="alert">{props.error}</p>}
           {props.notice && <p role="status">{props.notice}</p>}
           <footer className="dp-foot">

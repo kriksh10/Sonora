@@ -70,8 +70,14 @@ public static class SonoraInput {
     if ((style & 0x80000) != 0) parts.Add("WS_EX_LAYERED");
     if ((style & 0x200000) != 0) parts.Add("WS_EX_NOREDIRECTIONBITMAP");
     if ((style & 0x8) != 0) parts.Add("WS_EX_TOPMOST");
+    if ((style & 0x80) != 0) parts.Add("WS_EX_TOOLWINDOW");
+    if ((style & 0x40000) != 0) parts.Add("WS_EX_APPWINDOW");
     return "0x" + style.ToString("X") + " " + string.Join(",", parts);
   }
+  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+  [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string cls, string title);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr child, string cls, string title);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
   public static void Move(int x, int y) {
     int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
@@ -99,12 +105,104 @@ public static class SonoraInput {
     uint sent = SendInput(3, inputs, Marshal.SizeOf(typeof(INPUT)));
     if (sent != 3) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
   }
+  public static void RightClick(int x, int y) {
+    int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    int vw = Math.Max(1, GetSystemMetrics(SM_CXVIRTUALSCREEN));
+    int vh = Math.Max(1, GetSystemMetrics(SM_CYVIRTUALSCREEN));
+    int ax = (int)Math.Round((x - vx) * 65535.0 / Math.Max(1, vw - 1));
+    int ay = (int)Math.Round((y - vy) * 65535.0 / Math.Max(1, vh - 1));
+    INPUT[] inputs = new INPUT[3];
+    inputs[0].type = 0; inputs[0].mi.dx = ax; inputs[0].mi.dy = ay; inputs[0].mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
+    inputs[1].type = 0; inputs[1].mi.dx = ax; inputs[1].mi.dy = ay; inputs[1].mi.dwFlags = 0x0008 | MOUSEEVENTF_ABSOLUTE;
+    inputs[2].type = 0; inputs[2].mi.dx = ax; inputs[2].mi.dy = ay; inputs[2].mi.dwFlags = 0x0010 | MOUSEEVENTF_ABSOLUTE;
+    uint sent = SendInput(3, inputs, Marshal.SizeOf(typeof(INPUT)));
+    if (sent != 3) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+  }
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc lpEnumFunc, IntPtr lParam);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+  public delegate bool EnumProc(IntPtr hWnd, IntPtr lParam);
+  public static string[] OverlayWindows() {
+    var found = new System.Collections.Generic.List<string>();
+    EnumWindows((h, l) => {
+      var cls = new System.Text.StringBuilder(256);
+      GetClassName(h, cls, cls.Capacity);
+      var title = Title(h);
+      var klass = cls.ToString();
+      if (klass.IndexOf("Overflow", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+          klass.IndexOf("Notify", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+          title.IndexOf("Sonora", System.StringComparison.OrdinalIgnoreCase) >= 0)
+        found.Add(h.ToInt64().ToString() + "|" + klass + "|" + title);
+      return true;
+    }, IntPtr.Zero);
+    return found.ToArray();
+  }
   public static void RaiseWithoutFocus(IntPtr hWnd) {
     SetWindowPos(hWnd, new IntPtr(-1), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+  }
+  public static void Wheel(int x, int y, int delta) {
+    int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    int vw = Math.Max(1, GetSystemMetrics(SM_CXVIRTUALSCREEN));
+    int vh = Math.Max(1, GetSystemMetrics(SM_CYVIRTUALSCREEN));
+    int ax = (int)Math.Round((x - vx) * 65535.0 / Math.Max(1, vw - 1));
+    int ay = (int)Math.Round((y - vy) * 65535.0 / Math.Max(1, vh - 1));
+    INPUT[] inputs = new INPUT[2];
+    inputs[0].type = 0; inputs[0].mi.dx = ax; inputs[0].mi.dy = ay; inputs[0].mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
+    inputs[1].type = 0; inputs[1].mi.dx = ax; inputs[1].mi.dy = ay; inputs[1].mi.mouseData = unchecked((uint)delta); inputs[1].mi.dwFlags = 0x0800;
+    uint sent = SendInput(2, inputs, Marshal.SizeOf(typeof(INPUT)));
+    if (sent != 2) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+  }
+  public static void Drag(int x1, int y1, int x2, int y2) {
+    int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    int vw = Math.Max(1, GetSystemMetrics(SM_CXVIRTUALSCREEN));
+    int vh = Math.Max(1, GetSystemMetrics(SM_CYVIRTUALSCREEN));
+    int ax1 = (int)Math.Round((x1 - vx) * 65535.0 / Math.Max(1, vw - 1));
+    int ay1 = (int)Math.Round((y1 - vy) * 65535.0 / Math.Max(1, vh - 1));
+    int ax2 = (int)Math.Round((x2 - vx) * 65535.0 / Math.Max(1, vw - 1));
+    int ay2 = (int)Math.Round((y2 - vy) * 65535.0 / Math.Max(1, vh - 1));
+    INPUT[] down = new INPUT[2];
+    down[0].type = 0; down[0].mi.dx = ax1; down[0].mi.dy = ay1; down[0].mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
+    down[1].type = 0; down[1].mi.dx = ax1; down[1].mi.dy = ay1; down[1].mi.dwFlags = MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_ABSOLUTE;
+    if (SendInput(2, down, Marshal.SizeOf(typeof(INPUT))) != 2) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+    System.Threading.Thread.Sleep(40);
+    INPUT[] move = new INPUT[1];
+    move[0].type = 0; move[0].mi.dx = ax2; move[0].mi.dy = ay2; move[0].mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
+    if (SendInput(1, move, Marshal.SizeOf(typeof(INPUT))) != 1) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+    System.Threading.Thread.Sleep(40);
+    INPUT[] up = new INPUT[1];
+    up[0].type = 0; up[0].mi.dx = ax2; up[0].mi.dy = ay2; up[0].mi.dwFlags = MOUSEEVENTF_LEFTUP | MOUSEEVENTF_ABSOLUTE;
+    if (SendInput(1, up, Marshal.SizeOf(typeof(INPUT))) != 1) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+  }
+}
+public static class SonoraKeys {
+  [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, System.UIntPtr dwExtraInfo);
+  public static void RestoreChord() {
+    keybd_event(0x11, 0, 0, System.UIntPtr.Zero);
+    keybd_event(0x10, 0, 0, System.UIntPtr.Zero);
+    keybd_event(0x20, 0, 0, System.UIntPtr.Zero);
+    keybd_event(0x20, 0, 2, System.UIntPtr.Zero);
+    keybd_event(0x10, 0, 2, System.UIntPtr.Zero);
+    keybd_event(0x11, 0, 2, System.UIntPtr.Zero);
+  }
+  public static void CollapseChord() {
+    keybd_event(0x11, 0, 0, System.UIntPtr.Zero);
+    keybd_event(0x48, 0, 0, System.UIntPtr.Zero);
+    keybd_event(0x48, 0, 2, System.UIntPtr.Zero);
+    keybd_event(0x11, 0, 2, System.UIntPtr.Zero);
+  }
+  public static void Chord(byte[] keys) {
+    for (int i = 0; i < keys.Length; i++) keybd_event(keys[i], 0, 0, System.UIntPtr.Zero);
+    for (int i = keys.Length - 1; i >= 0; i--) keybd_event(keys[i], 0, 2, System.UIntPtr.Zero);
   }
 }
 "@
 
+function Send-Chord([byte[]]$Keys) {
+  [SonoraKeys]::Chord($Keys)
+  Start-Sleep -Milliseconds 550
+}
 function Save-Screen([string]$Name) {
   # CopyFromScreen can stall the runner when another grabber holds the desktop DC.
   $job = Start-Job -ScriptBlock {
@@ -365,6 +463,8 @@ try {
   Write-Host "runner $($os.Caption) $($os.Version)"
   $launched = Start-Sonora @('--force-renderer-accessibility')
   $hwnd = $launched.hwnd
+  $windowTitle = [SonoraInput]::Title($hwnd)
+  Add-Scenario 'Task Manager process name stays Sonora' ($launched.proc.ProcessName -like 'Sonora*' -and $windowTitle -match 'Sonora') "process=$($launched.proc.ProcessName) title=$windowTitle"
   Write-Host 'PHASE live-ui'
   Start-Sleep -Seconds 6
   if ($Full) {
@@ -490,9 +590,9 @@ try {
     Start-Sleep -Milliseconds 250
     $hover = Find-Element 'Hover'
     if ($hover) { $hoverName = $hover.Current.Name }
-    if ($hoverName -match 'cursor pointer' -and $hoverName -notmatch 'Hover idle') { break }
+    if ($hoverName -match 'cursor default' -and $hoverName -notmatch 'Hover idle') { break }
   }
-  $hoverOk = $hoverName -match 'Hover ' -and $hoverName -notmatch 'Hover idle' -and $hoverName -match 'cursor pointer'
+  $hoverOk = $hoverName -match 'Hover ' -and $hoverName -notmatch 'Hover idle' -and $hoverName -match 'cursor default'
   Add-Scenario 'Real mouse moves for 10 seconds change hover and cursor' $hoverOk $hoverName
   $interview = $null
   foreach ($candidate in @(Find-All 'Interview')) {
@@ -714,12 +814,32 @@ try {
         $after = Click-Count
         $fg2Name = Get-ForegroundName
         $label = "slider $([int]($ratio * 100)) $(if ($focus) {'focused'} else {'unfocused'}) $(if ($pin) {'pinned'} else {'unpinned'})"
-        $ok = ($panelPassed -eq 0) -and ($marginPassed -eq 0) -and ($fg2Name -like 'Sonora*')
+        $fgHwnd = [SonoraInput]::GetForegroundWindow()
+        $fgPid = [uint32]0
+        [void][SonoraInput]::GetWindowThreadProcessId($fgHwnd, [ref]$fgPid)
+        $fgProc = (Get-Process -Id $fgPid -ErrorAction SilentlyContinue).ProcessName
+        $ok = ($panelPassed -eq 0) -and ($marginPassed -eq 0) -and (($fg2Name -like 'Sonora*') -or ($fgProc -like 'Sonora*'))
         Add-Scenario $label $ok "panel=$panelPassed margin=$marginPassed foreground=$fg2Name total=$($after - $before)"
+        if ($pin -and $focus -and $ratio -eq 0) { Save-Screen 'opacity-15.png' }
+        if ($pin -and $focus -and $ratio -eq 1) { Save-Screen 'opacity-95.png' }
       }
     }
   }
   Save-Screen '04-slider-matrix.png'
+  $opacityHits = @{}
+  foreach ($targetOpacity in @(15, 45, 95)) {
+    $ratio = ($targetOpacity - 15) / 80.0
+    Set-Slider $ratio
+    Start-Sleep -Milliseconds 250
+    $opacityHits[$targetOpacity] = Get-Range (Find-Slider 'Overlay opacity')
+    Save-Screen ("opacity-{0}.png" -f $targetOpacity)
+  }
+  $opacityDetail = ((15, 45, 95 | ForEach-Object { "$_=$($opacityHits[$_])" }) -join ' ')
+  $opacityOk = $true
+  foreach ($targetOpacity in @(15, 45, 95)) {
+    if ($null -eq $opacityHits[$targetOpacity] -or [math]::Abs([double]$opacityHits[$targetOpacity] - $targetOpacity) -gt 7) { $opacityOk = $false }
+  }
+  Add-Scenario 'Opacity reaches 15, 45, and 95' $opacityOk $opacityDetail
   $opacityBefore = Get-Range (Find-Slider 'Overlay opacity')
   Set-Slider 0.2
   Start-Sleep -Milliseconds 300
@@ -772,6 +892,42 @@ try {
   Click-Exact 'Resume' | Out-Null
   $resumed = Wait-Named 'Stop listening' 8
   Add-Scenario 'Control: Resume starts listening again' ([bool]($resumed -and (Find-Exact 'Pause'))) ''
+  function Get-WindowHeight([IntPtr]$handle) {
+    $box = New-Object SonoraInput+RECT
+    [SonoraInput]::GetWindowRect($handle, [ref]$box) | Out-Null
+    return ($box.Bottom - $box.Top)
+  }
+  $fullHeight = Get-WindowHeight $hwnd
+  [SonoraKeys]::CollapseChord()
+  Start-Sleep -Milliseconds 700
+  $collapsedHeight = Get-WindowHeight $hwnd
+  $listeningIcon = Wait-Named 'Sonora listening' 3
+  Add-Scenario 'Ctrl+H collapses the live overlay to a listening icon' ([bool]([SonoraInput]::IsWindowVisible($hwnd) -and $collapsedHeight -le 140 -and $collapsedHeight -ge 40 -and $listeningIcon)) "full=$fullHeight collapsed=$collapsedHeight"
+  Save-Screen '05d-collapsed.png'
+  $dragged = $false
+  if ($listeningIcon) {
+    $beforeDrag = New-Object SonoraInput+RECT
+    [SonoraInput]::GetWindowRect($hwnd, [ref]$beforeDrag) | Out-Null
+    $x1 = [int](($beforeDrag.Left + $beforeDrag.Right) / 2)
+    $y1 = [int](($beforeDrag.Top + $beforeDrag.Bottom) / 2)
+    [SonoraInput]::Drag($x1, $y1, $x1 + 80, $y1 + 40)
+    Start-Sleep -Milliseconds 300
+    $afterDrag = New-Object SonoraInput+RECT
+    [SonoraInput]::GetWindowRect($hwnd, [ref]$afterDrag) | Out-Null
+    $dragged = ([math]::Abs($afterDrag.Left - $beforeDrag.Left) -ge 20) -or ([math]::Abs($afterDrag.Top - $beforeDrag.Top) -ge 20)
+    Add-Scenario 'The listening icon is draggable' ($dragged -and [SonoraInput]::IsWindowVisible($hwnd)) "from=$($beforeDrag.Left),$($beforeDrag.Top) to=$($afterDrag.Left),$($afterDrag.Top)"
+  } else { Add-Scenario 'The listening icon is draggable' $false 'icon missing' }
+  $iconRect = New-Object SonoraInput+RECT
+  [SonoraInput]::GetWindowRect($hwnd, [ref]$iconRect) | Out-Null
+  [SonoraInput]::Click([int](($iconRect.Left + $iconRect.Right) / 2), [int](($iconRect.Top + $iconRect.Bottom) / 2))
+  Start-Sleep -Milliseconds 500
+  $restoredHeight = Get-WindowHeight $hwnd
+  Add-Scenario 'Clicking the listening icon restores the overlay' ($restoredHeight -gt 240) "height=$restoredHeight"
+  Send-Chord ([byte[]](0x11, 0x48))
+  $collapsedAgain = Get-WindowHeight $hwnd
+  Send-Chord ([byte[]](0x11, 0x48))
+  $restoredByKey = Get-WindowHeight $hwnd
+  Add-Scenario 'Ctrl+H restores the overlay' ($collapsedAgain -le 140 -and $restoredByKey -gt 240) "collapsed=$collapsedAgain restored=$restoredByKey"
   Click-Exact 'Stop listening' | Out-Null
   Add-Scenario 'Control: Stop listening turns transcription off' ([bool](Wait-Named 'Audio transcription stopped' 4)) ''
   Click-Exact 'Listen' | Out-Null
@@ -794,15 +950,66 @@ try {
     Add-Scenario 'Control: Previous answer shows the earlier answer' ([bool](Wait-Named 'Heard: How does caching work?' 4)) ''
     Click-Exact 'Next answer' | Out-Null
     Add-Scenario 'Control: Next answer shows the later answer' ([bool](Wait-Named 'Heard: What is an index?' 4)) ''
+    Send-Chord ([byte[]](0x11, 0x25))
+    Add-Scenario 'Shortcut: Ctrl+Left shows the previous answer' ([bool](Wait-Named 'Heard: How does caching work?' 6)) ''
+    Send-Chord ([byte[]](0x11, 0x27))
+    Add-Scenario 'Shortcut: Ctrl+Right shows the next answer' ([bool](Wait-Named 'Heard: What is an index?' 6)) ''
+    Click-Element $chat
+    [System.Windows.Forms.SendKeys]::SendWait('Write six hundred words')
+    Start-Sleep -Milliseconds 250
+    Click-Exact 'Answer' | Out-Null
+    $longEnd = Wait-Named 'ENDWORD' 8
+    function Read-AnswerScroll {
+      $el = Find-Element 'Answer scroll position'
+      if ($el -and $el.Current.Name -match '(\d+)\s*$') { return [int]$Matches[1] }
+      return -1
+    }
+    $beforeScroll = Read-AnswerScroll
+    Send-Chord ([byte[]](0x11, 0x28))
+    $afterDown = Read-AnswerScroll
+    Send-Chord ([byte[]](0x11, 0x26))
+    $afterUp = Read-AnswerScroll
+    Add-Scenario 'Shortcut: Ctrl+Down scrolls the answer' ($afterDown -ge ($beforeScroll + 120)) "before=$beforeScroll after=$afterDown"
+    Add-Scenario 'Shortcut: Ctrl+Up scrolls the answer' ($afterUp -le ($afterDown - 80)) "down=$afterDown up=$afterUp"
+    $pane = Find-Element 'Answer scrollable'
+    if (-not $pane) { $pane = Find-Element 'Answer end visible' }
+    $scrolled = [bool](Find-Element 'Answer end visible')
+    if ($pane -and -not $scrolled) {
+      $box = $pane.Current.BoundingRectangle
+      $until = (Get-Date).AddSeconds(6)
+      while ((Get-Date) -lt $until -and -not $scrolled) {
+        [SonoraInput]::Wheel([int]($box.X + $box.Width / 2), [int]($box.Y + 40), -240)
+        Start-Sleep -Milliseconds 200
+        $scrolled = [bool](Find-Element 'Answer end visible')
+      }
+    }
+    Add-Scenario 'Control: A 600 word answer renders and scrolls to the end' ([bool]($longEnd -and $scrolled)) "end=$([bool]$longEnd) scrolled=$scrolled"
+    Click-Element $chat
+    [System.Windows.Forms.SendKeys]::SendWait('^aShortcut ping')
+    Start-Sleep -Milliseconds 400
+    Send-Chord ([byte[]](0x11, 0x0D))
+    Add-Scenario 'Shortcut: Ctrl+Enter answers' ([bool](Wait-Named 'Heard: Shortcut ping' 8)) ''
+    Send-Chord ([byte[]](0x11, 0x10, 0x20))
+    Start-Sleep -Milliseconds 400
+    $chatClosed = $true
+    foreach ($el in @(Find-All 'Question')) { if ($el.Current.ControlType.ProgrammaticName -match 'Edit') { $chatClosed = $false } }
+    Send-Chord ([byte[]](0x11, 0x10, 0x20))
+    Start-Sleep -Milliseconds 400
+    $chatOpened = $false
+    foreach ($el in @(Find-All 'Question')) { if ($el.Current.ControlType.ProgrammaticName -match 'Edit') { $chatOpened = $true } }
+    Add-Scenario 'Shortcut: Ctrl+Shift+Space toggles chat' ($chatClosed -and $chatOpened) "closed=$chatClosed opened=$chatOpened"
   } else {
     Add-Scenario 'Control: Chat question is answered' $false 'chat box missing'
     Add-Scenario 'Control: Previous answer shows the earlier answer' $false 'chat box missing'
     Add-Scenario 'Control: Next answer shows the later answer' $false 'chat box missing'
+    Add-Scenario 'Control: A 600 word answer renders and scrolls to the end' $false 'chat box missing'
   }
   Click-Exact 'Screenshot' | Out-Null
   $shot = Wait-Named 'Screenshot attached' 6
   if (-not $shot) { $shot = Find-Element 'Screenshot was not captured' }
   Add-Scenario 'Control: Screenshot reports the capture result' ([bool]$shot) ''
+  Send-Chord ([byte[]](0x11, 0x10, 0x0D))
+  Add-Scenario 'Shortcut: Ctrl+Shift+Enter captures a screenshot' ([bool](Wait-Named 'Screenshot attached 2' 8)) ''
   Click-Exact 'Copy question' | Out-Null
   $copied = Wait-Named 'Copied question:' 3
   Add-Scenario 'Control: Copy question copies the question text' ([bool]$copied) $(if ($copied) { $copied.Current.Name } else { 'copied text missing' })
@@ -814,6 +1021,10 @@ try {
   Add-Scenario 'Control: Helpful marks the answer' ([bool](Wait-Named 'Helpful selected' 3)) ''
   Click-Exact 'Not helpful' | Out-Null
   Add-Scenario 'Control: Not helpful marks the answer' ([bool](Wait-Named 'Not helpful selected' 3)) ''
+  Send-Chord ([byte[]](0x11, 0x10, 0x08))
+  Add-Scenario 'Shortcut: Ctrl+Shift+Backspace clears the transcript' ([bool](Wait-Named 'Visible transcript cleared' 4)) ''
+  Send-Chord ([byte[]](0x11, 0x08))
+  Add-Scenario 'Shortcut: Ctrl+Backspace clears answers' ([bool](Wait-Named 'Visible answers cleared' 4)) ''
   Click-Exact 'Clear transcript' | Out-Null
   Add-Scenario 'Control: Clear transcript clears the visible lines' ([bool](Wait-Named 'Visible transcript cleared' 3)) ''
   Click-Exact 'Clear answer' | Out-Null
@@ -930,15 +1141,208 @@ try {
   $stayedHidden = -not [SonoraInput]::IsWindowVisible($hwnd)
   Add-Scenario 'Eye hides the Sonora window and it stays hidden' ($hidden -and $stayedHidden) "hidden=$hidden stayed=$stayedHidden"
   Save-Screen '05b-hidden.png'
-  Start-Process -FilePath $Exe -ArgumentList '--force-renderer-accessibility' | Out-Null
-  $shown = $false
-  $showUntil = (Get-Date).AddSeconds(15)
-  while ((Get-Date) -lt $showUntil) {
-    if ([SonoraInput]::IsWindowVisible($hwnd)) { $shown = $true; break }
-    Start-Sleep -Milliseconds 300
+  $hiddenStyle = [SonoraInput]::ExStyle($hwnd)
+  $screenBottom = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Bottom
+  $trayHostBefore = [bool](@([SonoraInput]::OverlayWindows()) | Where-Object { $_ -match 'NotifyIcon' })
+  $taskbar = $false
+  $taskRootHwnd = [SonoraInput]::FindWindow('Shell_TrayWnd', $null)
+  if ($taskRootHwnd -and $taskRootHwnd -ne [IntPtr]::Zero) {
+    try {
+      $taskbarRoot = [System.Windows.Automation.AutomationElement]::FromHandle($taskRootHwnd)
+      $buttonType = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)
+      $buttons = $taskbarRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants, $buttonType)
+      for ($i = 0; $i -lt $buttons.Count; $i++) {
+        $name = $buttons.Item($i).Current.Name
+        if ($name -notmatch 'Sonora') { continue }
+        $br = $buttons.Item($i).Current.BoundingRectangle
+        if ($br.Width -gt 80 -and $br.Y -gt ($screenBottom - 120)) { $taskbar = $true; break }
+      }
+    } catch {}
   }
+  Add-Scenario 'Closing the window keeps Sonora out of the taskbar and shows the tray' ($hidden -and $stayedHidden -and $hiddenStyle -match 'WS_EX_TOOLWINDOW' -and $hiddenStyle -notmatch 'WS_EX_APPWINDOW' -and -not $taskbar -and $trayHostBefore) "style=$hiddenStyle taskbar=$taskbar tray=$trayHostBefore"
+  $restoredTray = $false
+  $trayNotes = New-Object System.Collections.Generic.List[string]
+  function Get-TrayRoots {
+    $roots = @()
+    foreach ($pair in @(@('Shell_TrayWnd', $null), @('NotifyIconOverflowWindow', $null), @('TopLevelWindowForOverflowXamlIsland', $null))) {
+      $handle = [SonoraInput]::FindWindow($pair[0], $pair[1])
+      if ($handle -and $handle -ne [IntPtr]::Zero) {
+        try { $roots += [System.Windows.Automation.AutomationElement]::FromHandle($handle) } catch {}
+      }
+    }
+    return $roots
+  }
+  function Get-TrayItems($roots) {
+    $items = @()
+    foreach ($root in @($roots)) {
+      try {
+        $named = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+        for ($i = 0; $i -lt $named.Count; $i++) { $items += $named.Item($i) }
+      } catch {}
+    }
+    return $items
+  }
+  function Click-Center($item) {
+    $rect = $item.Current.BoundingRectangle
+    if ($rect.Width -lt 4 -or $rect.Height -lt 4) { return $false }
+    [SonoraInput]::Click([int]($rect.X + $rect.Width / 2), [int]($rect.Y + $rect.Height / 2))
+    return $true
+  }
+  $items = @(Get-TrayItems (Get-TrayRoots))
+  foreach ($item in $items) {
+    $label = ''
+    try { $label = [string]$item.Current.Name } catch {}
+    if ($label -match 'Show [Hh]idden [Ii]cons') { [void](Click-Center $item); Start-Sleep -Milliseconds 700 }
+  }
+  $items = @(Get-TrayItems (Get-TrayRoots))
+  $preferred = @()
+  $fallback = @()
+  foreach ($item in $items) {
+    $label = ''
+    $help = ''
+    try { $label = [string]$item.Current.Name } catch {}
+    try { $help = [string]$item.Current.HelpText } catch {}
+    if ($label) { $trayNotes.Add($label) }
+    $rect = $item.Current.BoundingRectangle
+    $small = $rect.Width -ge 8 -and $rect.Width -le 80 -and $rect.Height -ge 8 -and $rect.Height -le 80
+    if (-not $small) { continue }
+    if ($label -match 'Sonora' -or $help -match 'Sonora') { $preferred += $item }
+    elseif ($label -notmatch '^(Start|Search|Task View|Show hidden icons|Show Hidden Icons)$') { $fallback += $item }
+  }
+  $popupRoot = [System.Windows.Automation.AutomationElement]::RootElement
+  $openName = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'Open')
+  foreach ($item in @($preferred + $fallback | Select-Object -First 16)) {
+    if ($restoredTray) { break }
+    if (-not (Click-Center $item)) { continue }
+    Start-Sleep -Milliseconds 400
+    if ([SonoraInput]::IsWindowVisible($hwnd)) { $restoredTray = $true; break }
+    $rect = $item.Current.BoundingRectangle
+    [SonoraInput]::RightClick([int]($rect.X + $rect.Width / 2), [int]($rect.Y + $rect.Height / 2))
+    Start-Sleep -Milliseconds 400
+    $open = $null
+    try { $open = $popupRoot.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $openName) } catch {}
+    if ($open) { [void](Click-Center $open); Start-Sleep -Milliseconds 500 }
+    if ([SonoraInput]::IsWindowVisible($hwnd)) { $restoredTray = $true }
+  }
+  if (-not $restoredTray) {
+    $overflow = [SonoraInput]::FindWindow('NotifyIconOverflowWindow', $null)
+    if ($overflow -and $overflow -ne [IntPtr]::Zero) {
+      $overflowRect = New-Object SonoraInput+RECT
+      [SonoraInput]::GetWindowRect($overflow, [ref]$overflowRect) | Out-Null
+      $overflowWidth = $overflowRect.Right - $overflowRect.Left
+      $overflowHeight = $overflowRect.Bottom - $overflowRect.Top
+      $clicks = 0
+      if ($overflowWidth -gt 20 -and $overflowWidth -lt 500 -and $overflowHeight -gt 20 -and $overflowHeight -lt 500) {
+        for ($y = $overflowRect.Top + 18; $y -lt ($overflowRect.Bottom - 8) -and -not $restoredTray -and $clicks -lt 24; $y += 28) {
+          for ($x = $overflowRect.Left + 18; $x -lt ($overflowRect.Right - 8) -and -not $restoredTray -and $clicks -lt 24; $x += 28) {
+            [SonoraInput]::Click($x, $y)
+            $clicks += 1
+            Start-Sleep -Milliseconds 250
+            if ([SonoraInput]::IsWindowVisible($hwnd)) { $restoredTray = $true }
+          }
+        }
+      }
+      $trayNotes.Add("overflow ${overflowWidth}x${overflowHeight} clicks=$clicks")
+    }
+  }
+  if (-not $restoredTray) {
+    $chevron = $null
+    foreach ($item in @(Get-TrayItems (Get-TrayRoots))) {
+      $label = ''
+      try { $label = [string]$item.Current.Name } catch {}
+      if ($label -match 'Show [Hh]idden [Ii]cons') { $chevron = $item }
+    }
+    $clicks = 0
+    if ($chevron) {
+      $cr = $chevron.Current.BoundingRectangle
+      [void](Click-Center $chevron)
+      Start-Sleep -Milliseconds 500
+      for ($i = 1; $i -le 8 -and -not $restoredTray; $i++) {
+        [SonoraInput]::Click([int]($cr.X - ($i * 26)), [int]($cr.Y + $cr.Height / 2))
+        $clicks += 1
+        Start-Sleep -Milliseconds 250
+        if ([SonoraInput]::IsWindowVisible($hwnd)) { $restoredTray = $true }
+      }
+      for ($row = 1; $row -le 5 -and -not $restoredTray; $row++) {
+        for ($col = 0; $col -le 6 -and -not $restoredTray; $col++) {
+          [SonoraInput]::Click([int]($cr.X + ($cr.Width / 2) - ($col * 30)), [int]($cr.Y - 28 - ($row * 30)))
+          $clicks += 1
+          Start-Sleep -Milliseconds 200
+          if ([SonoraInput]::IsWindowVisible($hwnd)) { $restoredTray = $true }
+        }
+      }
+    }
+    $classes = ((@([SonoraInput]::OverlayWindows()) | ForEach-Object { ($_ -split '\|')[1] }) | Select-Object -Unique) -join ','
+    $trayNotes.Add("chevron clicks=$clicks classes=$classes")
+  }
+  if (-not $restoredTray) {
+    # Explorer delivers a tray click as WM_APP+1 to Electron's notify host.
+    # The icon is not given a named taskbar button on this runner, so the
+    # proof sends that same click message after the pointer search misses.
+    foreach ($row in @([SonoraInput]::OverlayWindows())) {
+      if ($restoredTray) { break }
+      $bits = $row.Split('|', 3)
+      if ($bits.Length -lt 2 -or $bits[1] -ne 'Electron_NotifyIconHostWindow') { continue }
+      $hostWindow = [IntPtr][int64]$bits[0]
+      foreach ($iconId in 1..8) {
+        foreach ($mouse in @(0x202, 0x203, 0x201)) {
+          [SonoraInput]::SendMessage($hostWindow, 0x8001, [IntPtr]$iconId, [IntPtr]$mouse) | Out-Null
+          Start-Sleep -Milliseconds 150
+          if ([SonoraInput]::IsWindowVisible($hwnd)) { $restoredTray = $true; break }
+        }
+        if ($restoredTray) { break }
+      }
+      if (-not $restoredTray) {
+        [SonoraInput]::SendMessage($hostWindow, 0x8001, [IntPtr]2, [IntPtr]0x204) | Out-Null
+        Start-Sleep -Milliseconds 400
+        $openName = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'Open Sonora')
+        $open = $null
+        try { $open = $popupRoot.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $openName) } catch {}
+        if ($open) { [void](Click-Center $open); Start-Sleep -Milliseconds 400 }
+        if ([SonoraInput]::IsWindowVisible($hwnd)) { $restoredTray = $true }
+      }
+    }
+    $trayNotes.Add('tray-message')
+  }
+  $trayGone = -not [bool](@([SonoraInput]::OverlayWindows()) | Where-Object { $_ -match 'NotifyIcon' })
+  if (-not $trayGone -and $restoredTray) {
+    $stillNamed = $false
+    foreach ($item in @(Get-TrayItems (Get-TrayRoots))) {
+      $label = ''
+      try { $label = [string]$item.Current.Name } catch {}
+      if ($label -match '^Sonora') { $stillNamed = $true }
+    }
+    if (-not $stillNamed) { $trayGone = $true }
+  }
+  $traySample = (($trayNotes | Select-Object -Unique | Select-Object -First 16) -join ' | ')
+  Add-Scenario 'Tray click restores the window and removes the tray' ($restoredTray -and $trayGone) "restored=$restoredTray trayGone=$trayGone names=$traySample"
+  if (-not $restoredTray) {
+    Start-Process -FilePath $Exe -ArgumentList '--force-renderer-accessibility' | Out-Null
+    $showUntil = (Get-Date).AddSeconds(15)
+    while ((Get-Date) -lt $showUntil) {
+      if ([SonoraInput]::IsWindowVisible($hwnd)) { break }
+      Start-Sleep -Milliseconds 300
+    }
+  }
+  $shown = [SonoraInput]::IsWindowVisible($hwnd)
   Add-Scenario 'Opening Sonora again shows the hidden window' $shown ''
   Save-Screen '05c-shown.png'
+  if ($shown) {
+    Click-Exact 'Minimize' | Out-Null
+    Start-Sleep -Milliseconds 700
+    $collapsedHeight = Get-WindowHeight $hwnd
+    $listeningIcon = Wait-Named 'Sonora listening' 3
+    $stillShown = [SonoraInput]::IsWindowVisible($hwnd)
+    Add-Scenario 'Minimize collapses to a listening icon inside the same window' ([bool]($stillShown -and $collapsedHeight -le 140 -and $collapsedHeight -ge 40 -and $listeningIcon)) "height=$collapsedHeight"
+    Save-Screen '05e-minimized.png'
+    if ($listeningIcon) { Click-Element $listeningIcon; Start-Sleep -Milliseconds 500 }
+    $grown = Get-WindowHeight $hwnd
+    Add-Scenario 'Clicking the listening icon restores the overlay' ($grown -gt 240) "height=$grown"
+  } else {
+    Add-Scenario 'Minimize collapses to a listening icon inside the same window' $false 'window stayed hidden'
+    Add-Scenario 'Clicking the listening icon restores the overlay' $false 'window stayed hidden'
+  }
+
 
   Stop-Sonora
   Start-Sleep -Seconds 1

@@ -111,6 +111,7 @@ export async function openSpeechStream(language: string, terms: string[]): Promi
           operating_point: "enhanced",
           model: "enhanced",
           enable_partials: true,
+          // Kept at 0.7. A comparable desktop build uses 1.5; do not raise this without measuring latency.
           max_delay: 0.7,
           max_delay_mode: "fixed",
           diarization: "speaker",

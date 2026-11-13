@@ -12,6 +12,8 @@ type Props = {
   className?: string;
   /** Pixels from bottom still considered "at latest". */
   threshold?: number;
+  /** Answer panes stay where the reader left them. Transcript panes follow. */
+  follow?: boolean;
 };
 
 function prefersReducedMotion() {
@@ -27,12 +29,14 @@ export default function FollowLatestPane({
   jumpLabel = "Jump to latest",
   className = "",
   threshold = 32,
+  follow = true,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const pinnedRef = useRef(true);
   const lastTopRef = useRef(0);
   const [pinned, setPinned] = useState(true);
+  const [overflow, setOverflow] = useState(false);
 
   const setPin = useCallback((value: boolean) => {
     pinnedRef.current = value;
@@ -53,24 +57,27 @@ export default function FollowLatestPane({
 
   useLayoutEffect(() => {
     setPin(true);
-    toBottom(false);
-  }, [resetKey, setPin, toBottom]);
+    if (follow) toBottom(false);
+  }, [resetKey, setPin, toBottom, follow]);
 
   useLayoutEffect(() => {
-    if (pinnedRef.current) toBottom(false);
-  }, [children, toBottom]);
+    if (follow && pinnedRef.current) toBottom(false);
+    const el = scrollRef.current;
+    if (el) setOverflow(el.scrollHeight > el.clientHeight + 2);
+  }, [children, toBottom, follow]);
 
   useEffect(() => {
     const content = contentRef.current;
     const el = scrollRef.current;
     if (!content || !el || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(() => {
-      if (pinnedRef.current) toBottom(false);
+      setOverflow(el.scrollHeight > el.clientHeight + 2);
+      if (follow && pinnedRef.current) toBottom(false);
     });
     ro.observe(content);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [toBottom]);
+  }, [toBottom, follow]);
 
   const onScroll = () => {
     const el = scrollRef.current;
@@ -102,6 +109,12 @@ export default function FollowLatestPane({
         <div ref={contentRef} className="lsv-scroll-content">
           {children}
         </div>
+        {!follow && overflow && (
+          <div className="lsv-chevrons">
+            <button type="button" aria-label="Scroll answer up" onClick={() => scrollRef.current?.scrollBy({ top: -200 })}>↑</button>
+            <button type="button" aria-label="Scroll answer down" onClick={() => scrollRef.current?.scrollBy({ top: 200 })}>↓</button>
+          </div>
+        )}
       </div>
       {!pinned && (
         <button

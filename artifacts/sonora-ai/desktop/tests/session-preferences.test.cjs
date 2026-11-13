@@ -126,6 +126,9 @@ function fixture(options = {}) {
       sessionStillUsable: async (sessionId, userId, round) => rows.some(row => row.id === sessionId && row.userId === userId && row.status !== 'ended' && (row.roundNumber ?? 1) === round),
     };
     if (name === '../lib/logger') return { logger: { error() {} } };
+    if (name === '../lib/gemini-answer') return loadTs(path.join(serverRoot, 'lib/gemini-answer.ts'), dependency => {
+      throw new Error(`Unexpected import: ${dependency}`);
+    });
     if (name === './session-create-title') {
       return loadTs(path.join(serverRoot, 'routes/session-create-title.ts'), dependency => {
         if (dependency === '../lib/interview-session-title') {

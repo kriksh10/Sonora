@@ -85,6 +85,17 @@ const server = http.createServer(async (req, res) => {
       if (mode === 'offline') { req.socket.on('error', () => {}); req.socket.destroy(); return; }
       if (mode === 'timeout') return;
       const body = await readBody(req);
+      if (typeof body.question === 'string') {
+        const asked = body.question.toLowerCase();
+        const proofLength = asked.includes('six hundred') ? 600 : asked.includes('two hundred') ? 200 : asked.includes('sixty words') ? 60 : 0;
+        if (proofLength) {
+          const lexicon = ['clear', 'glass', 'panel', 'solid', 'answer', 'scroll', 'opacity', 'window', 'chrome', 'text', 'card', 'fill'];
+          const count = proofLength === 600 ? 599 : proofLength;
+          const words = Array.from({ length: count }, (_, index) => `${lexicon[index % lexicon.length]}${index + 1}`);
+          const tail = proofLength === 600 ? ' ENDWORD' : '';
+          return send(res, 200, { answer: `${words.join(' ')}${tail}`, model: 'e2e' });
+        }
+      }
       return send(res, 200, { answer: `Heard: ${body.question}`, model: 'e2e' });
     }
     const ended = url.pathname.match(/^\/api\/sessions\/([^/]+)$/);

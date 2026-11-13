@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Sonora opacity reference</title>
+  <style>
+    /* Own markup. Documents the observed panel rule only: color-mix alpha, solid text, chrome 10 points lower. */
+    :root { --panel: 0.45; --chrome: 0.35; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      min-height: 100vh;
+      color: #f7f8f8;
+      font: 14px/1.45 "Segoe UI", sans-serif;
+      background:
+        linear-gradient(90deg, #ff2d2d 0 16%, #ffe14a 16% 32%, #2d6bff 32% 48%, #19c37d 48% 64%, #ff7a18 64% 80%, #7a3cff 80% 100%);
+    }
+    .busy {
+      min-height: 100vh;
+      padding: 18px;
+      background-image: repeating-linear-gradient(0deg, transparent 0 22px, rgba(0,0,0,.18) 22px 23px);
+    }
+    .busy p { margin: 0 0 8px; font-weight: 700; font-size: 18px; color: #111; text-shadow: 0 1px 0 #fff; }
+    .busy p.light { color: #fff; text-shadow: 0 1px 0 #000; }
+    .overlay { width: min(760px, calc(100% - 48px)); margin: 28px auto; display: grid; gap: 10px; }
+    .chrome, .card {
+      border: 1px solid rgba(255,255,255,.18);
+      border-radius: 14px;
+      color: #f7f8f8;
+    }
+    .chrome {
+      display: flex; align-items: center; gap: 8px;
+      min-height: 46px; padding: 8px 12px;
+      background: color-mix(in srgb, #1e1e1e calc(var(--chrome) * 100%), transparent);
+    }
+    .card {
+      min-height: 220px; padding: 16px;
+      background: color-mix(in srgb, #1e1e1e calc(var(--panel) * 100%), transparent);
+    }
+    button {
+      border: 0; border-radius: 999px; background: #2a2b2f; color: #f7f8f8;
+      opacity: 1; padding: 6px 12px; font: 600 12px/1.2 "Segoe UI", sans-serif;
+    }
+    h1 { margin: 0; font-size: 15px; }
+    h2 { margin: 0 0 8px; font-size: 16px; }
+    .note { margin: 8px 0 0; }
+  </style>
+</head>
+<body>
+  <div class="busy">
+    <p>HIGH CONTRAST 111111 YELLOW BAND</p>
+    <p class="light">WHITE ON BLUE 222222 REFERENCE</p>
+    <p>BLACK ON GREEN 333333 SEE THROUGH</p>
+    <p class="light">ORANGE VIOLET 444444 SOLID TEXT</p>
+    <div class="overlay" id="overlay">
+      <header class="chrome">
+        <h1>Reference chrome</h1>
+        <button type="button">Solid control</button>
+        <span id="label">45%</span>
+      </header>
+      <article class="card">
+        <h2>Reference card</h2>
+        <p>Only this fill uses the panel alpha. These words stay fully opaque, and the bar above is about ten points clearer than the card.</p>
+        <p class="note" id="detail"></p>
+      </article>
+    </div>
+  </div>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const percent = [15, 45, 95].includes(Number(params.get("opacity"))) ? Number(params.get("opacity")) : 45;
+    const panel = percent / 100;
+    const chrome = Math.max(0.05, panel - 0.10);
+    document.documentElement.style.setProperty("--panel", String(panel));
+    document.documentElement.style.setProperty("--chrome", String(chrome));
+    document.getElementById("label").textContent = percent + "%";
+    document.getElementById("detail").textContent = "Panel " + percent + "%. Chrome " + Math.round(chrome * 100) + "%.";
+    document.title = "Reference opacity " + percent;
+  </script>
+</body>
+</html>

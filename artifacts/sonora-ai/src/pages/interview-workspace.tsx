@@ -1001,7 +1001,8 @@ export default function InterviewWorkspace() {
         setTranscriptClearedAt(new Date().toISOString());
         setInterimTranscript("");
         setNotice("Visible transcript cleared. The saved transcript is unchanged.");
-      } else if (result.type === "screenshot") void (async () => {
+      } else if (result.type === "chat") window.dispatchEvent(new Event("sonora-toggle-chat"));
+      else if (result.type === "screenshot") void (async () => {
         const image = await window.sonoraDesktop?.captureScreen?.();
         if (!image) return;
         screenshotRef.current = image;
@@ -1033,6 +1034,7 @@ export default function InterviewWorkspace() {
     scrollTranscript.current = false;
     transcriptPane.current?.scrollIntoView({ block: "start" });
   }, [transcriptRequest, liveMode]);
+  useEffect(() => { void window.sonoraDesktop?.setLiveShortcuts?.(liveMode); }, [liveMode]);
 
   const recordVoice = async () => {
     if (listening || requestingMic) {

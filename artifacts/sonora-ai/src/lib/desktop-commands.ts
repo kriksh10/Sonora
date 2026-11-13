@@ -16,6 +16,7 @@ export type DesktopCommandResult =
   | { type: "clear-answers" }
   | { type: "clear-transcript" }
   | { type: "screenshot" }
+  | { type: "chat" }
   | { type: "ignore" };
 
 export function neighborAnswer(answers: string[], current: string, direction: 1 | -1) {
@@ -40,9 +41,9 @@ export function interpretDesktopCommand(action: string, ctx: DesktopCommandConte
     case "alternate":
       return ctx.latestQuestion.trim() ? { type: "again" } : { type: "ignore" };
     case "scrollUp":
-      return { type: "scroll", top: -180 };
+      return { type: "scroll", top: -200 };
     case "scrollDown":
-      return { type: "scroll", top: 180 };
+      return { type: "scroll", top: 200 };
     case "previous":
     case "next": {
       const answer = neighborAnswer(ctx.assistantAnswers, ctx.answer, action === "next" ? 1 : -1);
@@ -54,6 +55,8 @@ export function interpretDesktopCommand(action: string, ctx: DesktopCommandConte
       return { type: "clear-transcript" };
     case "screenshot":
       return { type: "screenshot" };
+    case "chat":
+      return { type: "chat" };
     default:
       return { type: "ignore" };
   }

@@ -113,16 +113,17 @@ The Windows installer is an NSIS x64 build with maximum compression, asar, and d
 
 | Action | Default |
 | --- | --- |
-| Answer | Ctrl+Shift+Enter |
-| Alternate answer | Ctrl+Shift+A |
-| Scroll up / down | Ctrl+Alt+Up / Ctrl+Alt+Down |
-| Previous / next answer | Ctrl+Alt+Left / Ctrl+Alt+Right |
-| Move overlay | Ctrl+Shift+arrows |
-| Hide / show | Ctrl+Shift+H |
-| Clear answers | Ctrl+Shift+K |
-| Clear transcript | Ctrl+Shift+L |
-| Screenshot | Ctrl+Shift+S |
-| Toggle window | Ctrl+Shift+Space |
+| Answer | Ctrl+Enter |
+| Screenshot and analyze | Ctrl+Shift+Enter |
+| Scroll the answer | Ctrl+Up / Ctrl+Down |
+| Previous / next answer | Ctrl+Left / Ctrl+Right |
+| Clear answers | Ctrl+Backspace |
+| Clear transcript | Ctrl+Shift+Backspace |
+| Collapse / restore | Ctrl+H |
+| Chat | Ctrl+Shift+Space |
+| Snap the overlay | Ctrl+Shift+arrows |
+
+These register only during a live session, so they do not take those keys from other apps the rest of the time. Collapse shrinks the same window to a listening icon. The tray icon appears when the window is closed.
 
 On macOS the Ctrl defaults use Command as well (`CommandOrControl`). Shortcuts can be changed in Window settings. Each one needs a modifier. The screenshot shortcut still asks before a picture is sent.
 

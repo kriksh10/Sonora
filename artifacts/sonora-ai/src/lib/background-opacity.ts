@@ -5,12 +5,12 @@ export function createBackgroundOpacity(options: {
   error: (message: string) => void;
   timeoutMs?: number;
 }) {
-  let confirmed = 0.4;
+  let confirmed = 0.45;
   let wanted = confirmed;
   let revision = 0;
   let saving = false;
   let disposed = false;
-  const valid = (value: number) => Number.isFinite(value) && value >= 0 && value <= 1;
+  const valid = (value: number) => Number.isFinite(value) && value >= 0.15 && value <= 0.95;
 
   async function flush() {
     saving = true;
