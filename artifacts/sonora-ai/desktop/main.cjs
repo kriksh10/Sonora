@@ -18,6 +18,7 @@ let quitting = false;
 let alwaysOnTop = true;
 let collapsed = false;
 let expandedBounds = null;
+let expandedMinimum = null;
 let snapPlace = { col: 1, row: 0 };
 let liveShortcuts = false;
 let contentProtection = ['win32', 'darwin'].includes(process.platform);
@@ -175,10 +176,14 @@ function setCollapsed(value) {
   if (next === collapsed) { broadcast(); return; }
   if (next) {
     expandedBounds = win.getBounds();
-    const at = expandedBounds;
-    win.setBounds({ x: at.x, y: at.y, width: 72, height: 72 });
+    try { expandedMinimum = win.getMinimumSize?.() || [390, 620]; } catch { expandedMinimum = [390, 620]; }
+    // The normal answer pane cannot shrink below 620px. The listening icon can.
+    win.setMinimumSize?.(72, 72);
+    win.setBounds({ x: expandedBounds.x, y: expandedBounds.y, width: 72, height: 72 });
     win.setResizable?.(false);
   } else if (expandedBounds) {
+    const minimum = expandedMinimum || [390, 620];
+    win.setMinimumSize?.(minimum[0], minimum[1]);
     win.setBounds(expandedBounds);
     win.setResizable?.(true);
   }

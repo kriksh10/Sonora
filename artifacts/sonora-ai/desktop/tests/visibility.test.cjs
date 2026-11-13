@@ -93,6 +93,7 @@ test('minimize collapses inside the same window and the tray is only for a hidde
   assert.equal(f.window.isVisible(), false);
   assert.equal(f.menu().some(item => item.label === 'Quit'), true);
   const main = fs.readFileSync(path.resolve(__dirname, '../main.cjs'), 'utf8');
+  assert.match(main, /setMinimumSize\?\.\(72, 72\)/);
   assert.match(main, /setCollapsed\(true\)/);
   assert.match(main, /tray\.on\('click', show\)/);
   assert.match(main, /skipTaskbar: true/);

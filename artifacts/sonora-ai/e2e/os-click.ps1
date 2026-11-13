@@ -1145,6 +1145,36 @@ try {
       $trayNotes.Add("overflow ${overflowWidth}x${overflowHeight} clicks=$clicks")
     }
   }
+  if (-not $restoredTray) {
+    $chevron = $null
+    foreach ($item in @(Get-TrayItems (Get-TrayRoots))) {
+      $label = ''
+      try { $label = [string]$item.Current.Name } catch {}
+      if ($label -match 'Show [Hh]idden [Ii]cons') { $chevron = $item }
+    }
+    $clicks = 0
+    if ($chevron) {
+      $cr = $chevron.Current.BoundingRectangle
+      [void](Click-Center $chevron)
+      Start-Sleep -Milliseconds 500
+      for ($i = 1; $i -le 8 -and -not $restoredTray; $i++) {
+        [SonoraInput]::Click([int]($cr.X - ($i * 26)), [int]($cr.Y + $cr.Height / 2))
+        $clicks += 1
+        Start-Sleep -Milliseconds 250
+        if ([SonoraInput]::IsWindowVisible($hwnd)) { $restoredTray = $true }
+      }
+      for ($row = 1; $row -le 5 -and -not $restoredTray; $row++) {
+        for ($col = 0; $col -le 6 -and -not $restoredTray; $col++) {
+          [SonoraInput]::Click([int]($cr.X + ($cr.Width / 2) - ($col * 30)), [int]($cr.Y - 28 - ($row * 30)))
+          $clicks += 1
+          Start-Sleep -Milliseconds 200
+          if ([SonoraInput]::IsWindowVisible($hwnd)) { $restoredTray = $true }
+        }
+      }
+    }
+    $classes = ((@([SonoraInput]::OverlayWindows()) | ForEach-Object { ($_ -split '\|')[1] }) | Select-Object -Unique) -join ','
+    $trayNotes.Add("chevron clicks=$clicks classes=$classes")
+  }
   $trayGone = -not [bool](@([SonoraInput]::OverlayWindows()) | Where-Object { $_ -match 'NotifyIcon' })
   $traySample = (($trayNotes | Select-Object -Unique | Select-Object -First 16) -join ' | ')
   Add-Scenario 'Tray click restores the window and removes the tray' ($restoredTray -and $trayGone) "restored=$restoredTray trayGone=$trayGone names=$traySample"
