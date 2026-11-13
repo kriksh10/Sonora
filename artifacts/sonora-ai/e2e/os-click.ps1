@@ -882,6 +882,7 @@ try {
   } catch {
     Add-Scenario 'Library delete flow completed' $false $_.Exception.Message
     Write-Host "library delete failed: $($_.Exception.Message)"
+    if (Find-Exact 'Call Sessions') { Click-Exact 'Call Sessions' | Out-Null; Start-Sleep -Milliseconds 400 }
   }
 
   function Set-Slider([double]$Ratio) {

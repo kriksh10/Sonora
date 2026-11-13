@@ -121,9 +121,9 @@ export default function DesktopSessions(props: {
         </div>
         {!collapsed && <div className="dp-label">Interview Assistant</div>}
         <button className="dp-nav-btn" onClick={props.onCreate}><Plus size={15} />{!collapsed && "Create session"}</button>
-        <button className={`dp-nav-btn ${panel === "sessions" ? "is-active" : ""}`} onClick={() => openPanel("sessions")}><Mic size={15} />{!collapsed && "Call Sessions"}{!collapsed && live && <span className="dp-live-badge">Live</span>}</button>
-        <button className={`dp-nav-btn ${panel === "resumes" ? "is-active" : ""}`} onClick={() => openPanel("resumes")}><FileText size={15} />{!collapsed && "Resumes"}</button>
-        <button className={`dp-nav-btn ${panel === "documents" ? "is-active" : ""}`} onClick={() => openPanel("documents")}><FileText size={15} />{!collapsed && "Documents"}</button>
+        <button className={`dp-nav-btn ${panel === "sessions" ? "is-active" : ""}`} aria-label="Call Sessions" onClick={() => openPanel("sessions")}><Mic size={15} />{!collapsed && "Call Sessions"}{!collapsed && live && <span className="dp-live-badge" aria-hidden="true">Live</span>}</button>
+        <button className={`dp-nav-btn ${panel === "resumes" ? "is-active" : ""}`} aria-label="Resumes" onClick={() => openPanel("resumes")}><FileText size={15} />{!collapsed && "Resumes"}</button>
+        <button className={`dp-nav-btn ${panel === "documents" ? "is-active" : ""}`} aria-label="Documents" onClick={() => openPanel("documents")}><FileText size={15} />{!collapsed && "Documents"}</button>
         {!collapsed && <div className="dp-label">Prepare</div>}
         <button className="dp-nav-btn" onClick={props.onMock}><Mic size={15} />{!collapsed && "Mock Interview"}</button>
         {!collapsed && <div className="dp-side-foot">
