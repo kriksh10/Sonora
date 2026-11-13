@@ -788,13 +788,31 @@ try {
   Select-Theme 'Light'
   Add-Scenario 'Theme light is applied' ([bool]((Wait-Named 'Theme light' 3) -and (Find-Exact 'Light selected'))) ''
 
+  function Send-MockJson([string]$Json) {
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($Json)
+    $req = [System.Net.HttpWebRequest]::Create('http://127.0.0.1:4173/api/e2e/seed')
+    $req.Method = 'POST'
+    $req.ContentType = 'application/json'
+    $req.Timeout = 10000
+    $req.Proxy = $null
+    $stream = $req.GetRequestStream()
+    $stream.Write($bytes, 0, $bytes.Length)
+    $stream.Close()
+    $resp = $req.GetResponse()
+    $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())
+    $text = $reader.ReadToEnd()
+    $reader.Close(); $resp.Close()
+    Write-Host "mock seed $text"
+    if (-not $text) { return $null }
+    return $text | ConvertFrom-Json
+  }
   function Add-E2EItem([string]$Title, [string]$Resume, [string]$Document, [string]$Status) {
-    $payload = @{ title = $Title; company = $Title; resumeText = $Resume; documentsText = $Document; status = $Status } | ConvertTo-Json
-    return Invoke-RestMethod -Method POST -Uri 'http://127.0.0.1:4173/api/e2e/seed' -Body $payload -ContentType 'application/json; charset=utf-8'
+    $payload = @{ title = $Title; company = $Title; resumeText = $Resume; documentsText = $Document; status = $Status } | ConvertTo-Json -Compress
+    return Send-MockJson $payload
   }
   function Remove-E2EItem([string]$Id) {
-    $payload = @{ id = $Id; remove = $true } | ConvertTo-Json
-    Invoke-RestMethod -Method POST -Uri 'http://127.0.0.1:4173/api/e2e/seed' -Body $payload -ContentType 'application/json; charset=utf-8' | Out-Null
+    $payload = @{ id = $Id; remove = $true } | ConvertTo-Json -Compress
+    Send-MockJson $payload | Out-Null
   }
   function Wait-Absent([string]$Name, [int]$Seconds = 4) {
     $until = (Get-Date).AddSeconds($Seconds)
@@ -804,6 +822,7 @@ try {
     } while ((Get-Date) -lt $until)
     return -not (Find-Element $Name)
   }
+  try {
   $cedar = Add-E2EItem 'Cedar archive' '' '' 'ready'
   $lattice = Add-E2EItem 'Lattice resume' 'Lattice resume body' '' 'ready'
   $orbit = Add-E2EItem 'Orbit brief' '' 'Orbit brief body' 'ready'
@@ -811,6 +830,7 @@ try {
   Click-Exact 'Call Sessions' | Out-Null
   $seeded = [bool]((Wait-Named 'Cedar archive' 4) -and (Wait-Named 'Lattice resume' 2) -and (Wait-Named 'Orbit brief' 2) -and (Wait-Named 'Live desk' 2))
   Add-Scenario 'Library items are listed' $seeded ''
+  if (-not $seeded) { throw 'Seeded sessions did not appear in the list.' }
   Click-Exact 'Delete session Cedar archive' | Out-Null
   $confirmSession = Wait-Named 'Confirm delete' 3
   Save-Screen 'delete-session-confirm.png'
@@ -858,6 +878,10 @@ try {
   if ($liveDesk.id) { Remove-E2EItem $liveDesk.id }
   Click-Exact 'Call Sessions' | Out-Null
   Start-Sleep -Milliseconds 400
+  } catch {
+    Add-Scenario 'Library delete flow completed' $false $_.Exception.Message
+    Write-Host "library delete failed: $($_.Exception.Message)"
+  }
 
   function Set-Slider([double]$Ratio) {
     [SonoraInput]::RaiseWithoutFocus($hwnd) | Out-Null

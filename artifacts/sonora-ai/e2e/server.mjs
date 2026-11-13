@@ -85,10 +85,12 @@ const server = http.createServer(async (req, res) => {
         if (index < 0) return send(res, 404, { error: 'Session not found.' });
         if (body.remove === true) sessions.splice(index, 1);
         else if (body.status) sessions[index].status = body.status;
+        note(`seed update ${body.id} remove=${body.remove === true} status=${body.status || ''}`);
         return send(res, 200, { ok: true });
       }
       const session = makeSession(body);
       sessions.unshift(session);
+      note(`seed ${session.id} ${session.title} status=${session.status}`);
       return send(res, 200, session);
     }
     if (url.pathname === '/api/sessions' && req.method === 'POST') {
