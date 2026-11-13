@@ -827,6 +827,9 @@ try {
   $lattice = Add-E2EItem 'Lattice resume' 'Lattice resume body' '' 'ready'
   $orbit = Add-E2EItem 'Orbit brief' '' 'Orbit brief body' 'ready'
   $liveDesk = Add-E2EItem 'Live desk' '' '' 'active'
+  # The page heading is also named Call Sessions. Leave that panel first so the click hits the nav button, which reloads the list.
+  Click-Exact 'Documents' | Out-Null
+  Start-Sleep -Milliseconds 300
   Click-Exact 'Call Sessions' | Out-Null
   $seeded = [bool]((Wait-Named 'Cedar archive' 4) -and (Wait-Named 'Lattice resume' 2) -and (Wait-Named 'Orbit brief' 2) -and (Wait-Named 'Live desk' 2))
   Add-Scenario 'Library items are listed' $seeded ''
@@ -876,6 +879,8 @@ try {
   $liveRemains = [bool](Find-Element 'Live desk')
   Add-Scenario 'Deleting a live session is blocked' ([bool]($blocked -and $liveRemains)) "blocked=$([bool]$blocked) remains=$liveRemains"
   if ($liveDesk.id) { Remove-E2EItem $liveDesk.id }
+  Click-Exact 'Documents' | Out-Null
+  Start-Sleep -Milliseconds 300
   Click-Exact 'Call Sessions' | Out-Null
   Start-Sleep -Milliseconds 400
   } catch {
