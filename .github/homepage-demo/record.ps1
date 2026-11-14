@@ -182,12 +182,6 @@ $lines[2] = 'Client: If the work runs one extra month, what budget should we set
 
 function Hide-OtherWindows {
   try { [DemoWallpaper]::MinimizeLogWindows() } catch {}
-  $skip = '^(Sonora|explorer|dwm|csrss|winlogon|TextInputHost|SearchHost|StartMenuExperienceHost|ShellExperienceHost|sihost|fontdrvhost|RuntimeBroker|ApplicationFrameHost)$'
-  Get-Process | Where-Object {
-    $_.MainWindowHandle -ne [IntPtr]::Zero -and $_.ProcessName -notmatch $skip
-  } | ForEach-Object {
-    try { [DemoWallpaper]::ShowWindow($_.MainWindowHandle, 6) | Out-Null } catch {}
-  }
 }
 
 function Keep-BackdropUnderOverlay {
