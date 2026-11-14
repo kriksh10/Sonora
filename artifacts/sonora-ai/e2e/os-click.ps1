@@ -1625,15 +1625,24 @@ try {
     $fx = [int]($box.X + $box.W - 151)
     $fy = [int]($box.Y + 22)
     $tries = @("enabled=$enabled")
-    foreach ($dx in @(0, -30, 30, -60, 60)) {
-      $fx = [int]($box.X + $box.W - 151 + $dx)
-      $fy = [int]($box.Y + 22)
-      $tries += "$fx,$fy"
-      [SonoraInput]::Click($fx, $fy)
-      Start-Sleep -Milliseconds 450
-      if ((Get-WindowHeight $hwnd) -le 140) { break }
+    $minimize = Find-Exact 'Minimize'
+    if ($minimize) {
+      $r = $minimize.Current.BoundingRectangle
+      $tries += "uia $([int]$r.X),$([int]$r.Y) $([int]$r.Width)x$([int]$r.Height)"
+      try { Click-Element $minimize } catch { $tries += $_.Exception.Message }
+      Start-Sleep -Milliseconds 800
     }
-    Start-Sleep -Milliseconds 500
+    if ((Get-WindowHeight $hwnd) -gt 140) {
+      foreach ($dx in @(0, -30, 30, -60, 60)) {
+        $fx = [int]($box.X + $box.W - 151 + $dx)
+        $fy = [int]($box.Y + 22)
+        $tries += "$fx,$fy"
+        [SonoraInput]::Click($fx, $fy)
+        Start-Sleep -Milliseconds 400
+        if ((Get-WindowHeight $hwnd) -le 140) { break }
+      }
+    }
+    Start-Sleep -Milliseconds 400
     $collapsedHeight = Get-WindowHeight $hwnd
     $listeningIcon = Wait-Named 'Sonora listening' 3
     $stillShown = [SonoraInput]::IsWindowVisible($hwnd)
