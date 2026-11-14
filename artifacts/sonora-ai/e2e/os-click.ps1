@@ -1608,45 +1608,12 @@ try {
   Add-Scenario 'Opening Sonora again shows the hidden window' $shown ''
   Save-Screen '05c-shown.png'
   if ($shown) {
-    # The restored window sits on the top edge, and a click there never reaches
-    # the minus. Move it down, then click the glyph in the title bar.
-    $box = Get-WindowBox $hwnd
-    [SonoraInput]::SetWindowPos($hwnd, [IntPtr]::Zero, $box.X, 80, 0, 0, [SonoraInput]::SWP_NOSIZE -bor [SonoraInput]::SWP_SHOWWINDOW) | Out-Null
-    Bring-SonoraForward
-    Start-Sleep -Milliseconds 400
-    $ready = (Get-Date).AddSeconds(4)
-    do {
-      $minimize = Find-Exact 'Minimize'
-      $enabled = $false
-      if ($minimize) { try { $enabled = [bool]$minimize.Current.IsEnabled } catch { $enabled = $true } }
-      if (-not $enabled) { Start-Sleep -Milliseconds 200 }
-    } while (-not $enabled -and (Get-Date) -lt $ready)
-    $box = Get-WindowBox $hwnd
-    $fx = [int]($box.X + $box.W - 151)
-    $fy = [int]($box.Y + 22)
-    $tries = @("enabled=$enabled")
-    $minimize = Find-Exact 'Minimize'
-    if ($minimize) {
-      $r = $minimize.Current.BoundingRectangle
-      $tries += "uia $([int]$r.X),$([int]$r.Y) $([int]$r.Width)x$([int]$r.Height)"
-      try { Click-Element $minimize } catch { $tries += $_.Exception.Message }
-      Start-Sleep -Milliseconds 800
-    }
-    if ((Get-WindowHeight $hwnd) -gt 140) {
-      foreach ($dx in @(0, -30, 30, -60, 60)) {
-        $fx = [int]($box.X + $box.W - 151 + $dx)
-        $fy = [int]($box.Y + 22)
-        $tries += "$fx,$fy"
-        [SonoraInput]::Click($fx, $fy)
-        Start-Sleep -Milliseconds 400
-        if ((Get-WindowHeight $hwnd) -le 140) { break }
-      }
-    }
-    Start-Sleep -Milliseconds 400
+    Click-Exact 'Minimize' | Out-Null
+    Start-Sleep -Milliseconds 900
     $collapsedHeight = Get-WindowHeight $hwnd
     $listeningIcon = Wait-Named 'Sonora listening' 3
     $stillShown = [SonoraInput]::IsWindowVisible($hwnd)
-    Add-Scenario 'Minimize collapses to a listening icon inside the same window' ([bool]($stillShown -and $collapsedHeight -le 140 -and $collapsedHeight -ge 40 -and $listeningIcon)) "height=$collapsedHeight clicks=$($tries -join ' | ')"
+    Add-Scenario 'Minimize collapses to a listening icon inside the same window' ([bool]($stillShown -and $collapsedHeight -le 140 -and $collapsedHeight -ge 40 -and $listeningIcon)) "height=$collapsedHeight"
     Save-Screen '05e-minimized.png'
     if ($listeningIcon) {
       # Click the icon's window, not its accessibility box. That box can sit
