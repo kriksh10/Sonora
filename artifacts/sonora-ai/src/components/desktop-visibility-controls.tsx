@@ -137,7 +137,7 @@ export default function DesktopVisibilityControls() {
       <span className="sonora-window-drag-handle desktop-drag inline-flex items-center gap-1 text-xs font-semibold text-white/80" title="Drag here to move Sonora">
         <GripHorizontal size={17} /> Sonora
       </span>
-      <div className="desktop-no-drag ml-auto flex items-center gap-1">
+      <div className="desktop-no-drag ml-auto flex items-center gap-1" style={{ WebkitAppRegion: "no-drag" }}>
         {state?.captureActive && <button type="button" className="sonora-window-action text-red-200" aria-label="Stop all audio"
           onClick={() => { if (bridge.stopAllCapture) void bridge.stopAllCapture().catch(() => setError("Use tray → Stop audio capture.")); else window.dispatchEvent(new Event("sonora-stop-audio")); }}>
           <Square size={13} /> Stop audio
@@ -149,7 +149,7 @@ export default function DesktopVisibilityControls() {
           aria-label="Hide from screen sharing (best effort)" title="Screen-share exclusion is best effort"
           className={`sonora-window-action ${state?.contentProtection ? "text-emerald-300" : ""}`}
           onClick={() => void run(() => bridge.setContentProtection(!state?.contentProtection))}><ShieldCheck size={14} /></button>
-        <button type="button" disabled={pending || !bridge.minimize} className="sonora-window-action" aria-label="Minimize"
+        <button type="button" disabled={pending || !bridge.minimize} className="sonora-window-action" aria-label="Minimize" style={{ WebkitAppRegion: "no-drag" }}
           title="Collapse to a listening icon. Ctrl+H does the same during a live session."
           onPointerDown={event => {
             if (event.button !== 0) return;

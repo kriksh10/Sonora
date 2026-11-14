@@ -203,6 +203,7 @@ function show() {
   win.setSkipTaskbar?.(true);
   win.show();
   win.focus();
+  try { win.setIgnoreMouseEvents(false); ignoringMouse = false; } catch { /* mouse events stay as they were */ }
   win.setSkipTaskbar?.(true);
   if (alwaysOnTop) holdOnTop();
   syncTray();
