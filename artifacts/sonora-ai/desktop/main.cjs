@@ -627,11 +627,10 @@ function createWindow() {
     // restore() lands after this handler and can wake the page after the
     // collapsed event was dropped. Push the icon class again once it is awake.
     setTimeout(() => {
-      if (!win || win.isDestroyed() || !collapsed) return;
-      enforceCollapsedSize();
-      syncCollapsedClass();
-      broadcast();
-    }, 200);
+      if (!win || win.isDestroyed()) return;
+      if (!collapsed) setCollapsed(true);
+      else { enforceCollapsedSize(); holdCollapsedPaint(); }
+    }, 400);
   });
   win.on('restore', () => {
     if (!collapsed) return;

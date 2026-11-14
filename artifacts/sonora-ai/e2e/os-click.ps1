@@ -1608,19 +1608,19 @@ try {
   Add-Scenario 'Opening Sonora again shows the hidden window' $shown ''
   Save-Screen '05c-shown.png'
   if ($shown) {
+    # A real click on the button. Accessibility invoke also asks Windows to
+    # minimize the window, which leaves the signed-out page clipped in the icon.
     Bring-SonoraForward
     Start-Sleep -Milliseconds 300
     $minimize = Find-Exact 'Minimize'
-    $invoked = $false
     if ($minimize) {
-      $pattern = $null
-      if ($minimize.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) {
-        $pattern.Invoke()
-        $invoked = $true
+      try { Click-Element $minimize } catch {
+        Bring-SonoraForward
+        Start-Sleep -Milliseconds 250
+        Click-Element $minimize
       }
     }
-    if (-not $invoked) { Click-Exact 'Minimize' | Out-Null }
-    Start-Sleep -Milliseconds 700
+    Start-Sleep -Milliseconds 900
     $collapsedHeight = Get-WindowHeight $hwnd
     $listeningIcon = Wait-Named 'Sonora listening' 3
     $stillShown = [SonoraInput]::IsWindowVisible($hwnd)
