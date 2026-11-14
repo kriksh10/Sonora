@@ -76,6 +76,49 @@ public class DemoKeys {
 "@
 [DemoWin]::SetProcessDPIAware() | Out-Null
 
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class DemoDisplay {
+  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Ansi)]
+  public struct DEVMODE {
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst=32)] public string dmDeviceName;
+    public short dmSpecVersion, dmDriverVersion, dmSize, dmDriverExtra;
+    public int dmFields, dmPositionX, dmPositionY, dmDisplayOrientation, dmDisplayFixedOutput;
+    public short dmColor, dmDuplex, dmYResolution, dmTTOption, dmCollate;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst=32)] public string dmFormName;
+    public short dmLogPixels;
+    public int dmBitsPerPel, dmPelsWidth, dmPelsHeight, dmDisplayFlags, dmDisplayFrequency;
+    public int dmICMMethod, dmICMIntent, dmMediaType, dmDitherType, dmReserved1, dmReserved2, dmPanningWidth, dmPanningHeight;
+  }
+  [DllImport("user32.dll", CharSet=CharSet.Ansi)] public static extern int EnumDisplaySettings(string device, int mode, ref DEVMODE devMode);
+  [DllImport("user32.dll", CharSet=CharSet.Ansi)] public static extern int ChangeDisplaySettings(ref DEVMODE devMode, int flags);
+  public static bool Set(int width, int height) {
+    DEVMODE mode = new DEVMODE();
+    mode.dmSize = (short)Marshal.SizeOf(typeof(DEVMODE));
+    for (int i = 0; EnumDisplaySettings(null, i, ref mode) != 0; i++) {
+      if (mode.dmPelsWidth == width && mode.dmPelsHeight == height && mode.dmBitsPerPel >= 32) {
+        mode.dmFields = 0x00040000 | 0x00080000 | 0x00100000 | 0x00400000;
+        return ChangeDisplaySettings(ref mode, 0) == 0;
+      }
+    }
+    return false;
+  }
+}
+"@
+function Set-HeroResolution {
+  try {
+    foreach ($pair in @(@(1280, 800), @(1280, 720), @(1366, 768), @(1600, 900), @(1920, 1080))) {
+      $ok = [DemoDisplay]::Set([int]$pair[0], [int]$pair[1])
+      Write-Host "display $($pair[0])x$($pair[1]) -> $ok"
+      if ($ok) { Start-Sleep -Milliseconds 600; return }
+    }
+  } catch {
+    Write-Host "display change skipped: $($_.Exception.Message)"
+  }
+  Write-Host 'keeping the current display mode'
+}
+
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $OutDir = (Resolve-Path $OutDir).Path
 $question = 'If the work runs one extra month, what budget should we set aside?'
@@ -117,15 +160,17 @@ function Show-Backdrop([int]$X, [int]$Y, [int]$Width, [int]$Height) {
     $stage = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(26, 29, 34))
     $g.FillRectangle($stage, 0, 0, $w, $h)
     $stage.Dispose()
+    $col = if ($global:clientColumn) { [int]$global:clientColumn } else { 300 }
     $bar = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(44, 49, 58))
-    $g.FillRectangle($bar, 0, 0, 420, 64)
-    $g.FillRectangle($bar, 0, ($h - 84), 420, 84)
+    $g.FillRectangle($bar, 0, 0, $col, 64)
+    $g.FillRectangle($bar, 0, ($h - 84), $col, 84)
     $bar.Dispose()
     $tile = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(58, 64, 74))
-    $g.FillRectangle($tile, 24, 88, 372, ($h - 196))
+    $g.FillRectangle($tile, 16, 88, ($col - 32), ($h - 196))
     $tile.Dispose()
     $avatar = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(92, 101, 115))
-    $g.FillEllipse($avatar, 150, 250, 120, 120)
+    $avatarX = [int](($col - 96) / 2)
+    $g.FillEllipse($avatar, $avatarX, 220, 96, 96)
     $avatar.Dispose()
     $ink = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(230, 232, 238))
     $muted = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(183, 189, 199))
@@ -134,23 +179,25 @@ function Show-Backdrop([int]$X, [int]$Y, [int]$Width, [int]$Height) {
     $smallFont = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Regular)
     $g.DrawString('Client sync', $titleFont, $ink, 56, 16)
     $elapsed = if ($global:callClock) { [int]$global:callClock.Elapsed.TotalSeconds } else { 0 }
-    $g.DrawString(('{0:00}:{1:00}' -f [int]($elapsed / 60), ($elapsed % 60)), $smallFont, $muted, 320, 22)
+    $g.DrawString(('{0:00}:{1:00}' -f [int]($elapsed / 60), ($elapsed % 60)), $smallFont, $muted, ($col - 88), 22)
     $live = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(60, 154, 98))
     $g.FillEllipse($live, 24, 24, 16, 16)
     $live.Dispose()
-    $g.DrawString('Client', $labelFont, $ink, 174, 390)
-    $g.DrawString('Camera off', $smallFont, $muted, 156, 424)
+    $nameX = [int](($col - 70) / 2)
+    $g.DrawString('Client', $labelFont, $ink, $nameX, 336)
+    $g.DrawString('Camera off', $smallFont, $muted, ($nameX - 16), 368)
     $dot = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(196, 202, 210))
-    $g.FillEllipse($dot, 92, ($h - 62), 36, 36)
-    $g.FillEllipse($dot, 176, ($h - 62), 36, 36)
+    $gap = [int](($col - 108) / 4)
+    $g.FillEllipse($dot, $gap, ($h - 62), 32, 32)
+    $g.FillEllipse($dot, ($gap * 2 + 32), ($h - 62), 32, 32)
     $dot.Dispose()
     $leave = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(176, 72, 64))
-    $g.FillEllipse($leave, 260, ($h - 62), 36, 36)
+    $g.FillEllipse($leave, ($gap * 3 + 64), ($h - 62), 32, 32)
     $leave.Dispose()
-    $hint = New-Object System.Drawing.Font('Segoe UI', 11, [System.Drawing.FontStyle]::Regular)
-    $g.DrawString('Mic', $hint, $muted, 98, ($h - 22))
-    $g.DrawString('Camera', $hint, $muted, 168, ($h - 22))
-    $g.DrawString('Leave', $hint, $muted, 258, ($h - 22))
+    $hint = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Regular)
+    $g.DrawString('Mic', $hint, $muted, $gap, ($h - 26))
+    $g.DrawString('Camera', $hint, $muted, ($gap * 2 + 24), ($h - 26))
+    $g.DrawString('Leave', $hint, $muted, ($gap * 3 + 58), ($h - 26))
     $titleFont.Dispose(); $labelFont.Dispose(); $smallFont.Dispose(); $hint.Dispose(); $ink.Dispose(); $muted.Dispose()
   })
   $global:backdrop = $form
@@ -368,6 +415,7 @@ $grab = $null
 $frameJob = $null
 $stopFile = Join-Path $OutDir 'stop-capture.txt'
 try {
+  Set-HeroResolution
   $screen = [System.Windows.Forms.Screen]::PrimaryScreen
   Write-Host "screen bounds $($screen.Bounds) work $($screen.WorkingArea)"
   $originX = [int]$screen.WorkingArea.X
@@ -376,11 +424,13 @@ try {
   $capH = [Math]::Min(800, [int]$screen.WorkingArea.Height)
   $capW -= ($capW % 2)
   $capH -= ($capH % 2)
-  if ($capW -lt 1100 -or $capH -lt 700) { throw "Capture area ${capW}x${capH} is too small for the hero" }
-  $overlayW = [Math]::Min(820, $capW - 460)
-  $overlayH = [Math]::Min(700, $capH - 56)
-  $overlayX = $originX + $capW - $overlayW - 20
-  $overlayY = $originY + 28
+  if ($capW -lt 960 -or $capH -lt 680) { throw "Capture area ${capW}x${capH} is too small for the hero" }
+  $global:clientColumn = $(if ($capW -ge 1200) { 420 } else { 280 })
+  $overlayW = $capW - $global:clientColumn - 28
+  $overlayH = [Math]::Min(700, $capH - 36)
+  if ($overlayH -lt 620) { $overlayH = $capH - 16 }
+  $overlayX = $originX + $global:clientColumn + 12
+  $overlayY = $originY + [Math]::Max(8, [int](($capH - $overlayH) / 2))
   $setupW = [Math]::Min(1040, $capW - 40)
   $setupH = [Math]::Min(720, $capH - 50)
   $setupX = $originX + 24
@@ -526,6 +576,11 @@ try {
   $durationHint = [Math]::Round($clock.Elapsed.TotalSeconds, 2)
   Write-Host "scripted duration ${durationHint}s"
   Set-Content -Path (Join-Path $OutDir 'duration-hint.txt') -Value $durationHint
+} catch {
+  $message = $_ | Out-String
+  Set-Content -Path (Join-Path $OutDir 'error.txt') -Value $message
+  Write-Host $message
+  throw
 } finally {
   if ($grab -and -not $grab.HasExited) {
     try { $grab.StandardInput.WriteLine('q'); $grab.StandardInput.Close() } catch {}
