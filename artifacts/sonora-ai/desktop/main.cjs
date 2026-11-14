@@ -210,39 +210,40 @@ function placeReachable(box) {
   const y = Math.max(area.y + 40, Math.min(box.y, area.y + area.height - Math.min(box.height, area.height)));
   return y === box.y ? box : { ...box, y };
 }
-function refreshHitTesting() {
-  if (!win || win.isDestroyed() || collapsed || clickThrough) return;
-  // Hide/show on a transparent frameless window leaves the Windows drag-region
-  // map covering the title-bar buttons. Toggling mouse capture and nudging the
-  // size forces Chromium to rebuild those rectangles.
-  if (typeof win.setIgnoreMouseEvents === 'function') {
-    try {
-      win.setIgnoreMouseEvents(true);
-      win.setIgnoreMouseEvents(false);
-      ignoringMouse = false;
-    } catch { /* the nudge below still rebuilds the drag map */ }
+function finishPresent() {
+  if (!win || win.isDestroyed()) return;
+  // Never toggle ignore-mouse through true here. On a transparent Windows
+  // window that leaves clicks on the title bar undelivered while the flag
+  // still reads false.
+  if (!clickThrough && typeof win.setIgnoreMouseEvents === 'function') {
+    try { win.setIgnoreMouseEvents(false); ignoringMouse = false; } catch { /* mouse events stay as they were */ }
   }
-  const box = win.getBounds();
+  try { win.webContents.invalidate(); } catch { /* an older runtime has no invalidate */ }
+  try { win.webContents.focus(); } catch { /* focus already moved */ }
   try {
-    win.setBounds({ x: box.x, y: box.y, width: box.width, height: box.height + 1 });
-    win.setBounds(box);
-  } catch { /* the buttons stay clickable if the map was already current */ }
+    win.webContents.executeJavaScript('window.dispatchEvent(new Event("resize"))', true).catch(() => {});
+  } catch { /* the bounds were already sent */ }
+  if (alwaysOnTop) holdOnTop();
+  syncTray();
+  broadcast();
+  syncCollapsedClass();
 }
 function show() {
+  // Tray restore and clicking the listening icon both come through here.
   if (!win || win.isDestroyed()) return;
   clearWindowPlate();
   win.setSkipTaskbar?.(true);
+  const box = win.getBounds();
+  const atIcon = collapsed || (box.width <= COLLAPSED + 2 && box.height <= COLLAPSED + 2);
+  if (atIcon) expandFromIcon();
+  else {
+    collapsed = false;
+    win.setBounds(placeReachable(box));
+  }
   win.show();
   win.focus();
   win.setSkipTaskbar?.(true);
-  if (!collapsed) {
-    const placed = placeReachable(win.getBounds());
-    if (placed.y !== win.getBounds().y) win.setBounds(placed);
-  }
-  if (alwaysOnTop) holdOnTop();
-  refreshHitTesting();
-  syncTray();
-  broadcast();
+  finishPresent();
 }
 let enforcingCollapsed = false;
 function enforceCollapsedSize() {
@@ -735,7 +736,7 @@ function createWindow() {
     return { action: 'deny' };
   });
   win.on('close', event => { if (!quitting && !localE2E) { event.preventDefault(); hide(); } });
-  win.on('show', () => { win.setSkipTaskbar?.(true); if (alwaysOnTop) applyAlwaysOnTop(true); syncTray(); broadcast(); refreshHitTesting(); });
+  win.on('show', () => { win.setSkipTaskbar?.(true); if (alwaysOnTop) applyAlwaysOnTop(true); syncTray(); broadcast(); });
   // A frameless window at the top of the screen reports the minus click as a
   // caption drag. The page never sees it, so collapse from that message.
   if (process.platform === 'win32' && typeof win.hookWindowMessage === 'function') {

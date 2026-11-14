@@ -1612,7 +1612,7 @@ try {
     if (-not $minimize) { throw 'Minimize button missing after the tray restore' }
     $r = $minimize.Current.BoundingRectangle
     $script:minimizeWhere = "uia $([int]$r.X),$([int]$r.Y) $([int]$r.Width)x$([int]$r.Height)"
-    $clickX = [int]($r.X + ($r.Width / 2) + 33)
+    $clickX = [int]($r.X + ($r.Width / 2))
     $clickY = [int]($r.Y + ($r.Height / 2))
     $hitText = ''
     try {
@@ -1632,7 +1632,7 @@ try {
       $reader.Close(); $resp.Close()
     } catch { $hitText = "hit-debug $($_.Exception.Message)" }
     Write-Host "HIT $hitText"
-    # The painted minus sits about 33px to the right of that box.
+    # Click the center of the Minimize button. The control 33px to its right is Hide.
     [SonoraInput]::Click($clickX, $clickY)
     Start-Sleep -Milliseconds 400
     $afterHit = ''
