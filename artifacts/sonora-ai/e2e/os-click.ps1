@@ -1624,14 +1624,9 @@ try {
     $box = Get-WindowBox $hwnd
     $fx = [int]($box.X + $box.W - 151)
     $fy = [int]($box.Y + 22)
-    $beforeClicks = Click-Count
     $tries = @("bar $fx,$fy enabled=$enabled")
     [SonoraInput]::Click($fx, $fy)
-    Start-Sleep -Milliseconds 350
-    [SonoraInput]::Click($fx, $fy)
-    Start-Sleep -Milliseconds 800
-    $tries += "pass=$([int]((Click-Count) - $beforeClicks))"
-    if (Test-Path $env:SONORA_BOOT_LOG) { $tries += ((Get-Content $env:SONORA_BOOT_LOG -Tail 4) -join ' ; ') }
+    Start-Sleep -Milliseconds 900
     $collapsedHeight = Get-WindowHeight $hwnd
     $listeningIcon = Wait-Named 'Sonora listening' 3
     $stillShown = [SonoraInput]::IsWindowVisible($hwnd)

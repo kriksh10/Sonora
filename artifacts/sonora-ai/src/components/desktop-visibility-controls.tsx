@@ -154,13 +154,13 @@ export default function DesktopVisibilityControls() {
           onPointerDown={event => {
             if (event.button !== 0) return;
             const now = Date.now();
-            if (now - collapseAt.current < 400) return;
+            if (now - collapseAt.current < 1500) return;
             collapseAt.current = now;
             void run(() => bridge.minimize!());
           }}
           onClick={() => {
             const now = Date.now();
-            if (now - collapseAt.current < 400) return;
+            if (now - collapseAt.current < 1500) return;
             collapseAt.current = now;
             void run(() => bridge.minimize!());
           }}><Minus size={14} /></button>
