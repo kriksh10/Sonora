@@ -1,0 +1,108 @@
+# One-off recording of the installed overlay for the homepage hero.
+# Removed after the media files are committed. Not part of the product.
+name: Homepage demo video
+on:
+  workflow_dispatch:
+  push:
+    branches: [cursor/homepage-demo-video]
+    paths:
+      - .github/workflows/homepage-demo-video.yml
+      - .github/homepage-demo/**
+permissions:
+  contents: read
+concurrency:
+  group: homepage-demo-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  record:
+    name: Record installed overlay
+    runs-on: windows-latest
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.26.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: dtolnay/rust-toolchain@1.91.0
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Build native audio helper
+        run: pnpm --filter @workspace/sonora-ai run desktop:build-native x64
+        env:
+          CARGO_TARGET_DIR: generated-artifacts/native-target
+      - name: Build the renderer
+        run: pnpm --filter @workspace/sonora-ai run build
+        env:
+          PORT: "4173"
+          BASE_PATH: /
+          VITE_SONORA_E2E: "1"
+          VITE_CLERK_PUBLISHABLE_KEY: pk_test_e2e
+      - name: Package the NSIS installer
+        run: node artifacts/sonora-ai/desktop/package-e2e.cjs
+        env:
+          SONORA_RELEASE_URL: https://sonora.example/
+          SONORA_E2E_NSIS: "1"
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Install ffmpeg
+        shell: pwsh
+        run: |
+          $dest = Join-Path $env:RUNNER_TEMP 'ffmpeg-bin'
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          $zip = Join-Path $env:RUNNER_TEMP 'ffmpeg.zip'
+          $urls = @('https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip')
+          try {
+            $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/GyanD/codexffmpeg/releases/latest' -Headers @{ 'User-Agent' = 'sonora-homepage-demo' }
+            $asset = $release.assets | Where-Object { $_.name -like '*essentials_build.zip' } | Select-Object -First 1
+            if ($asset.browser_download_url) { $urls = @($asset.browser_download_url) + $urls }
+          } catch { Write-Host "GitHub ffmpeg lookup failed: $($_.Exception.Message)" }
+          $downloaded = $false
+          foreach ($url in $urls) {
+            try {
+              Write-Host "Downloading $url"
+              Invoke-WebRequest -Uri $url -OutFile $zip
+              $downloaded = $true
+              break
+            } catch { Write-Host "Download failed: $($_.Exception.Message)" }
+          }
+          if (-not $downloaded) { throw 'Could not download ffmpeg' }
+          Expand-Archive -Path $zip -DestinationPath $dest -Force
+          $exe = Get-ChildItem $dest -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          if (-not $exe) { throw 'ffmpeg.exe was not in the archive' }
+          Add-Content $env:GITHUB_ENV "FFMPEG=$($exe.FullName)"
+          Add-Content $env:GITHUB_ENV "FFPROBE=$(Join-Path $exe.DirectoryName 'ffprobe.exe')"
+          & $exe.FullName -version | Select-Object -First 1
+      - name: Install the NSIS build silently
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem generated-artifacts/installers -Filter 'Sonora-*-win-x64.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'NSIS installer was not produced' }
+          Write-Host "Installing $($installer.FullName)"
+          Start-Process -FilePath $installer.FullName -ArgumentList '/S' -Wait
+          $exe = Get-ChildItem -Path "$env:LOCALAPPDATA\Programs","$env:ProgramFiles" -Filter 'Sonora AI.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { throw 'Sonora AI.exe was not installed' }
+          Set-Content -Path installed-exe.txt -Value $exe.FullName
+          Write-Host "Installed $($exe.FullName)"
+      - name: Point the mock at the demo lines
+        shell: pwsh
+        run: node .github/homepage-demo/patch-server.mjs artifacts/sonora-ai/e2e/server.mjs
+      - name: Record the overlay
+        shell: pwsh
+        run: |
+          $exe = Get-Content installed-exe.txt
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -STA -NoProfile -ExecutionPolicy Bypass -File .github/homepage-demo/record.ps1 -Exe $exe -OutDir generated-artifacts/homepage-demo -Ffmpeg $env:FFMPEG -Ffprobe $env:FFPROBE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: homepage-demo
+          path: |
+            generated-artifacts/homepage-demo/**
+            generated-artifacts/mock.log
+            generated-artifacts/mock.err
+            generated-artifacts/mock-requests.log
+          if-no-files-found: warn
+          retention-days: 14
