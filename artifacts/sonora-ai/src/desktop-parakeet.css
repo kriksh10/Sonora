@@ -7,7 +7,7 @@ html.sonora-desktop .sonora-workspace.dp-app {
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  color: #f5f6f7;
+  color: var(--sonora-ink, #f5f6f7);
   font-family: Inter, "Segoe UI", sans-serif;
   font-size: 13px;
 }
@@ -23,7 +23,7 @@ html.sonora-desktop .sonora-workspace.dp-app {
   backdrop-filter: none !important;
   border: 1px solid rgba(255, 255, 255, .14);
   border-radius: 14px;
-  color: #f7f7f8;
+  color: var(--sonora-ink, #f7f7f8);
 }
 .dp-app { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 12px; box-sizing: border-box; }
 .dp-app > * { flex: 1; min-height: 0; min-width: 0; }
@@ -76,10 +76,19 @@ html.sonora-desktop .sonora-workspace.dp-app {
   flex: 1; max-width: 320px; border: 1px solid rgba(255,255,255,.14); border-radius: 10px;
   background: rgba(255,255,255,.06); color: #fff; padding: 8px 10px; font: inherit;
 }
-.dp-table-wrap { flex: 1; min-height: 0; overflow: auto; }
-.dp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.dp-table th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .04em; color: rgba(255,255,255,.45); padding: 8px 10px; }
-.dp-table td { padding: 12px 10px; border-top: 1px solid rgba(255,255,255,.08); vertical-align: middle; }
+.dp-table-wrap { flex: 1; min-height: 0; min-width: 0; overflow-x: hidden; overflow-y: auto; }
+.dp-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 13px; }
+.dp-table th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .04em; color: rgba(255,255,255,.45); padding: 8px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dp-table td { padding: 8px 6px; border-top: 1px solid rgba(255,255,255,.08); vertical-align: middle; overflow: hidden; text-overflow: ellipsis; }
+.dp-table .dp-session { white-space: nowrap; }
+.dp-table .dp-session strong, .dp-table .dp-session div { display: block; overflow: hidden; text-overflow: ellipsis; }
+.dp-sub { color: rgba(255,255,255,.5); font-size: 12px; }
+.dp-table .is-narrow { width: 64px; }
+.dp-table .is-state { width: 58px; }
+.dp-table .is-actions { width: 96px; overflow: visible; text-overflow: clip; }
+.dp-actions { display: flex; flex-wrap: nowrap; gap: 4px; justify-content: flex-end; align-items: center; }
+.dp-row-icon { margin: 0; width: 28px; height: 28px; flex: none; display: inline-flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,.16); border-radius: 8px; background: transparent; color: inherit; padding: 0; cursor: pointer; }
+.dp-row-icon.is-text { width: auto; min-width: 28px; padding: 0 8px; font: inherit; }
 .dp-group td { padding-top: 18px; color: rgba(255,255,255,.45); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; border-top: 0; }
 .dp-chip { display: inline-flex; border-radius: 999px; padding: 2px 8px; font-size: 11px; border: 1px solid transparent; }
 .dp-chip.live { background: rgba(225,29,46,.18); color: #ffb4bc; }
@@ -87,15 +96,17 @@ html.sonora-desktop .sonora-workspace.dp-app {
 .dp-chip.ended { background: rgba(255,255,255,.08); color: rgba(255,255,255,.6); }
 .dp-row-btn { border: 1px solid rgba(255,255,255,.16); background: transparent; color: #fff; border-radius: 999px; padding: 5px 10px; cursor: pointer; font: inherit; }
 .dp-row-btn:hover { background: rgba(255,255,255,.08); }
-.dp-list { display: grid; gap: 8px; overflow: auto; }
-.dp-list article { padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,.1); }
+.dp-list { display: grid; gap: 8px; min-width: 0; overflow-x: hidden; overflow-y: auto; }
+.dp-list article { min-width: 0; padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,.1); }
+.dp-list-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dp-list-head strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dp-list p { margin: 6px 0 0; white-space: pre-wrap; color: rgba(255,255,255,.72); max-height: 140px; overflow: auto; }
 
 .dp-overlay { display: flex; flex-direction: column; gap: 10px; flex: 1; height: auto; min-height: 0; padding: 8px; box-sizing: border-box; overflow: hidden; background: transparent !important; }
 .dp-bar, .dp-strip, .dp-card { padding: 8px 10px; }
 .dp-bar { position: relative; z-index: 5; display: flex; align-items: center; gap: 8px; min-height: 46px;
-  background: color-mix(in srgb, #1e1e1e calc(var(--sonora-chrome-opacity, .35) * 100%), transparent) !important;
-  background-color: color-mix(in srgb, #1e1e1e calc(var(--sonora-chrome-opacity, .35) * 100%), transparent) !important; }
+  background: color-mix(in srgb, var(--sonora-fill, #1e1e1e) calc(var(--sonora-chrome-opacity, .35) * 100%), transparent) !important;
+  background-color: color-mix(in srgb, var(--sonora-fill, #1e1e1e) calc(var(--sonora-chrome-opacity, .35) * 100%), transparent) !important; }
 .dp-scroll-chevrons { display: flex; justify-content: flex-end; gap: 6px; }
 .dp-scroll-chevrons button { border: 0; border-radius: 8px; background: #2a2b2f; color: #f7f8f8; width: 28px; height: 28px; cursor: default; }
 .dp-dots { display: flex; gap: 5px; }
@@ -103,7 +114,7 @@ html.sonora-desktop .sonora-workspace.dp-app {
 .dp-dots i.on { background: #3dd68c; }
 .dp-dots i.warn { background: #f5c451; }
 .dp-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-.dp-drag { flex: 1; min-width: 36px; height: 28px; cursor: grab; -webkit-app-region: drag; app-region: drag; }
+.dp-drag { flex: 1; min-width: 36px; height: 28px; cursor: grab; touch-action: none; -webkit-app-region: no-drag; app-region: no-drag; }
 .dp-bar button, .dp-strip button, .dp-card button, .dp-side button, .dp-main button, .dp-dialog button, .dp-chat, .dp-words, .dp-line {
   -webkit-app-region: no-drag;
   app-region: no-drag;
@@ -177,3 +188,67 @@ html.sonora-desktop .dp-dialog textarea, html.sonora-desktop .dp-dialog select {
 .dp-chat { padding: 0 4px 4px; }
 html.sonora-desktop .dp-dialog { border-radius: 16px; font-family: Inter, "Segoe UI", sans-serif; font-size: 13px; }
 html.sonora-desktop .dp-app * { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.35) transparent; }
+
+html.sonora-desktop[data-sonora-theme="light"] .dp-glass,
+html.sonora-desktop[data-sonora-theme="light"] .dp-dialog,
+html.sonora-desktop[data-sonora-theme="light"] .dp-menu-pop,
+html.sonora-desktop[data-sonora-theme="light"] .sonora-window-popover,
+html.sonora-desktop[data-sonora-theme="light"] .dp-bar,
+html.sonora-desktop[data-sonora-theme="light"] .dp-strip,
+html.sonora-desktop[data-sonora-theme="light"] .dp-card,
+html.sonora-desktop[data-sonora-theme="light"] .sonora-window-bar {
+  color: var(--sonora-ink);
+  border-color: rgba(23, 25, 29, .14);
+}
+html.sonora-desktop[data-sonora-theme="light"] .dp-label,
+html.sonora-desktop[data-sonora-theme="light"] .dp-head p,
+html.sonora-desktop[data-sonora-theme="light"] .dp-tools,
+html.sonora-desktop[data-sonora-theme="light"] .dp-table th,
+html.sonora-desktop[data-sonora-theme="light"] .dp-group td,
+html.sonora-desktop[data-sonora-theme="light"] .dp-user,
+html.sonora-desktop[data-sonora-theme="light"] .dp-list p,
+html.sonora-desktop[data-sonora-theme="light"] .dp-words,
+html.sonora-desktop[data-sonora-theme="light"] .dp-foot,
+html.sonora-desktop[data-sonora-theme="light"] .dp-select-legend {
+  color: var(--sonora-muted);
+}
+html.sonora-desktop[data-sonora-theme="light"] .dp-nav-btn,
+html.sonora-desktop[data-sonora-theme="light"] .dp-brand button,
+html.sonora-desktop[data-sonora-theme="light"] .dp-icon-btn,
+html.sonora-desktop[data-sonora-theme="light"] .dp-table td,
+html.sonora-desktop[data-sonora-theme="light"] .dp-search,
+html.sonora-desktop[data-sonora-theme="light"] .dp-row-btn,
+html.sonora-desktop[data-sonora-theme="light"] .dp-row-icon,
+html.sonora-desktop[data-sonora-theme="light"] .dp-sub,
+html.sonora-desktop[data-sonora-theme="light"] .dp-menu-pop label,
+html.sonora-desktop[data-sonora-theme="light"] .sonora-window-drag-handle {
+  color: var(--sonora-ink);
+}
+html.sonora-desktop[data-sonora-theme="light"] .dp-nav-btn:hover,
+html.sonora-desktop[data-sonora-theme="light"] .dp-nav-btn.is-active,
+html.sonora-desktop[data-sonora-theme="light"] .dp-row-btn:hover,
+html.sonora-desktop[data-sonora-theme="light"] .dp-icon-btn:hover,
+html.sonora-desktop[data-sonora-theme="light"] .dp-brand button:hover {
+  background: rgba(23, 25, 29, .06);
+  color: #17191d;
+}
+html.sonora-desktop[data-sonora-theme="light"] .dp-search,
+html.sonora-desktop[data-sonora-theme="light"] .dp-menu-pop select,
+html.sonora-desktop[data-sonora-theme="light"] .dp-chat textarea,
+html.sonora-desktop[data-sonora-theme="light"] .dp-dialog input,
+html.sonora-desktop[data-sonora-theme="light"] .dp-dialog textarea,
+html.sonora-desktop[data-sonora-theme="light"] .dp-dialog select,
+html.sonora-desktop[data-sonora-theme="light"] .dp-select-trigger,
+html.sonora-desktop[data-sonora-theme="light"] .dp-select-list {
+  background: color-mix(in srgb, #fff calc(var(--sonora-card-opacity, 0.45) * 100%), transparent) !important;
+  color: #17191d;
+  border-color: rgba(23, 25, 29, .16) !important;
+}
+html.sonora-desktop[data-sonora-theme="light"] .dp-select-option { color: #17191d; }
+html.sonora-desktop[data-sonora-theme="light"] .dp-select-option:hover,
+html.sonora-desktop[data-sonora-theme="light"] .dp-select-option.is-active { background: rgba(23, 25, 29, .08); color: #17191d; }
+html.sonora-desktop[data-sonora-theme="light"] .dp-table td,
+html.sonora-desktop[data-sonora-theme="light"] .dp-list article,
+html.sonora-desktop[data-sonora-theme="light"] .dp-plan { border-color: rgba(23, 25, 29, .12); }
+html.sonora-desktop[data-sonora-theme="light"] .dp-chip.ended { color: #3c4540; }
+html.sonora-desktop[data-sonora-theme="light"] .sonora-window-popover { background: var(--sonora-glass); color: #17191d; }

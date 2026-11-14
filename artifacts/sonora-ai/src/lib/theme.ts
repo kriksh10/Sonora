@@ -11,8 +11,10 @@ export function readSonoraTheme(): SonoraTheme {
 }
 
 export function applySonoraTheme(theme: SonoraTheme) {
-  document.documentElement.dataset.sonoraTheme = theme;
-  document.documentElement.style.colorScheme = theme;
+  const root = document.documentElement;
+  root.dataset.sonoraTheme = theme;
+  // color-scheme: light paints an opaque canvas behind a transparent Electron window.
+  root.style.colorScheme = root.classList.contains("sonora-desktop") ? "normal" : theme;
   try {
     localStorage.setItem(STORAGE_KEY, theme);
   } catch {

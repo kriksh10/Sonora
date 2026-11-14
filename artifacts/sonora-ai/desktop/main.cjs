@@ -1,5 +1,6 @@
 const { app, BrowserWindow, globalShortcut, ipcMain, Menu, Tray, nativeImage, screen, dialog, desktopCapturer, shell } = require('electron');
 const http = require('node:http');
+const { spawn } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
 const { validateServiceUrl, isAllowedNavigation } = require('./security.cjs');
@@ -20,6 +21,9 @@ let alwaysOnTop = true;
 let collapsed = false;
 let expandedBounds = null;
 let expandedMinimum = null;
+let collapsedDrag = null;
+let collapsedAt = 0;
+const COLLAPSED = 72;
 let snapPlace = { col: 1, row: 0 };
 let liveShortcuts = false;
 let trayMenu = [];
@@ -80,11 +84,21 @@ function state() {
     fontScale: fontScaleValue, transcriptOpen, clickThrough, openAtLogin, hotkeys: hotkeySummary(hotkeyState),
     update: updates.status() };
 }
+function boundsToSave() {
+  if (!win || win.isDestroyed()) return null;
+  if (collapsed && expandedBounds) {
+    const icon = win.getBounds();
+    try {
+      return safeBounds({ x: icon.x, y: icon.y, width: expandedBounds.width, height: expandedBounds.height }, screen.getAllDisplays());
+    } catch { return { ...expandedBounds, x: icon.x, y: icon.y }; }
+  }
+  return win.getBounds();
+}
 function persistWindow() {
   if (!preferencesPath || !win || win.isDestroyed()) return;
   try {
     fs.writeFileSync(`${preferencesPath}.tmp`, JSON.stringify({
-      bounds: win.getBounds(), backgroundOpacity, opacityVersion: 3, fontScale: fontScaleValue,
+      bounds: boundsToSave(), backgroundOpacity, opacityVersion: 3, fontScale: fontScaleValue,
       transcriptOpen, clickThrough, openAtLogin, hotkeys: hotkeyOverrides,
     }), { mode: 0o600 });
     fs.renameSync(`${preferencesPath}.tmp`, preferencesPath);
@@ -153,44 +167,309 @@ function broadcast() {
   if (win && !win.isDestroyed()) win.webContents.send('overlay:state-changed', state());
   updateTray();
 }
+function syncCollapsedClass() {
+  // The state event can be dropped while Windows is iconic. Paint the class
+  // directly once the page can run script again.
+  if (!win || win.isDestroyed() || typeof win.webContents?.executeJavaScript !== 'function') return;
+  const flag = collapsed ? 'true' : 'false';
+  try {
+    const pending = win.webContents.executeJavaScript(
+      `document.documentElement.classList.toggle('sonora-collapsed', ${flag}); document.documentElement.classList.toggle('sonora-force-collapsed', ${flag}); var leaked = document.getElementById('sonora-collapsed-style'); if (leaked) leaked.remove();`,
+      false,
+    );
+    if (pending && typeof pending.catch === 'function') pending.catch(() => {});
+  } catch { /* the state event still updates a live page */ }
+}
+let collapsedPaint = null;
+function holdCollapsedPaint() {
+  if (collapsedPaint) { clearInterval(collapsedPaint); collapsedPaint = null; }
+  syncCollapsedClass();
+  // A later renderer state can clear the class while the window stays 72px.
+  // Keep painting it until the window is expanded again.
+  if (!collapsed || typeof win?.webContents?.executeJavaScript !== 'function') return;
+  collapsedPaint = setInterval(() => {
+    if (!collapsed) { clearInterval(collapsedPaint); collapsedPaint = null; return; }
+    syncCollapsedClass();
+  }, 200);
+  collapsedPaint.unref?.();
+}
 const WINDOW_CLEAR = '#00000000';
 function clearWindowPlate() {
   if (!win || win.isDestroyed()) return;
   // The window plate and material are fixed at creation. Touching either
   // afterward paints an opaque white sheet on Windows.
 }
+function placeReachable(box) {
+  // A frameless window flush with the top of the screen does not receive
+  // title-bar clicks on Windows. Keep the minus button below that edge.
+  let area;
+  try {
+    const areas = screen.getAllDisplays().map(display => display.workArea).filter(Boolean);
+    area = areas.find(item => box.x < item.x + item.width && box.x + box.width > item.x) || areas[0];
+  } catch { return box; }
+  if (!area) return box;
+  const y = Math.max(area.y + 40, Math.min(box.y, area.y + area.height - Math.min(box.height, area.height)));
+  return y === box.y ? box : { ...box, y };
+}
+function renderWidgetHelper() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'native', 'sonora-hit.exe')
+    : path.resolve(__dirname, '../../../generated-artifacts/native', `${process.platform}-${process.arch}`, 'sonora-hit.exe');
+}
+let hitRepairPending = true;
+let hitRepairRunning = false;
+let hitRepairNudged = false;
+function nudgeTitleBar() {
+  if (!win || win.isDestroyed() || collapsed) return;
+  const again = win.getBounds();
+  try {
+    win.setBounds({ x: again.x, y: again.y, width: again.width, height: again.height + 1 });
+    win.setBounds(again);
+  } catch { /* the click path still uses the button handler */ }
+}
+function presentHitTarget() {
+  if (!win || win.isDestroyed()) return;
+  if (!clickThrough && typeof win.setIgnoreMouseEvents === 'function') {
+    try { win.setIgnoreMouseEvents(false); ignoringMouse = false; } catch { /* mouse events stay as they were */ }
+  }
+  try { win.webContents.invalidate(); } catch { /* an older runtime has no invalidate */ }
+  try { win.webContents.focus(); } catch { /* focus already moved */ }
+  if (alwaysOnTop) holdOnTop();
+  nudgeTitleBar();
+}
+function clearRenderWidgetClickThrough() {
+  // The helper is a GUI-subsystem binary and is spawned with windowsHide, so it
+  // cannot open a console. It stays off the UI thread: a synchronous spawn is
+  // what froze launch for the whole PowerShell timeout.
+  if (process.platform !== 'win32' || !win || win.isDestroyed() || clickThrough || hitRepairRunning) return;
+  let hwnd = '';
+  try {
+    const raw = win.getNativeWindowHandle();
+    hwnd = raw.length >= 8 ? raw.readBigUInt64LE(0).toString() : String(raw.readUInt32LE(0));
+  } catch (error) {
+    bootLog(`render-widget-wait handle ${error}`);
+    return;
+  }
+  hitRepairRunning = true;
+  let out = '';
+  let err = '';
+  let settled = false;
+  const child = spawn(renderWidgetHelper(), [hwnd], {
+    windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  child.stdout?.setEncoding?.('utf8');
+  child.stderr?.setEncoding?.('utf8');
+  child.stdout?.on?.('data', chunk => { out += chunk; });
+  child.stderr?.on?.('data', chunk => { err += chunk; });
+  const killer = setTimeout(() => { try { child.kill(); } catch { /* already exited */ } }, 2000);
+  const finish = () => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(killer);
+    hitRepairRunning = false;
+    const text = `${out} ${err}`.replace(/\s+/g, ' ').trim();
+    const visible = text.includes('parent-visible=1') && text.includes('RenderWidgetHost');
+    if (!visible) {
+      hitRepairPending = true;
+      bootLog(`render-widget-wait ${text || 'none'}`);
+      return;
+    }
+    if (!hitRepairNudged) {
+      hitRepairNudged = true;
+      presentHitTarget();
+      clearRenderWidgetClickThrough();
+      return;
+    }
+    hitRepairPending = false;
+    bootLog(`render-widget-hit ${text}`);
+  };
+  child.on('error', error => {
+    out += ` ${error.message || error}`;
+    finish();
+  });
+  child.on('close', finish);
+}
+function scheduleHitRepair() {
+  // Tray restore can show the HWND without show(). The poll below calls this
+  // until the render widget is actually on screen.
+  clearRenderWidgetClickThrough();
+}
+function dipPoint(x, y) {
+  const point = { x, y };
+  try {
+    if (typeof screen.screenToDipPoint === 'function') return screen.screenToDipPoint(point);
+  } catch { /* physical pixels match DIP when the scale is 1 */ }
+  const scale = screen.getPrimaryDisplay?.().scaleFactor || 1;
+  return { x: x / scale, y: y / scale };
+}
+let titleClickWatcher = null;
+function watchTitleClicks() {
+  // The visible render-widget child receives the press and does not deliver it
+  // to the page or to the parent window procedure. A low-level hook sees it anyway.
+  if (process.platform !== 'win32' || titleClickWatcher) return;
+  const child = spawn(renderWidgetHelper(), ['--watch'], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  titleClickWatcher = child;
+  let pending = '';
+  let pressed = null;
+  child.stdout?.setEncoding?.('utf8');
+  child.stdout?.on?.('data', chunk => {
+    pending += chunk;
+    let split;
+    while ((split = pending.indexOf('\n')) >= 0) {
+      const line = pending.slice(0, split).trim();
+      pending = pending.slice(split + 1);
+      const parts = line.split(' ');
+      if (parts[0] !== 'down' && parts[0] !== 'up') {
+        if (line) bootLog(`title-click ${line}`);
+        continue;
+      }
+      const dip = dipPoint(Number(parts[1]), Number(parts[2]));
+      if (!win || win.isDestroyed() || !Number.isFinite(dip.x) || !Number.isFinite(dip.y)) continue;
+      const box = win.getBounds();
+      const inside = dip.x >= box.x && dip.x < box.x + box.width && dip.y >= box.y && dip.y < box.y + box.height;
+      if (parts[0] === 'down') {
+        pressed = { x: dip.x, y: dip.y, collapsed, inside };
+        if (!inside || collapsed) continue;
+        const localY = dip.y - box.y;
+        const fromRight = box.width - (dip.x - box.x);
+        if (localY < 0 || localY > 48 || fromRight < 160 || fromRight > 210) continue;
+        bootLog(`title-click y=${Math.round(localY)} fromRight=${Math.round(fromRight)}`);
+        setCollapsed(true);
+        continue;
+      }
+      // A short click on the listening icon restores it. A drag keeps moving.
+      const start = pressed;
+      pressed = null;
+      if (!start || !start.collapsed || !collapsed || !start.inside || !inside) continue;
+      if (Math.hypot(dip.x - start.x, dip.y - start.y) >= 4) continue;
+      // The icon's own click expands when the page receives it. Wait, and only
+      // expand here when that click never arrived.
+      setTimeout(() => {
+        if (!win || win.isDestroyed() || !collapsed) return;
+        const boxNow = win.getBounds();
+        if (boxNow.width > COLLAPSED + 2 || boxNow.height > COLLAPSED + 2) return;
+        bootLog('title-click expand');
+        setCollapsed(false);
+      }, 300);
+    }
+  });
+  child.on('error', error => bootLog(`title-click watcher ${error.message || error}`));
+}
+function finishPresent() {
+  if (!win || win.isDestroyed()) return;
+  // Never toggle ignore-mouse through true here. On a transparent Windows
+  // window that leaves clicks on the title bar undelivered while the flag
+  // still reads false.
+  if (!clickThrough && typeof win.setIgnoreMouseEvents === 'function') {
+    try { win.setIgnoreMouseEvents(false); ignoringMouse = false; } catch { /* mouse events stay as they were */ }
+  }
+  try { win.webContents.invalidate(); } catch { /* an older runtime has no invalidate */ }
+  try { win.webContents.focus(); } catch { /* focus already moved */ }
+  try {
+    win.webContents.executeJavaScript('window.dispatchEvent(new Event("resize"))', true).catch(() => {});
+  } catch { /* the bounds were already sent */ }
+  if (alwaysOnTop) holdOnTop();
+  scheduleHitRepair();
+  syncTray();
+  broadcast();
+  syncCollapsedClass();
+}
 function show() {
+  // Tray restore and clicking the listening icon both come through here.
   if (!win || win.isDestroyed()) return;
   clearWindowPlate();
   win.setSkipTaskbar?.(true);
+  const box = win.getBounds();
+  const atIcon = collapsed || (box.width <= COLLAPSED + 2 && box.height <= COLLAPSED + 2);
+  if (atIcon) expandFromIcon();
+  else {
+    collapsed = false;
+    win.setBounds(placeReachable(box));
+  }
   win.show();
   win.focus();
   win.setSkipTaskbar?.(true);
-  if (alwaysOnTop) holdOnTop();
-  syncTray();
-  broadcast();
+  finishPresent();
+}
+let enforcingCollapsed = false;
+function enforceCollapsedSize() {
+  if (enforcingCollapsed || !collapsed || !win || win.isDestroyed()) return;
+  const box = win.getBounds();
+  if (box.width === COLLAPSED && box.height === COLLAPSED) return;
+  // Echoing getBounds() here is what blew the icon up: Windows reports the old
+  // minimum (a tall overlay) as soon as a drag starts. Always write the icon size.
+  enforcingCollapsed = true;
+  try {
+    win.setMinimumSize?.(72, 72);
+    win.setMaximumSize?.(COLLAPSED, COLLAPSED);
+    win.setBounds({ x: box.x, y: box.y, width: COLLAPSED, height: COLLAPSED });
+  } finally { enforcingCollapsed = false; }
+}
+function placeCollapsed(x, y) {
+  if (!win || win.isDestroyed()) return;
+  const nextX = Math.round(x);
+  const nextY = Math.round(y);
+  // setPosition leaves the size alone. setBounds with a stored width is what grew the icon.
+  if (typeof win.setPosition === 'function') win.setPosition(nextX, nextY);
+  else win.setBounds({ x: nextX, y: nextY, width: COLLAPSED, height: COLLAPSED });
+  enforceCollapsedSize();
 }
 function setCollapsed(value) {
   if (!win || win.isDestroyed()) return;
+  bootLog(`setCollapsed request=${value} current=${collapsed}`);
   const next = Boolean(value);
-  if (next === collapsed) { broadcast(); return; }
+  if (next === collapsed) { broadcast(); holdCollapsedPaint(); return; }
+  // Flip first so a resize event during the bounds change cannot restore the tall size.
+  collapsed = next;
+  collapsedDrag = null;
   if (next) {
     expandedBounds = win.getBounds();
     try { expandedMinimum = win.getMinimumSize?.() || [390, 620]; } catch { expandedMinimum = [390, 620]; }
     // The normal answer pane cannot shrink below 620px. The listening icon can.
     win.setMinimumSize?.(72, 72);
-    win.setBounds({ x: expandedBounds.x, y: expandedBounds.y, width: 72, height: 72 });
+    win.setMaximumSize?.(COLLAPSED, COLLAPSED);
+    win.setBounds({ x: expandedBounds.x, y: expandedBounds.y, width: COLLAPSED, height: COLLAPSED });
     win.setResizable?.(false);
+    // setResizable(false) on Windows reapplies the previous minimum. Lock the icon again.
+    win.setMinimumSize?.(72, 72);
+    win.setMaximumSize?.(COLLAPSED, COLLAPSED);
+    enforceCollapsedSize();
     clearWindowPlate();
+    collapsedAt = Date.now();
   } else if (expandedBounds) {
+    const icon = win.getBounds();
     const minimum = expandedMinimum || [390, 620];
+    win.setResizable?.(true);
+    win.setMaximumSize?.(10000, 10000);
     win.setMinimumSize?.(minimum[0], minimum[1]);
     clearWindowPlate();
-    win.setBounds(expandedBounds);
-    win.setResizable?.(true);
+    let restored = placeReachable({ x: icon.x, y: icon.y, width: expandedBounds.width, height: expandedBounds.height });
+    try { restored = safeBounds(restored, screen.getAllDisplays()); } catch { /* keep the icon anchor */ }
+    restored = placeReachable(restored);
+    win.setBounds(restored);
+    expandedBounds = restored;
   }
-  collapsed = next;
   broadcast();
+  holdCollapsedPaint();
+}
+function expandFromIcon() {
+  if (!win || win.isDestroyed()) return;
+  const icon = win.getBounds();
+  const saved = expandedBounds && expandedBounds.width > COLLAPSED && expandedBounds.height > COLLAPSED ? expandedBounds : null;
+  const minimum = expandedMinimum || [390, 620];
+  collapsed = false;
+  collapsedDrag = null;
+  win.setResizable?.(true);
+  win.setMaximumSize?.(10000, 10000);
+  win.setMinimumSize?.(minimum[0], minimum[1]);
+  clearWindowPlate();
+  let restored = placeReachable({ x: icon.x, y: icon.y, width: saved?.width || 780, height: saved?.height || 720 });
+  try { restored = safeBounds(restored, screen.getAllDisplays()); } catch { /* keep the icon anchor */ }
+  restored = placeReachable(restored);
+  win.setBounds(restored);
+  expandedBounds = restored;
+  broadcast();
+  holdCollapsedPaint();
 }
 function conceal() {
   if (!win || win.isDestroyed()) return;
@@ -202,6 +481,8 @@ function conceal() {
   win.setSkipTaskbar?.(true);
   win.hide();
   win.setSkipTaskbar?.(true);
+  hitRepairPending = true;
+  hitRepairNudged = false;
   syncTray();
   broadcast();
 }
@@ -250,8 +531,47 @@ function moveCollapsed(dx, dy) {
   if (!collapsed || !win || win.isDestroyed()) return state();
   if (typeof dx !== 'number' || typeof dy !== 'number' || !Number.isFinite(dx) || !Number.isFinite(dy)) throw new Error('Expected a move.');
   const box = win.getBounds();
-  win.setBounds({ x: Math.round(box.x + dx), y: Math.round(box.y + dy), width: box.width, height: box.height });
+  // Deltas are DIP. Do not pass width or height: that reapplied the expanded size.
+  placeCollapsed(box.x + dx, box.y + dy);
   return state();
+}
+function dragCollapsed(phase) {
+  if (!collapsed || !win || win.isDestroyed()) return { moved: false };
+  if (phase !== 'start' && phase !== 'move' && phase !== 'end') throw new Error('Expected a drag.');
+  const cursor = screen.getCursorScreenPoint();
+  if (phase === 'start' || !collapsedDrag) {
+    const box = win.getBounds();
+    collapsedDrag = {
+      grabX: cursor.x - box.x, grabY: cursor.y - box.y,
+      startX: cursor.x, startY: cursor.y, moved: false,
+    };
+    if (phase === 'start') return { moved: false };
+  }
+  const distance = Math.hypot(cursor.x - collapsedDrag.startX, cursor.y - collapsedDrag.startY);
+  if (distance >= 4) collapsedDrag.moved = true;
+  if (phase === 'move' && collapsedDrag.moved) placeCollapsed(cursor.x - collapsedDrag.grabX, cursor.y - collapsedDrag.grabY);
+  const moved = collapsedDrag.moved === true;
+  if (phase === 'end') collapsedDrag = null;
+  return { moved };
+}
+let windowDrag = null;
+function dragWindow(phase) {
+  if (!win || win.isDestroyed() || collapsed) return { moved: false };
+  if (phase !== 'start' && phase !== 'move' && phase !== 'end') throw new Error('Expected a drag.');
+  const cursor = screen.getCursorScreenPoint();
+  if (phase === 'start' || !windowDrag) {
+    const box = win.getBounds();
+    windowDrag = { grabX: cursor.x - box.x, grabY: cursor.y - box.y, startX: cursor.x, startY: cursor.y, moved: false };
+    if (phase === 'start') return { moved: false };
+  }
+  const distance = Math.hypot(cursor.x - windowDrag.startX, cursor.y - windowDrag.startY);
+  if (distance >= 4) windowDrag.moved = true;
+  if (phase === 'move' && windowDrag.moved && typeof win.setPosition === 'function') {
+    win.setPosition(Math.round(cursor.x - windowDrag.grabX), Math.round(cursor.y - windowDrag.grabY));
+  }
+  const moved = windowDrag.moved === true;
+  if (phase === 'end') windowDrag = null;
+  return { moved };
 }
 function destroyTray() {
   if (tray && !tray.isDestroyed?.()) tray.destroy?.();
@@ -331,8 +651,22 @@ function registerIpc() {
   });
   handle('overlay:show', () => { show(); return state(); });
   handle('overlay:hide', () => { hide(); return state(); });
-  handle('overlay:minimize', () => { setCollapsed(!collapsed); return state(); });
+  handle('overlay:minimize', () => {
+    const box = win?.getBounds?.() || { width: 0, height: 0 };
+    const atIcon = box.width <= COLLAPSED + 2 && box.height <= COLLAPSED + 2;
+    if (atIcon && Date.now() - collapsedAt < 800) return state();
+    if (atIcon) expandFromIcon();
+    else {
+      // A tray restore can leave the flag true while the window is still tall.
+      // Minimize always collapses that window; it does not toggle it open.
+      if (collapsed) collapsed = false;
+      setCollapsed(true);
+    }
+    return state();
+  });
   handle('overlay:move-collapsed', (dx, dy) => moveCollapsed(dx, dy));
+  handle('overlay:drag-collapsed', phase => dragCollapsed(phase));
+  handle('overlay:drag-window', phase => dragWindow(phase));
   handle('overlay:set-live-shortcuts', value => {
     liveShortcuts = value === true;
     activateHotkeys();
@@ -472,8 +806,12 @@ function createWindow() {
   win.setSkipTaskbar(true);
   clearWindowPlate();
   if (process.platform === 'win32') {
-    const topTimer = setInterval(() => holdOnTop(), 1000);
+    const topTimer = setInterval(() => {
+      holdOnTop();
+      if (hitRepairPending) scheduleHitRepair();
+    }, 1000);
     win.on('closed', () => clearInterval(topTimer));
+    watchTitleClicks();
   }
   if (migrateOpacity) persistWindow();
   applyAlwaysOnTop(alwaysOnTop);
@@ -504,11 +842,31 @@ function createWindow() {
   win.on('minimize', () => {
     try { if (win.isMinimized?.()) win.restore(); } catch { /* stay expanded in the window */ }
     setCollapsed(true);
+    // restore() lands after this handler and can wake the page after the
+    // collapsed event was dropped. Push the icon class again once it is awake.
+    setTimeout(() => {
+      if (!win || win.isDestroyed()) return;
+      if (!collapsed) setCollapsed(true);
+      else { enforceCollapsedSize(); holdCollapsedPaint(); }
+    }, 400);
+  });
+  win.on('restore', () => {
+    if (!collapsed) return;
+    enforceCollapsedSize();
+    syncCollapsedClass();
+    broadcast();
+  });
+  win.on('will-resize', (event, newBounds) => {
+    if (!collapsed || !newBounds) return;
+    if (newBounds.width === COLLAPSED && newBounds.height === COLLAPSED) return;
+    event.preventDefault();
   });
   win.on('moved', remember);
-  win.on('resized', remember);
+  win.on('resized', () => { if (collapsed) enforceCollapsedSize(); else remember(); });
   const recoverPosition = () => {
-    if (!win.isDestroyed()) win.setBounds(safeBounds(win.getBounds(), screen.getAllDisplays()));
+    if (win.isDestroyed()) return;
+    if (collapsed) { enforceCollapsedSize(); return; }
+    win.setBounds(safeBounds(win.getBounds(), screen.getAllDisplays()));
   };
   screen.on('display-removed', recoverPosition);
   screen.on('display-metrics-changed', recoverPosition);
@@ -530,7 +888,46 @@ function createWindow() {
     return { action: 'deny' };
   });
   win.on('close', event => { if (!quitting && !localE2E) { event.preventDefault(); hide(); } });
-  win.on('show', () => { win.setSkipTaskbar?.(true); if (alwaysOnTop) applyAlwaysOnTop(true); syncTray(); broadcast(); });
+  win.on('show', () => { win.setSkipTaskbar?.(true); if (alwaysOnTop) applyAlwaysOnTop(true); syncTray(); broadcast(); scheduleHitRepair(); });
+  // A frameless window at the top of the screen reports the minus click as a
+  // caption drag. The page never sees it, so collapse from that message.
+  if (process.platform === 'win32' && typeof win.hookWindowMessage === 'function') {
+    // A shell ShowWindow (tray click) emits this without going through show().
+    win.hookWindowMessage(0x0018, wParam => {
+      let shown = false;
+      try { shown = wParam?.readInt32LE?.(0) !== 0; } catch { return; }
+      if (shown) scheduleHitRepair();
+    });
+    // After a shell show, the title-bar press arrives as a client click on the
+    // parent and never becomes a DOM event or a caption hit. Collapse from it.
+    win.hookWindowMessage(0x0201, () => {
+      if (!win || win.isDestroyed() || collapsed) return;
+      const cursor = screen.getCursorScreenPoint();
+      const box = win.getBounds();
+      const localY = cursor.y - box.y;
+      const fromRight = box.width - (cursor.x - box.x);
+      if (localY < 0 || localY > 48) return;
+      bootLog(`lbutton y=${Math.round(localY)} fromRight=${Math.round(fromRight)}`);
+      if (fromRight < 160 || fromRight > 210) return;
+      setTimeout(() => { if (win && !win.isDestroyed() && !collapsed) setCollapsed(true); }, 0);
+    });
+    win.hookWindowMessage(0x00A1, wParam => {
+      let code = -1;
+      try { code = typeof wParam?.readInt32LE === 'function' ? wParam.readInt32LE(0) : Number(wParam); } catch { return; }
+      if (!win || win.isDestroyed()) return;
+      const cursor = screen.getCursorScreenPoint();
+      const box = win.getBounds();
+      const localX = cursor.x - box.x;
+      const localY = cursor.y - box.y;
+      const fromRight = box.width - localX;
+      bootLog(`caption ht=${code} x=${Math.round(localX)} fromRight=${Math.round(fromRight)} y=${Math.round(localY)} collapsed=${collapsed}`);
+      // Minimize is the button about 185px in from the right of the title bar.
+      // Windows delivers that press as a caption hit, so the page never sees it.
+      if (code !== 2 || collapsed) return;
+      if (localY < 0 || localY > 48 || fromRight < 160 || fromRight > 210) return;
+      setCollapsed(true);
+    });
+  }
   win.on('hide', () => { syncTray(); broadcast(); });
   win.on('blur', () => { holdOnTop(); });
   win.webContents.on('render-process-gone', () => { nativeAudio.stop(); if (!nativeAudio.isActive()) captureActive = false; broadcast(); });
@@ -559,15 +956,96 @@ function createWindow() {
       else { quitting = true; app.quit(); }
     }
   });
+  win.webContents.on('console-message', (_event, _level, message) => {
+    if (typeof message === 'string' && message.startsWith('[sonora-hit]')) bootLog(message);
+  });
   win.webContents.on('did-finish-load', () => {
     try { app.setAccessibilitySupportEnabled(true); } catch (error) { bootLog(`accessibility ${error}`); }
-    bootLog(`did-finish-load ${win.webContents.getURL()}`);
+    bootLog(`did-finish-load ${win.webContents.getURL()} scale=${screen.getPrimaryDisplay?.().scaleFactor ?? 1}`);
+    if (!localE2E) return;
+    win.webContents.executeJavaScript(`(() => {
+      if (window.__sonoraClickProbe) return;
+      window.__sonoraClickProbe = true;
+      const describe = (node) => {
+        if (!node || node === document) return 'none';
+        const label = node.getAttribute && node.getAttribute('aria-label');
+        const cls = typeof node.className === 'string' ? node.className.split(/\\s+/).slice(0, 3).join('.') : '';
+        return (node.tagName || '?') + (label ? ':' + label : '') + (node.id ? '#' + node.id : '') + (cls ? '.' + cls : '');
+      };
+      const report = (type, event) => {
+        const hit = document.elementFromPoint(event.clientX, event.clientY);
+        console.log('[sonora-hit] ' + type + ' client=' + event.clientX + ',' + event.clientY + ' target=' + describe(event.target) + ' fromPoint=' + describe(hit));
+      };
+      document.addEventListener('pointerdown', event => report('pointerdown', event), true);
+      document.addEventListener('click', event => report('click', event), true);
+    })();`, true).catch(error => bootLog(`click probe ${error}`));
   });
   configurePermissions();
   win.once('ready-to-show', show);
   void loadService();
 }
 
+async function debugHit(screenX, screenY) {
+  if (!win || win.isDestroyed()) return { error: 'no window' };
+  const bounds = win.getBounds();
+  const content = typeof win.getContentBounds === 'function' ? win.getContentBounds() : null;
+  const x = Number(screenX);
+  const y = Number(screenY);
+  const originX = content ? content.x : bounds.x;
+  const originY = content ? content.y : bounds.y;
+  const clientX = Math.round(x - originX);
+  const clientY = Math.round(y - originY);
+  let page = null;
+  try {
+    page = await win.webContents.executeJavaScript(`(() => {
+      const x = ${clientX};
+      const y = ${clientY};
+      const describe = (node) => {
+        if (!node || node === document) return 'none';
+        const label = node.getAttribute && node.getAttribute('aria-label');
+        const cls = typeof node.className === 'string' ? node.className.split(/\\s+/).slice(0, 4).join('.') : '';
+        return (node.tagName || '?') + (label ? ':' + label : '') + (node.id ? '#' + node.id : '') + (cls ? '.' + cls : '');
+      };
+      const hit = document.elementFromPoint(x, y);
+      const chain = [];
+      for (let node = hit, i = 0; node && node !== document && i < 5; i++, node = node.parentElement) chain.push(describe(node));
+      return {
+        innerWidth: window.innerWidth, innerHeight: window.innerHeight,
+        dpr: window.devicePixelRatio, clientX: x, clientY: y,
+        element: describe(hit), chain: chain.join(' > '),
+        collapsed: document.documentElement.classList.contains('sonora-collapsed'),
+        force: document.documentElement.classList.contains('sonora-force-collapsed'),
+      };
+    })()`, true);
+  } catch (error) { page = { error: String(error) }; }
+  const report = {
+    bounds, content, ignoringMouse, clickThrough, collapsed,
+    screen: { x, y }, page,
+  };
+  bootLog(`hit ${JSON.stringify(report)}`);
+  return report;
+}
+function startHitProbe() {
+  if (!localE2E) return;
+  const server = http.createServer(async (req, res) => {
+    try {
+      if (req.method !== 'POST' || req.url !== '/hit') { res.writeHead(404); res.end(); return; }
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const body = JSON.parse(Buffer.concat(chunks).toString() || '{}');
+      const report = await debugHit(body.x, body.y);
+      const json = JSON.stringify(report);
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(json) });
+      res.end(json);
+    } catch (error) {
+      const text = String(error);
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end(text);
+    }
+  });
+  server.listen(4174, '127.0.0.1');
+  bootLog('hit probe on 127.0.0.1:4174');
+}
 function startVisualProofCapture() {
   if (!localE2E || !process.argv.includes('--visual-proof')) return;
   const server = http.createServer(async (req, res) => {
@@ -641,6 +1119,10 @@ try {
 } catch { /* The ready handler reports a missing release configuration. */ }
 if (e2e) localE2E = true;
 allowLocalE2ENetwork();
+const forcedScale = process.argv.find(arg => arg.startsWith('--force-device-scale-factor='));
+if (forcedScale && typeof app.commandLine?.appendSwitch === 'function') {
+  app.commandLine.appendSwitch('force-device-scale-factor', forcedScale.split('=')[1] || '1');
+}
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
@@ -677,6 +1159,7 @@ else {
     } catch { updates = createAutoUpdate({ isPackaged: false }); }
     browserAuth = createBrowserAuth({ serviceUrl: target, openExternal: url => shell.openExternal(url) });
     createWindow();
+    startHitProbe();
     startVisualProofCapture();
     activateHotkeys();
     syncTray();
@@ -685,6 +1168,6 @@ else {
     app.on('activate', show);
   });
 }
-app.on('before-quit', () => { quitting = true; stopUpdates(); clearTimeout(saveTimer); persistWindow(); void browserAuth?.cancel(); nativeAudio?.shutdown(); win?.destroy(); });
+app.on('before-quit', () => { quitting = true; stopUpdates(); clearTimeout(saveTimer); persistWindow(); void browserAuth?.cancel(); nativeAudio?.shutdown(); try { titleClickWatcher?.kill(); } catch { /* the watcher already exited */ } win?.destroy(); });
 app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('window-all-closed', () => { if (quitting || localE2E) app.quit(); });

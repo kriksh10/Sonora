@@ -72,7 +72,51 @@ public static class SonoraInput {
     if ((style & 0x8) != 0) parts.Add("WS_EX_TOPMOST");
     if ((style & 0x80) != 0) parts.Add("WS_EX_TOOLWINDOW");
     if ((style & 0x40000) != 0) parts.Add("WS_EX_APPWINDOW");
+    if ((style & 0x08000000) != 0) parts.Add("WS_EX_NOACTIVATE");
     return "0x" + style.ToString("X") + " " + string.Join(",", parts);
+  }
+  [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
+  [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT point);
+  [DllImport("user32.dll")] public static extern IntPtr ChildWindowFromPointEx(IntPtr parent, POINT pt, uint flags);
+  [DllImport("user32.dll")] public static extern bool ScreenToClient(IntPtr hWnd, ref POINT lpPoint);
+  [DllImport("user32.dll")] public static extern IntPtr GetTopWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
+  public static string DescribeWindow(IntPtr hWnd) {
+    if (hWnd == IntPtr.Zero) return "null";
+    var cls = new System.Text.StringBuilder(256);
+    GetClassName(hWnd, cls, cls.Capacity);
+    uint pid = 0;
+    GetWindowThreadProcessId(hWnd, out pid);
+    string proc = "";
+    try { proc = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName; } catch { proc = "?"; }
+    RECT box;
+    GetWindowRect(hWnd, out box);
+    return "hwnd=" + hWnd.ToInt64() + " class=" + cls + " title=" + Title(hWnd) + " pid=" + pid + " proc=" + proc
+      + " ex=" + ExStyle(hWnd) + " rect=" + box.Left + "," + box.Top + " " + (box.Right - box.Left) + "x" + (box.Bottom - box.Top)
+      + " visible=" + IsWindowVisible(hWnd);
+  }
+  public static string StackAt(int x, int y) {
+    var screenPoint = new POINT { X = x, Y = y };
+    var top = WindowFromPoint(screenPoint);
+    var lines = new System.Collections.Generic.List<string>();
+    lines.Add("WindowFromPoint " + DescribeWindow(top));
+    if (top != IntPtr.Zero) {
+      var client = screenPoint;
+      ScreenToClient(top, ref client);
+      var child = ChildWindowFromPointEx(top, client, 0);
+      lines.Add("ChildWindowFromPointEx " + DescribeWindow(child));
+    }
+    var walk = GetTopWindow(IntPtr.Zero);
+    int seen = 0;
+    while (walk != IntPtr.Zero && seen < 40) {
+      RECT box;
+      if (GetWindowRect(walk, out box) && x >= box.Left && x < box.Right && y >= box.Top && y < box.Bottom) {
+        lines.Add("z" + seen + " " + DescribeWindow(walk));
+      }
+      walk = GetWindow(walk, 2);
+      seen++;
+    }
+    return string.Join(" || ", lines.ToArray());
   }
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
   [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
@@ -138,7 +182,10 @@ public static class SonoraInput {
     return found.ToArray();
   }
   public static void RaiseWithoutFocus(IntPtr hWnd) {
-    SetWindowPos(hWnd, new IntPtr(-1), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    // HWND_TOPMOST (-1) replaces Sonora's screen-saver band. After that, clicks
+    // on the title bar never reach the page. Keep the current z-order.
+    const uint SWP_NOZORDER = 0x0004;
+    SetWindowPos(hWnd, IntPtr.Zero, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW);
   }
   public static void Wheel(int x, int y, int delta) {
     int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
@@ -175,6 +222,37 @@ public static class SonoraInput {
     up[0].type = 0; up[0].mi.dx = ax2; up[0].mi.dy = ay2; up[0].mi.dwFlags = MOUSEEVENTF_LEFTUP | MOUSEEVENTF_ABSOLUTE;
     if (SendInput(1, up, Marshal.SizeOf(typeof(INPUT))) != 1) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
   }
+  static void AbsolutePoint(int x, int y, out int ax, out int ay) {
+    int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    int vw = Math.Max(1, GetSystemMetrics(SM_CXVIRTUALSCREEN));
+    int vh = Math.Max(1, GetSystemMetrics(SM_CYVIRTUALSCREEN));
+    ax = (int)Math.Round((x - vx) * 65535.0 / Math.Max(1, vw - 1));
+    ay = (int)Math.Round((y - vy) * 65535.0 / Math.Max(1, vh - 1));
+  }
+  public static void DragSteps(int x1, int y1, int x2, int y2, int steps) {
+    if (steps < 2) steps = 2;
+    int ax, ay;
+    AbsolutePoint(x1, y1, out ax, out ay);
+    INPUT[] down = new INPUT[2];
+    down[0].type = 0; down[0].mi.dx = ax; down[0].mi.dy = ay; down[0].mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
+    down[1].type = 0; down[1].mi.dx = ax; down[1].mi.dy = ay; down[1].mi.dwFlags = MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_ABSOLUTE;
+    if (SendInput(2, down, Marshal.SizeOf(typeof(INPUT))) != 2) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+    System.Threading.Thread.Sleep(50);
+    for (int i = 1; i <= steps; i++) {
+      int x = x1 + ((x2 - x1) * i / steps);
+      int y = y1 + ((y2 - y1) * i / steps);
+      AbsolutePoint(x, y, out ax, out ay);
+      INPUT[] move = new INPUT[1];
+      move[0].type = 0; move[0].mi.dx = ax; move[0].mi.dy = ay; move[0].mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
+      if (SendInput(1, move, Marshal.SizeOf(typeof(INPUT))) != 1) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+      System.Threading.Thread.Sleep(20);
+    }
+    AbsolutePoint(x2, y2, out ax, out ay);
+    INPUT[] up = new INPUT[1];
+    up[0].type = 0; up[0].mi.dx = ax; up[0].mi.dy = ay; up[0].mi.dwFlags = MOUSEEVENTF_LEFTUP | MOUSEEVENTF_ABSOLUTE;
+    if (SendInput(1, up, Marshal.SizeOf(typeof(INPUT))) != 1) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+  }
 }
 public static class SonoraKeys {
   [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, System.UIntPtr dwExtraInfo);
@@ -203,22 +281,103 @@ function Send-Chord([byte[]]$Keys) {
   [SonoraKeys]::Chord($Keys)
   Start-Sleep -Milliseconds 550
 }
+function Bring-SonoraForward {
+  $live = [IntPtr]::Zero
+  $proc = Get-Process | Where-Object { $_.ProcessName -like 'Sonora*' -and $_.MainWindowHandle -ne [IntPtr]::Zero } | Select-Object -First 1
+  if ($proc) { $live = $proc.MainWindowHandle } elseif ($script:sonoraHwnd) { $live = $script:sonoraHwnd }
+  if ($live -and $live -ne [IntPtr]::Zero) {
+    $script:sonoraHwnd = $live
+    [SonoraInput]::SetForegroundWindow($live) | Out-Null
+    [SonoraInput]::RaiseWithoutFocus($live) | Out-Null
+  }
+}
 function Save-Screen([string]$Name) {
-  # CopyFromScreen can stall the runner when another grabber holds the desktop DC.
+  Bring-SonoraForward
+  Start-Sleep -Milliseconds 400
+  $path = Join-Path $shotDir $Name
   $job = Start-Job -ScriptBlock {
-    param($shotDir, $Name)
+    param($path)
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
     $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
     $bmp = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
     $g = [System.Drawing.Graphics]::FromImage($bmp)
     $g.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
-    $bmp.Save((Join-Path $shotDir $Name), [System.Drawing.Imaging.ImageFormat]::Png)
+    $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
     $g.Dispose(); $bmp.Dispose()
-  } -ArgumentList $shotDir, $Name
+  } -ArgumentList $path
   if (-not (Wait-Job $job -Timeout 8)) { Stop-Job $job -ErrorAction SilentlyContinue; Write-Host "screenshot timed out $Name" }
-  else { Write-Host "screenshot $Name" }
+  else { Write-Host "screenshot $Name bytes=$((Get-Item $path -ErrorAction SilentlyContinue).Length)" }
   Remove-Job $job -Force -ErrorAction SilentlyContinue
+}
+function Get-Luma($Color) { return (0.2126 * $Color.R) + (0.7152 * $Color.G) + (0.0722 * $Color.B) }
+function Read-ThemeShot([IntPtr]$Window, [string]$File, [string]$TextName) {
+  $path = Join-Path $shotDir $File
+  $bmp = [System.Drawing.Bitmap]::FromFile($path)
+  $origin = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+  $box = New-Object SonoraInput+RECT
+  [SonoraInput]::GetWindowRect($Window, [ref]$box) | Out-Null
+  $pixel = {
+    param($sx, $sy)
+    $ix = [int]($sx - $origin.X); $iy = [int]($sy - $origin.Y)
+    if ($ix -lt 1 -or $iy -lt 1 -or $ix -ge ($bmp.Width - 1) -or $iy -ge ($bmp.Height - 1)) { return $null }
+    return $bmp.GetPixel($ix, $iy)
+  }
+  $panel = & $pixel ($box.Left + (($box.Right - $box.Left) * 0.62)) ($box.Top + (($box.Bottom - $box.Top) * 0.62))
+  $el = $null
+  foreach ($candidate in @(Find-All $TextName)) {
+    if ($candidate.Current.Name -eq $TextName) {
+      $area = $candidate.Current.BoundingRectangle
+      if ($area.Height -gt 72 -or $area.Width -lt 8) { continue }
+      if (-not $el -or ($area.Width * $area.Height) -gt ($el.Current.BoundingRectangle.Width * $el.Current.BoundingRectangle.Height)) { $el = $candidate }
+    }
+  }
+  $text = $null
+  $contrast = 0
+  if ($el -and $panel) {
+    $rect = $el.Current.BoundingRectangle
+    $panelLuma = Get-Luma $panel
+    for ($i = 2; $i -lt [Math]::Max(3, $rect.Width - 2); $i += 2) {
+      $sample = & $pixel ($rect.X + $i) ($rect.Y + ($rect.Height / 2))
+      if (-not $sample) { continue }
+      $delta = [Math]::Abs((Get-Luma $sample) - $panelLuma)
+      if ($delta -gt $contrast) { $contrast = $delta; $text = $sample }
+    }
+  }
+  $spread = 0
+  if ($panel) {
+    foreach ($pair in @(@(0.2, 0.3), @(0.8, 0.3), @(0.5, 0.8))) {
+      $sample = & $pixel ($box.Left + (($box.Right - $box.Left) * $pair[0])) ($box.Top + (($box.Bottom - $box.Top) * $pair[1]))
+      if ($sample) { $spread = [Math]::Max($spread, [Math]::Abs((Get-Luma $sample) - (Get-Luma $panel))) }
+    }
+  }
+  $bmp.Dispose()
+  return [pscustomobject]@{
+    PanelLuma = $(if ($panel) { [int](Get-Luma $panel) } else { -1 })
+    TextLuma = $(if ($text) { [int](Get-Luma $text) } else { -1 })
+    Contrast = [int]$contrast
+    Spread = [int]$spread
+    Bytes = (Get-Item $path).Length
+  }
+}
+function Measure-LogoGreen([string]$File, [IntPtr]$Window) {
+  $path = Join-Path $shotDir $File
+  $bmp = [System.Drawing.Bitmap]::FromFile($path)
+  $origin = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+  $box = New-Object SonoraInput+RECT
+  [SonoraInput]::GetWindowRect($Window, [ref]$box) | Out-Null
+  $width = [Math]::Max(1, $box.Right - $box.Left)
+  $height = [Math]::Max(1, $box.Bottom - $box.Top)
+  $hits = 0
+  foreach ($pair in @(@(0.22, 0.22), @(0.78, 0.22), @(0.22, 0.78))) {
+    $ix = [int](($box.Left + ($width * $pair[0])) - $origin.X)
+    $iy = [int](($box.Top + ($height * $pair[1])) - $origin.Y)
+    if ($ix -lt 0 -or $iy -lt 0 -or $ix -ge $bmp.Width -or $iy -ge $bmp.Height) { continue }
+    $pixel = $bmp.GetPixel($ix, $iy)
+    if ($pixel.G -gt 150 -and $pixel.G -gt ($pixel.R + 25) -and $pixel.G -gt ($pixel.B + 25)) { $hits++ }
+  }
+  $bmp.Dispose()
+  return $hits
 }
 
 $catcherScript = @"
@@ -232,22 +391,37 @@ Add-Type -AssemblyName System.Drawing
 `$form.TopMost = `$false
 `$form.BackColor = [System.Drawing.Color]::FromArgb(255, 32, 36, 48)
 `$form.ShowInTaskbar = `$true
-`$label = New-Object System.Windows.Forms.Label
-`$label.Text = 'CATCHER waiting'
-`$label.Dock = 'Fill'
-`$label.Font = New-Object System.Drawing.Font('Segoe UI', 32, [System.Drawing.FontStyle]::Bold)
-`$label.ForeColor = [System.Drawing.Color]::White
-`$label.TextAlign = 'MiddleCenter'
-`$form.Controls.Add(`$label)
+`$script:catcherLabel = 'CATCHER waiting'
+`$form.Add_Paint({
+  param(`$sender, `$event)
+  `$g = `$event.Graphics
+  `$w = `$sender.ClientSize.Width
+  `$h = `$sender.ClientSize.Height
+  `$colors = @(
+    [System.Drawing.Color]::FromArgb(255, 220, 48, 48),
+    [System.Drawing.Color]::FromArgb(255, 240, 210, 48),
+    [System.Drawing.Color]::FromArgb(255, 48, 96, 220),
+    [System.Drawing.Color]::FromArgb(255, 36, 180, 110),
+    [System.Drawing.Color]::FromArgb(255, 240, 120, 36),
+    [System.Drawing.Color]::FromArgb(255, 120, 64, 220)
+  )
+  `$band = [Math]::Max(1, [int](`$w / `$colors.Count))
+  for (`$i = 0; `$i -lt `$colors.Count; `$i++) {
+    `$brush = New-Object System.Drawing.SolidBrush `$colors[`$i]
+    `$g.FillRectangle(`$brush, (`$i * `$band), 0, `$band + 2, `$h)
+    `$brush.Dispose()
+  }
+  `$font = New-Object System.Drawing.Font('Segoe UI', 32, [System.Drawing.FontStyle]::Bold)
+  `$size = `$g.MeasureString(`$script:catcherLabel, `$font)
+  `$g.DrawString(`$script:catcherLabel, `$font, [System.Drawing.Brushes]::White, (`$w - `$size.Width) / 2, (`$h - `$size.Height) / 2)
+  `$font.Dispose()
+})
 `$file = '$($clickFile.Replace("'", "''"))'
-`$onClick = {
+`$form.Add_MouseDown({
   Add-Content -Path `$file -Value ("click {0}" -f [DateTime]::UtcNow.ToString('o'))
-  `$form.BackColor = [System.Drawing.Color]::FromArgb(255, 210, 32, 32)
-  `$label.Text = 'PASS-THROUGH'
-  `$form.Refresh()
-}
-`$form.Add_MouseDown(`$onClick)
-`$label.Add_MouseDown(`$onClick)
+  `$script:catcherLabel = 'PASS-THROUGH'
+  `$form.Invalidate()
+})
 `$form.Add_Shown({ `$form.Activate() })
 [System.Windows.Forms.Application]::Run(`$form)
 "@
@@ -463,6 +637,7 @@ try {
   Write-Host "runner $($os.Caption) $($os.Version)"
   $launched = Start-Sonora @('--force-renderer-accessibility')
   $hwnd = $launched.hwnd
+  $script:sonoraHwnd = $hwnd
   $windowTitle = [SonoraInput]::Title($hwnd)
   Add-Scenario 'Task Manager process name stays Sonora' ($launched.proc.ProcessName -like 'Sonora*' -and $windowTitle -match 'Sonora') "process=$($launched.proc.ProcessName) title=$windowTitle"
   Write-Host 'PHASE live-ui'
@@ -748,10 +923,132 @@ try {
     if ($plain) { Click-Element $plain; return }
     if (-not (Find-Exact "$Name selected")) { throw "No theme button named $Name" }
   }
-  Select-Theme 'Light'
-  Add-Scenario 'Control: Light theme toggle' ([bool](Wait-Named 'Light selected' 3)) ''
   Select-Theme 'Dark'
   Add-Scenario 'Control: Dark theme toggle' ([bool](Wait-Named 'Dark selected' 3)) ''
+  Select-Theme 'Light'
+  Add-Scenario 'Control: Light theme toggle' ([bool](Wait-Named 'Light selected' 3)) ''
+  Add-Scenario 'Theme light is applied' ([bool]((Wait-Named 'Theme light' 3) -and (Find-Exact 'Light selected'))) ''
+
+  function Send-MockJson([string]$Json) {
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($Json)
+    $req = [System.Net.HttpWebRequest]::Create('http://127.0.0.1:4173/api/e2e/seed')
+    $req.Method = 'POST'
+    $req.ContentType = 'application/json'
+    $req.Timeout = 10000
+    $req.Proxy = $null
+    $stream = $req.GetRequestStream()
+    $stream.Write($bytes, 0, $bytes.Length)
+    $stream.Close()
+    $resp = $req.GetResponse()
+    $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())
+    $text = $reader.ReadToEnd()
+    $reader.Close(); $resp.Close()
+    Write-Host "mock seed $text"
+    if (-not $text) { return $null }
+    return $text | ConvertFrom-Json
+  }
+  function Add-E2EItem([string]$Title, [string]$Resume, [string]$Document, [string]$Status) {
+    $payload = @{ title = $Title; company = $Title; resumeText = $Resume; documentsText = $Document; status = $Status; sessionType = 'mock' } | ConvertTo-Json -Compress
+    return Send-MockJson $payload
+  }
+  function Remove-E2EItem([string]$Id) {
+    $payload = @{ id = $Id; remove = $true } | ConvertTo-Json -Compress
+    Send-MockJson $payload | Out-Null
+  }
+  function Wait-Absent([string]$Name, [int]$Seconds = 4) {
+    $until = (Get-Date).AddSeconds($Seconds)
+    do {
+      if (-not (Find-Element $Name)) { return $true }
+      Start-Sleep -Milliseconds 200
+    } while ((Get-Date) -lt $until)
+    return -not (Find-Element $Name)
+  }
+  try {
+  $cedar = Add-E2EItem 'Cedar archive' '' '' 'ready'
+  $lattice = Add-E2EItem 'Lattice resume' 'Lattice resume body' '' 'ready'
+  $orbit = Add-E2EItem 'Orbit brief' '' 'Orbit brief body' 'ready'
+  $liveDesk = Add-E2EItem 'Live desk' '' '' 'active'
+  $counted = Wait-Named 'Session count 5' 8
+  $seeded = [bool]($counted -and (Wait-Named 'Cedar archive' 4) -and (Wait-Named 'Lattice resume' 2) -and (Wait-Named 'Orbit brief' 2) -and (Wait-Named 'Live desk' 2))
+  Add-Scenario 'Library items are listed' $seeded $(if ($counted) { 'count=5' } else { 'session count did not reach 5' })
+  if (-not $seeded) { throw 'Seeded sessions did not appear in the list.' }
+  function Test-NamedInside([string]$Name) {
+    $win = New-Object SonoraInput+RECT
+    [SonoraInput]::GetWindowRect($script:sonoraHwnd, [ref]$win) | Out-Null
+    $seen = 0
+    $bad = ''
+    foreach ($el in @(Find-All $Name)) {
+      if ($el.Current.Name -ne $Name -and $el.Current.Name -notlike "$Name *") { continue }
+      $r = $el.Current.BoundingRectangle
+      if ($r.Width -lt 8 -or $r.Height -lt 8) { continue }
+      if ($r.Bottom -lt $win.Top -or $r.Top -gt $win.Bottom) { continue }
+      $off = $false
+      try { $off = [bool]$el.Current.IsOffscreen } catch { $off = $true }
+      $seen++
+      $fits = -not $off -and $r.Left -ge ($win.Left - 1) -and $r.Right -le ($win.Right + 1) -and $r.Top -ge ($win.Top - 1) -and $r.Bottom -le ($win.Bottom + 1)
+      if (-not $fits) { $bad = "$($el.Current.Name) off=$off box=$([int]$r.Left),$([int]$r.Top)-$([int]$r.Right),$([int]$r.Bottom) win=$($win.Right)x$($win.Bottom)" }
+    }
+    return [pscustomobject]@{ Ok = ($seen -gt 0 -and -not $bad); Detail = $(if ($bad) { $bad } else { "visible=$seen" }) }
+  }
+  $deleteFit = Test-NamedInside 'Delete session'
+  Add-Scenario 'Delete control is fully inside the window' ([bool]$deleteFit.Ok) $deleteFit.Detail
+  Click-Exact 'Delete session Cedar archive' | Out-Null
+  $confirmSession = Wait-Named 'Confirm delete' 3
+  Save-Screen 'delete-session-confirm.png'
+  if ($confirmSession) { Click-Exact 'Delete session' | Out-Null }
+  $cedarGone = Wait-Absent 'Cedar archive'
+  Add-Scenario 'Delete session confirms and removes it' ([bool]($confirmSession -and $cedarGone -and (Find-Element 'Northwind interview'))) "gone=$cedarGone"
+  Click-Exact 'Resumes' | Out-Null
+  $resumeShown = Wait-Named 'Lattice resume body' 3
+  if ($resumeShown) {
+    $resumeFit = Test-NamedInside 'Delete resume'
+    Add-Scenario 'Resume delete control is fully inside the window' ([bool]$resumeFit.Ok) $resumeFit.Detail
+    Click-Exact 'Delete resume Lattice resume' | Out-Null
+    Save-Screen 'delete-resume-confirm.png'
+    Click-Exact 'Delete resume' | Out-Null
+  }
+  $resumeGone = Wait-Absent 'Lattice resume body'
+  Click-Exact 'Call Sessions' | Out-Null
+  $latticeRemains = [bool](Wait-Named 'Lattice resume' 3)
+  Add-Scenario 'Delete resume confirms and removes it' ([bool]($resumeShown -and $resumeGone -and $latticeRemains)) "shown=$([bool]$resumeShown) gone=$resumeGone sessionRemains=$latticeRemains"
+  if ($latticeRemains) {
+    Click-Exact 'Delete session Lattice resume' | Out-Null
+    Click-Exact 'Delete session' | Out-Null
+    Start-Sleep -Milliseconds 400
+  }
+  Click-Exact 'Documents' | Out-Null
+  $docShown = Wait-Named 'Orbit brief body' 3
+  if ($docShown) {
+    $documentFit = Test-NamedInside 'Delete document'
+    Add-Scenario 'Document delete control is fully inside the window' ([bool]$documentFit.Ok) $documentFit.Detail
+    Click-Exact 'Delete document Orbit brief' | Out-Null
+    Save-Screen 'delete-document-confirm.png'
+    Click-Exact 'Delete document' | Out-Null
+  }
+  $docGone = Wait-Absent 'Orbit brief body'
+  Click-Exact 'Call Sessions' | Out-Null
+  $orbitRemains = [bool](Wait-Named 'Orbit brief' 3)
+  Add-Scenario 'Delete document confirms and removes it' ([bool]($docShown -and $docGone -and $orbitRemains)) "shown=$([bool]$docShown) gone=$docGone sessionRemains=$orbitRemains"
+  if ($orbitRemains) {
+    Click-Exact 'Delete session Orbit brief' | Out-Null
+    Click-Exact 'Delete session' | Out-Null
+    Start-Sleep -Milliseconds 400
+  }
+  Click-Exact 'Delete session Live desk' | Out-Null
+  $blocked = Wait-Named 'End this session before deleting it.' 3
+  Save-Screen 'delete-live-blocked.png'
+  if (Find-Exact 'Close') { Click-Exact 'Close' | Out-Null }
+  $liveRemains = [bool](Find-Element 'Live desk')
+  Add-Scenario 'Deleting a live session is blocked' ([bool]($blocked -and $liveRemains)) "blocked=$([bool]$blocked) remains=$liveRemains"
+  if ($liveDesk.id) { Remove-E2EItem $liveDesk.id }
+  Click-Exact 'Call Sessions' | Out-Null
+  Start-Sleep -Seconds 2
+  Start-Sleep -Milliseconds 400
+  } catch {
+    Add-Scenario 'Library delete flow completed' $false $_.Exception.Message
+    Write-Host "library delete failed: $($_.Exception.Message)"
+    if (Find-Exact 'Call Sessions') { Click-Exact 'Call Sessions' | Out-Null; Start-Sleep -Milliseconds 400 }
+  }
 
   function Set-Slider([double]$Ratio) {
     [SonoraInput]::RaiseWithoutFocus($hwnd) | Out-Null
@@ -876,6 +1173,9 @@ try {
     $enhanced = [bool](Select-String -Path $env:SONORA_MOCK_LOG -Pattern 'operating_point enhanced' -Quiet)
   }
   Add-Scenario 'Control: Listen starts transcription' ([bool]($listening -and $enhanced)) "enhanced=$enhanced"
+  Save-Screen 'theme-light-overlay.png'
+  $overlayLight = Read-ThemeShot $hwnd 'theme-light-overlay.png' 'No answer yet'
+  Add-Scenario 'Overlay light theme changes panel fill and text' ([bool]($overlayLight.Bytes -gt 15000 -and $overlayLight.Contrast -gt 15 -and $overlayLight.TextLuma -lt ($overlayLight.PanelLuma - 10))) "panel=$($overlayLight.PanelLuma) text=$($overlayLight.TextLuma) bytes=$($overlayLight.Bytes)"
   Click-Exact 'Pause' | Out-Null
   $pausedNote = Wait-Named 'Listening paused' 4
   $sessionStillOpen = [bool](Find-VisibleButton 'End session')
@@ -904,18 +1204,36 @@ try {
   $listeningIcon = Wait-Named 'Sonora listening' 3
   Add-Scenario 'Ctrl+H collapses the live overlay to a listening icon' ([bool]([SonoraInput]::IsWindowVisible($hwnd) -and $collapsedHeight -le 140 -and $collapsedHeight -ge 40 -and $listeningIcon)) "full=$fullHeight collapsed=$collapsedHeight"
   Save-Screen '05d-collapsed.png'
+  Copy-Item (Join-Path $shotDir '05d-collapsed.png') (Join-Path $shotDir 'collapsed-logo-bands.png') -Force
+  $logoGreen = Measure-LogoGreen 'collapsed-logo-bands.png' $hwnd
+  Add-Scenario 'Collapsed icon uses the Sonora logo' ($logoGreen -ge 2) "green=$logoGreen"
+  function Get-WindowBox([IntPtr]$handle) {
+    $box = New-Object SonoraInput+RECT
+    [SonoraInput]::GetWindowRect($handle, [ref]$box) | Out-Null
+    return [pscustomobject]@{ X = [int]$box.Left; Y = [int]$box.Top; W = [int]($box.Right - $box.Left); H = [int]($box.Bottom - $box.Top) }
+  }
+  function Invoke-IconDrag([IntPtr]$handle, [int]$dx, [int]$dy, [string]$label) {
+    $before = Get-WindowBox $handle
+    $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+    $x1 = [int]($before.X + ($before.W / 2))
+    $y1 = [int]($before.Y + ($before.H / 2))
+    $x2 = [Math]::Max($screen.Left + 30, [Math]::Min($screen.Right - 30, $x1 + $dx))
+    $y2 = [Math]::Max($screen.Top + 30, [Math]::Min($screen.Bottom - 30, $y1 + $dy))
+    if ([Math]::Abs($x2 - $x1) -lt 250 -and [Math]::Abs($dx) -ge 300) { $x2 = [Math]::Max($screen.Left + 30, [Math]::Min($screen.Right - 30, $x1 - $dx)) }
+    if ([Math]::Abs($y2 - $y1) -lt 250 -and [Math]::Abs($dy) -ge 300) { $y2 = [Math]::Max($screen.Top + 30, [Math]::Min($screen.Bottom - 30, $y1 - $dy)) }
+    [SonoraInput]::DragSteps($x1, $y1, $x2, $y2, 12)
+    Start-Sleep -Milliseconds 400
+    $after = Get-WindowBox $handle
+    $moved = ([Math]::Abs($after.X - $before.X) -ge 200) -or ([Math]::Abs($after.Y - $before.Y) -ge 200)
+    $same = ($after.W -eq $before.W) -and ($after.H -eq $before.H) -and $after.W -ge 40 -and $after.W -le 160 -and $after.H -ge 40 -and $after.H -le 160
+    Add-Scenario "Collapsed drag $label keeps size and moves" ($moved -and $same -and [SonoraInput]::IsWindowVisible($handle)) "before=$($before.W)x$($before.H)@$($before.X),$($before.Y) after=$($after.W)x$($after.H)@$($after.X),$($after.Y)"
+    return $same -and $moved
+  }
   $dragged = $false
   if ($listeningIcon) {
-    $beforeDrag = New-Object SonoraInput+RECT
-    [SonoraInput]::GetWindowRect($hwnd, [ref]$beforeDrag) | Out-Null
-    $x1 = [int](($beforeDrag.Left + $beforeDrag.Right) / 2)
-    $y1 = [int](($beforeDrag.Top + $beforeDrag.Bottom) / 2)
-    [SonoraInput]::Drag($x1, $y1, $x1 + 80, $y1 + 40)
-    Start-Sleep -Milliseconds 300
-    $afterDrag = New-Object SonoraInput+RECT
-    [SonoraInput]::GetWindowRect($hwnd, [ref]$afterDrag) | Out-Null
-    $dragged = ([math]::Abs($afterDrag.Left - $beforeDrag.Left) -ge 20) -or ([math]::Abs($afterDrag.Top - $beforeDrag.Top) -ge 20)
-    Add-Scenario 'The listening icon is draggable' ($dragged -and [SonoraInput]::IsWindowVisible($hwnd)) "from=$($beforeDrag.Left),$($beforeDrag.Top) to=$($afterDrag.Left),$($afterDrag.Top)"
+    $dragged = (Invoke-IconDrag $hwnd 320 0 'right 300') -and (Invoke-IconDrag $hwnd -320 0 'left 300') -and (Invoke-IconDrag $hwnd 0 320 'down 300') -and (Invoke-IconDrag $hwnd 0 -320 'up 300')
+    Save-Screen '05d-dragged.png'
+    Add-Scenario 'The listening icon is draggable' ([bool]($dragged -and [SonoraInput]::IsWindowVisible($hwnd))) '300px right, left, down, and up'
   } else { Add-Scenario 'The listening icon is draggable' $false 'icon missing' }
   $iconRect = New-Object SonoraInput+RECT
   [SonoraInput]::GetWindowRect($hwnd, [ref]$iconRect) | Out-Null
@@ -1108,9 +1426,18 @@ try {
   Click-Exact 'Back to sessions' | Out-Null
   $returned = Wait-Named 'Call Sessions' 4
   Add-Scenario 'Control: Back to sessions leaves without ending' ([bool]($returned -and (Find-Element 'Start') -and -not (Find-VisibleButton 'End session'))) ''
+  Select-Theme 'Dark'
+  $darkSelected = Wait-Named 'Dark selected' 3
   $startAgain = Find-Exact 'Start'
-  if ($startAgain) { Click-Element $startAgain; Start-Sleep -Milliseconds 500 }
-  Click-Exact 'End session' | Out-Null
+  if ($startAgain) { Click-Element $startAgain; Start-Sleep -Milliseconds 700 }
+  $overlayOpen = Wait-Named 'No answer yet' 6
+  if ($overlayOpen) {
+    Save-Screen 'overlay-dark-bands.png'
+    $overlayDark = Read-ThemeShot $hwnd 'overlay-dark-bands.png' 'No answer yet'
+  } else { $overlayDark = [pscustomobject]@{ PanelLuma = -1; TextLuma = -1; Contrast = 0; Bytes = 0 } }
+  $overlayDarkOk = [bool]$darkSelected -and $overlayDark.Bytes -gt 15000 -and $overlayDark.Contrast -gt 15 -and $overlayDark.TextLuma -gt ($overlayDark.PanelLuma + 10) -and ($overlayLight.PanelLuma - $overlayDark.PanelLuma) -gt 12
+  Add-Scenario 'Overlay dark theme changes panel fill and text' $overlayDarkOk "panel=$($overlayDark.PanelLuma) text=$($overlayDark.TextLuma) lightPanel=$($overlayLight.PanelLuma) bytes=$($overlayDark.Bytes)"
+  if (Find-Exact 'End session') { Click-Exact 'End session' | Out-Null } else { Click-Exact 'End session' | Out-Null }
   $endPosted = $false
   $leftSession = $false
   $endUntil = (Get-Date).AddSeconds(8)
@@ -1134,6 +1461,8 @@ try {
     Add-Scenario 'Control: Log out returns to the sign-in screen' $false 'Log out missing on the session list'
   }
 
+  $script:bootLinesBeforeHide = 0
+  if (Test-Path $env:SONORA_BOOT_LOG) { $script:bootLinesBeforeHide = @(Get-Content $env:SONORA_BOOT_LOG).Count }
   Click-Name 'Hide Sonora' | Out-Null
   Start-Sleep -Milliseconds 700
   $hidden = -not [SonoraInput]::IsWindowVisible($hwnd)
@@ -1328,14 +1657,67 @@ try {
   Add-Scenario 'Opening Sonora again shows the hidden window' $shown ''
   Save-Screen '05c-shown.png'
   if ($shown) {
-    Click-Exact 'Minimize' | Out-Null
-    Start-Sleep -Milliseconds 700
+    $widgetUntil = (Get-Date).AddSeconds(18)
+    $widgetCleared = $false
+    do {
+      if (Test-Path $env:SONORA_BOOT_LOG) {
+        $bootLines = @(Get-Content $env:SONORA_BOOT_LOG)
+        if ($bootLines.Count -gt $script:bootLinesBeforeHide) {
+          $fresh = $bootLines[$script:bootLinesBeforeHide..($bootLines.Count - 1)] -join "`n"
+          if ($fresh -match 'render-widget-hit') { $widgetCleared = $true }
+        }
+      }
+      if (-not $widgetCleared) { Start-Sleep -Milliseconds 200 }
+    } while (-not $widgetCleared -and (Get-Date) -lt $widgetUntil)
+    Write-Host "WIDGET-HIT cleared=$widgetCleared"
+    $minimize = Find-Exact 'Minimize'
+    if (-not $minimize) { throw 'Minimize button missing after the tray restore' }
+    $r = $minimize.Current.BoundingRectangle
+    $script:minimizeWhere = "uia $([int]$r.X),$([int]$r.Y) $([int]$r.Width)x$([int]$r.Height)"
+    $clickX = [int]($r.X + ($r.Width / 2))
+    $clickY = [int]($r.Y + ($r.Height / 2))
+    $hitText = ''
+    try {
+      $payload = "{`"x`":$clickX,`"y`":$clickY}"
+      $bytes = [System.Text.Encoding]::UTF8.GetBytes($payload)
+      $req = [System.Net.HttpWebRequest]::Create('http://127.0.0.1:4174/hit')
+      $req.Method = 'POST'
+      $req.ContentType = 'application/json'
+      $req.Timeout = 5000
+      $req.Proxy = $null
+      $stream = $req.GetRequestStream()
+      $stream.Write($bytes, 0, $bytes.Length)
+      $stream.Close()
+      $resp = $req.GetResponse()
+      $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())
+      $hitText = $reader.ReadToEnd()
+      $reader.Close(); $resp.Close()
+    } catch { $hitText = "hit-debug $($_.Exception.Message)" }
+    Write-Host "HIT $hitText"
+    $stack = [SonoraInput]::StackAt($clickX, $clickY)
+    Write-Host "WINDOWAT $stack"
+    # Click the center of the Minimize button. The control 33px to its right is Hide.
+    [SonoraInput]::Click($clickX, $clickY)
+    Start-Sleep -Milliseconds 400
+    $afterHit = ''
+    if (Test-Path $env:SONORA_BOOT_LOG) {
+      $afterHit = ((Get-Content $env:SONORA_BOOT_LOG -Tail 8) -join ' || ')
+    }
+    Write-Host "HIT-AFTER $afterHit"
+    Start-Sleep -Milliseconds 500
     $collapsedHeight = Get-WindowHeight $hwnd
     $listeningIcon = Wait-Named 'Sonora listening' 3
     $stillShown = [SonoraInput]::IsWindowVisible($hwnd)
-    Add-Scenario 'Minimize collapses to a listening icon inside the same window' ([bool]($stillShown -and $collapsedHeight -le 140 -and $collapsedHeight -ge 40 -and $listeningIcon)) "height=$collapsedHeight"
+    $stackBrief = if ($stack.Length -gt 700) { $stack.Substring(0, 700) } else { $stack }
+    Add-Scenario 'Minimize collapses to a listening icon inside the same window' ([bool]($stillShown -and $collapsedHeight -le 140 -and $collapsedHeight -ge 40 -and $listeningIcon)) "height=$collapsedHeight $($script:minimizeWhere) $stackBrief"
     Save-Screen '05e-minimized.png'
-    if ($listeningIcon) { Click-Element $listeningIcon; Start-Sleep -Milliseconds 500 }
+    if ($listeningIcon) {
+      # Click the icon's window, not its accessibility box. That box can sit
+      # outside the 72px icon after the tray restores the window.
+      $icon = Get-WindowBox $hwnd
+      [SonoraInput]::Click([int]($icon.X + ($icon.W / 2)), [int]($icon.Y + ($icon.H / 2)))
+      Start-Sleep -Milliseconds 700
+    }
     $grown = Get-WindowHeight $hwnd
     Add-Scenario 'Clicking the listening icon restores the overlay' ($grown -gt 240) "height=$grown"
   } else {
@@ -1349,6 +1731,31 @@ try {
   $again = Start-Sonora @('--force-renderer-accessibility')
   Start-Sleep -Seconds 4
   $hwnd2 = $again.hwnd
+  $script:sonoraHwnd = $hwnd2
+  if (Wait-Named 'Sign in' 12) { Click-Element (Find-Exact 'Sign in') | Out-Null }
+  $backHome = Wait-Named 'Call Sessions' 12
+  Save-Screen 'theme-dark.png'
+  Copy-Item (Join-Path $shotDir 'theme-dark.png') (Join-Path $shotDir 'theme-dark-restart.png') -Force
+  $restartDark = Read-ThemeShot $hwnd2 'theme-dark.png' 'Call Sessions'
+  $darkHomeOk = $restartDark.Bytes -gt 20000 -and $restartDark.Contrast -gt 15 -and $restartDark.TextLuma -gt ($restartDark.PanelLuma + 15)
+  Add-Scenario 'Home dark theme changes panel fill and text' ([bool]$darkHomeOk) "panel=$($restartDark.PanelLuma) text=$($restartDark.TextLuma) bytes=$($restartDark.Bytes)"
+  $persisted = [bool]($backHome -and (Find-Exact 'Dark selected') -and (Find-Exact 'Theme dark') -and $darkHomeOk)
+  Add-Scenario 'Theme persists after restart' $persisted "panel=$($restartDark.PanelLuma) text=$($restartDark.TextLuma)"
+  if ($backHome) {
+    Click-Exact 'Light' | Out-Null
+    Start-Sleep -Milliseconds 400
+    Save-Screen 'theme-light.png'
+    $homeLight = Read-ThemeShot $hwnd2 'theme-light.png' 'Call Sessions'
+    $lightHomeOk = $homeLight.Bytes -gt 20000 -and $homeLight.Contrast -gt 15 -and $homeLight.TextLuma -lt ($homeLight.PanelLuma - 15) -and (($homeLight.PanelLuma - $restartDark.PanelLuma) -gt 12)
+    Add-Scenario 'Home light theme changes panel fill and text' ([bool]$lightHomeOk) "panel=$($homeLight.PanelLuma) text=$($homeLight.TextLuma) darkPanel=$($restartDark.PanelLuma) bytes=$($homeLight.Bytes)"
+  } else { Add-Scenario 'Home light theme changes panel fill and text' $false 'home did not return' }
+  if ($backHome) { Click-Exact 'Resumes' | Out-Null }
+  $resumeStillGone = -not (Find-Element 'Lattice resume body')
+  if ($backHome) { Click-Exact 'Documents' | Out-Null }
+  $documentStillGone = -not (Find-Element 'Orbit brief body')
+  if ($backHome) { Click-Exact 'Call Sessions' | Out-Null }
+  $sessionStillGone = -not (Find-Element 'Cedar archive')
+  Add-Scenario 'Deleted session, resume, and document stay gone after restart' ([bool]($backHome -and $resumeStillGone -and $documentStillGone -and $sessionStillGone -and (Find-Element 'Northwind interview'))) "resume=$resumeStillGone document=$documentStillGone session=$sessionStillGone"
   $rect2 = New-Object SonoraInput+RECT
   [SonoraInput]::GetWindowRect($hwnd2, [ref]$rect2) | Out-Null
   $before = Click-Count
@@ -1359,6 +1766,39 @@ try {
   $after = Click-Count
   Add-Scenario 'Restart still receives OS clicks' ($after -eq $before) "new pass-through=$($after - $before)"
   Save-Screen '06-restart.png'
+
+  Stop-Sonora
+  Start-Sleep -Seconds 1
+  $scaled = Start-Sonora @('--force-renderer-accessibility', '--force-device-scale-factor=1.5')
+  Start-Sleep -Seconds 3
+  $scaleHwnd = $scaled.hwnd
+  [SonoraInput]::SetWindowPos($scaleHwnd, [IntPtr]::Zero, 80, 40, 0, 0, 0x0041) | Out-Null
+  $scaleLabel = ''
+  $scaleUntil = (Get-Date).AddSeconds(8)
+  while ((Get-Date) -lt $scaleUntil -and -not $scaleLabel) {
+    $scaleNode = Find-Element 'Display scale'
+    if ($scaleNode) { $scaleLabel = $scaleNode.Current.Name }
+    else { Start-Sleep -Milliseconds 250 }
+  }
+  Add-Scenario '150% display scale is active' ($scaleLabel -eq 'Display scale 150') $scaleLabel
+  if (Wait-Named 'Sign in' 8) { Click-Element (Find-Exact 'Sign in') | Out-Null; Wait-Named 'Call Sessions' 10 | Out-Null }
+  Click-Exact 'Minimize' | Out-Null
+  $scaledIcon = Wait-Named 'Sonora listening' 4
+  if ($scaledIcon) { Save-Screen 'collapsed-logo-150.png' }
+  $scaledBefore = Get-WindowBox $scaleHwnd
+  $scaledDrags = $false
+  if ($scaledIcon) {
+    $scaledDrags = (Invoke-IconDrag $scaleHwnd 320 0 '150% right 300') -and (Invoke-IconDrag $scaleHwnd -320 0 '150% left 300') -and (Invoke-IconDrag $scaleHwnd 0 320 '150% down 300') -and (Invoke-IconDrag $scaleHwnd 0 -320 '150% up 300')
+    Save-Screen 'collapsed-drag-150.png'
+  }
+  Add-Scenario 'Collapsed drag at 150% keeps the icon size' ([bool]($scaledIcon -and $scaledDrags)) "scale=$scaleLabel before=$($scaledBefore.W)x$($scaledBefore.H)"
+  if ($scaledIcon) {
+    $icon = Get-WindowBox $scaleHwnd
+    [SonoraInput]::Click([int]($icon.X + ($icon.W / 2)), [int]($icon.Y + ($icon.H / 2)))
+    Start-Sleep -Milliseconds 500
+  }
+  $scaledRestored = Get-WindowHeight $scaleHwnd
+  Add-Scenario 'Clicking the 150% icon restores the overlay' ($scaledRestored -gt 240) "height=$scaledRestored before=$($scaledBefore.W)x$($scaledBefore.H)"
 }
 finally {
   $failed = @($scenarios | Where-Object { -not $_.pass })

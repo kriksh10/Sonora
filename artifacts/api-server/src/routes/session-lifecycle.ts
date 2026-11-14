@@ -1,6 +1,6 @@
-import { Router } from "express";
+import { Router, type Request, type Response } from "express";
 import { getAuth } from "@clerk/express";
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { db, callSessionsTable, sessionBilling, sessionNotes, questionBanks } from "@workspace/db";
 import { GetSessionParams, RestartSessionBody } from "@workspace/api-zod";
 import { withAnswerPreferences } from "../lib/answer-preferences";
@@ -40,11 +40,21 @@ router.post("/sessions/:id/restart", async (req, res) => {
   stopSessionOperations(req.params.id, userId);
   res.json(withAnswerPreferences(result.session!));
 });
+async function clearOwnedText(req: Request, res: Response, field: "resumeText" | "documentsText") {
+  const userId = getAuth(req).userId!;
+  const [updated] = await db.update(callSessionsTable).set({ [field]: "" }).where(and(
+    eq(callSessionsTable.id, String(req.params.id)), eq(callSessionsTable.userId, userId),
+  )).returning();
+  if (!updated) { res.status(404).json({ error: "Session not found." }); return; }
+  res.json(withAnswerPreferences(updated));
+}
+router.delete("/sessions/:id/resume", (req, res) => clearOwnedText(req, res, "resumeText"));
+router.delete("/sessions/:id/documents", (req, res) => clearOwnedText(req, res, "documentsText"));
 router.delete("/sessions/:id", async (req, res) => {
   const userId = getAuth(req).userId!;
   const condition = and(eq(callSessionsTable.id, req.params.id), eq(callSessionsTable.userId, userId));
   const deleted = await db.transaction(async tx => {
-    const rows = await tx.delete(callSessionsTable).where(and(condition, eq(callSessionsTable.status, "ended"))).returning({ id: callSessionsTable.id });
+    const rows = await tx.delete(callSessionsTable).where(and(condition, ne(callSessionsTable.status, "active"))).returning({ id: callSessionsTable.id });
     if (rows.length) {
       await tx.delete(sessionBilling).where(eq(sessionBilling.sessionId, req.params.id));
       await tx.delete(sessionNotes).where(eq(sessionNotes.sessionId, req.params.id));
@@ -54,7 +64,7 @@ router.delete("/sessions/:id", async (req, res) => {
   });
   if (!deleted.length) {
     const [existing] = await db.select({ id: callSessionsTable.id }).from(callSessionsTable).where(condition).limit(1);
-    res.status(existing ? 409 : 404).json({ error: existing ? "End this interview before deleting it." : "Interview not found." }); return;
+    res.status(existing ? 409 : 404).json({ error: existing ? "End this session before deleting it." : "Session not found." }); return;
   }
   stopSessionOperations(req.params.id, userId);
   res.status(204).end();

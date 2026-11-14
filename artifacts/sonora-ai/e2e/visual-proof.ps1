@@ -402,6 +402,41 @@ try {
     Save-Screen ("sonora-opacity-{0}.png" -f $percent)
   }
   [void](Set-Opacity 45)
+  Start-Sleep -Milliseconds 500
+  function Get-ScreenPixel([int]$X, [int]$Y) {
+    $pixel = New-Object System.Drawing.Bitmap 1, 1
+    $graphics = [System.Drawing.Graphics]::FromImage($pixel)
+    $graphics.CopyFromScreen($X, $Y, 0, 0, (New-Object System.Drawing.Size 1, 1))
+    $color = $pixel.GetPixel(0, 0)
+    $graphics.Dispose(); $pixel.Dispose()
+    return $color
+  }
+  function Get-ColorDistance($A, $B) {
+    $dr = [int]$A.R - [int]$B.R; $dg = [int]$A.G - [int]$B.G; $db = [int]$A.B - [int]$B.B
+    return [Math]::Sqrt(($dr * $dr) + ($dg * $dg) + ($db * $db))
+  }
+  $sonoraRoot = Get-SonoraRoot
+  if (-not $sonoraRoot) { throw 'Sonora window missing for the opacity sample' }
+  $winRect = $sonoraRoot.Current.BoundingRectangle
+  $bands = @()
+  $sampleCount = 0
+  $blended = 0
+  for ($i = 0; $i -lt 6; $i++) {
+    $x = [int]($winRect.X + (($i + 0.5) * $winRect.Width / 6))
+    $y = [int]($winRect.Y + ($winRect.Height * 0.42))
+    if ($x -lt $winRect.X -or $x -gt ($winRect.X + $winRect.Width)) { continue }
+    $behindY = [Math]::Max(8, [int]$winRect.Y - 12)
+    $behind = Get-ScreenPixel $x $behindY
+    $through = Get-ScreenPixel $x $y
+    $distance = Get-ColorDistance $behind $through
+    $opaqueDark = (Get-ColorDistance $through ([System.Drawing.Color]::FromArgb(30, 30, 30))) -lt 18
+    $isBlend = $distance -gt 24 -and $distance -lt 220 -and -not $opaqueDark
+    if ($isBlend) { $blended++ }
+    $sampleCount++
+    $bands += [ordered]@{ band = $i; behind = "$($behind.R),$($behind.G),$($behind.B)"; through = "$($through.R),$($through.G),$($through.B)"; distance = [int]$distance; blend = $isBlend }
+  }
+  Save-Screen 'sonora-opacity-45-bands.png'
+  if ($blended -lt 3) { throw "Overlay at 45% did not stay see-through over the color bands. samples=$($bands | ConvertTo-Json -Compress)" }
 
   $measurements = @()
   foreach ($pair in @(
@@ -430,8 +465,9 @@ try {
     }
   }
   $report = [ordered]@{
-    mocked = 'Answers come from the local mock at 127.0.0.1:4173, not Gemini. No microphone or Speechmatics stream was used.'
+    mocked = 'Answers come from the local mock at 127.0.0.1:4173, not Gemini. No microphone or Speechmatics stream was used. The color-band sample is a real screen composite of that local window.'
     opacity = $opacityReadings
+    opacity45Bands = $bands
     defaultOverlay = 'The installed window uses its saved default size, about 820 by 760, which the shell clamps to the work area.'
     answers = $measurements
   }

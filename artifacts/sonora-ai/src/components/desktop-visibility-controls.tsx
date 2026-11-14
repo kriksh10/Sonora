@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { EyeOff, GripHorizontal, Minus, Pin, Settings2, ShieldCheck, Square } from "lucide-react";
 import DesktopMaintenance from "@/components/desktop-maintenance";
 import DesktopHotkeysSheet from "@/components/desktop-hotkeys-sheet";
@@ -16,7 +16,12 @@ export default function DesktopVisibilityControls() {
   const [opacityError, setOpacityError] = useState("");
   const [shortcutError, setShortcutError] = useState("");
   const opacityControl = useRef<ReturnType<typeof createBackgroundOpacity> | null>(null);
-  const drag = useRef({ active: false, moved: false, x: 0, y: 0 });
+  const drag = useRef({ active: false, moved: false, x: 0, y: 0, originX: 0, originY: 0 });
+  const collapseAt = useRef(0);
+  const applyShell = (next: DesktopState | null | undefined) => {
+    if (!next) return;
+    document.documentElement.classList.toggle("sonora-collapsed", !!next.collapsed);
+  };
 
   useEffect(() => {
     if (!bridge) return;
@@ -43,7 +48,7 @@ export default function DesktopVisibilityControls() {
       if (mounted) {
         setState(next);
         control.sync(next.backgroundOpacity ?? 0.45);
-        document.documentElement.classList.toggle("sonora-collapsed", !!next.collapsed);
+        applyShell(next);
         document.documentElement.style.setProperty("--sonora-font-scale", String(next.fontScale ?? 1));
       }
     });
@@ -51,7 +56,7 @@ export default function DesktopVisibilityControls() {
       if (mounted && !received) {
         setState(next);
         control.sync(next.backgroundOpacity ?? 0.45);
-        document.documentElement.classList.toggle("sonora-collapsed", !!next.collapsed);
+        applyShell(next);
         document.documentElement.style.setProperty("--sonora-font-scale", String(next.fontScale ?? 1));
       }
     }).catch(() => { if (mounted) setError("Desktop controls unavailable. Use the Sonora tray menu."); });
@@ -64,25 +69,25 @@ export default function DesktopVisibilityControls() {
     };
   }, [bridge]);
 
-  useEffect(() => {
-    const move = (event: MouseEvent) => {
-      if (!drag.current.active) return;
-      const dx = event.screenX - drag.current.x;
-      const dy = event.screenY - drag.current.y;
-      if (Math.abs(dx) + Math.abs(dy) < 1) return;
-      if (Math.abs(dx) + Math.abs(dy) >= 4) drag.current.moved = true;
-      drag.current.x = event.screenX;
-      drag.current.y = event.screenY;
-      void bridge?.moveCollapsed?.(dx, dy);
-    };
-    const up = () => { drag.current.active = false; };
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
-    return () => {
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
-    };
-  }, [bridge]);
+  useLayoutEffect(() => {
+    if (state?.collapsed) document.documentElement.classList.add("sonora-collapsed");
+  }, [state]);
+
+  const dragDistance = (event: ReactPointerEvent<HTMLElement>) => {
+    const scale = window.devicePixelRatio || 1;
+    return Math.hypot(event.screenX - drag.current.originX, event.screenY - drag.current.originY) / scale;
+  };
+  const pointerMove = (event: ReactPointerEvent<HTMLElement>) => {
+    if (!drag.current.active) return;
+    if (dragDistance(event) >= 4) drag.current.moved = true;
+    void bridge?.dragCollapsed?.("move");
+  };
+  const pointerUp = (event: ReactPointerEvent<HTMLElement>) => {
+    if (!drag.current.active) return;
+    if (dragDistance(event) >= 4) drag.current.moved = true;
+    drag.current.active = false;
+    void bridge?.dragCollapsed?.("end");
+  };
 
   useLayoutEffect(() => {
     if (!bridge || !bar.current) return;
@@ -99,7 +104,11 @@ export default function DesktopVisibilityControls() {
   const supported = state && ["win32", "darwin"].includes(state.platform);
   const run = async (action: () => Promise<DesktopState>) => {
     setPending(true); setError("");
-    try { setState(await action()); }
+    try {
+      const next = await action();
+      setState(next);
+      applyShell(next);
+    }
     catch { setError("Setting not applied. Try again or use the tray menu."); }
     finally { setPending(false); }
   };
@@ -107,18 +116,35 @@ export default function DesktopVisibilityControls() {
   return (
     <aside ref={bar} aria-label="Desktop window controls" className="sonora-window-bar sonora-overlay-controls">
       <button type="button" className="sonora-dock" aria-label="Sonora listening" title="Sonora listening. Drag to move. Click to restore."
-        onMouseDown={event => {
+        onPointerDown={event => {
           if (!state?.collapsed || event.button !== 0) return;
-          drag.current = { active: true, moved: false, x: event.screenX, y: event.screenY };
+          event.currentTarget.setPointerCapture(event.pointerId);
+          drag.current = { active: true, moved: false, x: event.screenX, y: event.screenY, originX: event.screenX, originY: event.screenY };
+          void bridge.dragCollapsed?.("start");
         }}
+        onPointerMove={pointerMove}
+        onPointerUp={pointerUp}
         onClick={() => {
           if (drag.current.moved) { drag.current.moved = false; return; }
           void run(() => bridge.minimize!());
-        }}>S</button>
-      <span className="sonora-window-drag-handle desktop-drag inline-flex items-center gap-1 text-xs font-semibold text-white/80" title="Drag here to move Sonora">
+        }}>
+        <svg className="sonora-dock-mark" viewBox="0 0 64 64" width="64" height="64" aria-hidden="true">
+          <rect width="64" height="64" rx="16" fill="#75c853" />
+          <path d="M32 12v40M18 20l28 24M46 20 18 44" fill="none" stroke="#19321d" strokeLinecap="round" strokeWidth="6" />
+        </svg>
+        <span className="sonora-dock-live" aria-hidden="true" />
+      </button>
+      <span className="sonora-window-drag-handle desktop-drag inline-flex items-center gap-1 text-xs font-semibold text-white/80" title="Drag here to move Sonora"
+        onPointerDown={event => {
+          if (event.button !== 0) return;
+          event.currentTarget.setPointerCapture(event.pointerId);
+          void bridge.dragWindow?.("start");
+        }}
+        onPointerMove={() => { void bridge.dragWindow?.("move"); }}
+        onPointerUp={() => { void bridge.dragWindow?.("end"); }}>
         <GripHorizontal size={17} /> Sonora
       </span>
-      <div className="desktop-no-drag ml-auto flex items-center gap-1">
+      <div className="desktop-no-drag ml-auto flex items-center gap-1" style={{ WebkitAppRegion: "no-drag" }}>
         {state?.captureActive && <button type="button" className="sonora-window-action text-red-200" aria-label="Stop all audio"
           onClick={() => { if (bridge.stopAllCapture) void bridge.stopAllCapture().catch(() => setError("Use tray → Stop audio capture.")); else window.dispatchEvent(new Event("sonora-stop-audio")); }}>
           <Square size={13} /> Stop audio
@@ -130,9 +156,21 @@ export default function DesktopVisibilityControls() {
           aria-label="Hide from screen sharing (best effort)" title="Screen-share exclusion is best effort"
           className={`sonora-window-action ${state?.contentProtection ? "text-emerald-300" : ""}`}
           onClick={() => void run(() => bridge.setContentProtection(!state?.contentProtection))}><ShieldCheck size={14} /></button>
-        <button type="button" disabled={!state || pending || !bridge.minimize} className="sonora-window-action" aria-label="Minimize"
+        <button type="button" disabled={pending || !bridge.minimize} className="sonora-window-action" aria-label="Minimize" style={{ WebkitAppRegion: "no-drag", backgroundColor: "rgba(128, 128, 128, 0.01)" }}
           title="Collapse to a listening icon. Ctrl+H does the same during a live session."
-          onClick={() => void run(() => bridge.minimize!())}><Minus size={14} /></button>
+          onPointerDown={event => {
+            if (event.button !== 0) return;
+            const now = Date.now();
+            if (now - collapseAt.current < 1500) return;
+            collapseAt.current = now;
+            void run(() => bridge.minimize!());
+          }}
+          onClick={() => {
+            const now = Date.now();
+            if (now - collapseAt.current < 1500) return;
+            collapseAt.current = now;
+            void run(() => bridge.minimize!());
+          }}><Minus size={14} /></button>
         <button type="button" disabled={!state || pending} className="sonora-window-action" aria-label="Hide Sonora"
           title="Close the window. The tray icon appears until you open Sonora again. Audio keeps running."
           onClick={() => void run(() => bridge.hide())}><EyeOff size={14} /></button>

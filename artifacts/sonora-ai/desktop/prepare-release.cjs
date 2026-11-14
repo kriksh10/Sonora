@@ -48,6 +48,13 @@ async function prepare({ arch = process.arch, skipServiceCheck = false } = {}) {
   fs.mkdirSync(path.join(stage, 'native'), { recursive: true });
   fs.copyFileSync(nativeBinary, path.join(stage, 'native', binaryName));
   fs.chmodSync(path.join(stage, 'native', binaryName), 0o755);
+  if (process.platform === 'win32') {
+    const hitName = 'sonora-hit.exe';
+    const hitBinary = path.join(root, 'generated-artifacts/native', `${process.platform}-${arch}`, hitName);
+    if (!fs.existsSync(hitBinary)) throw new Error('Native hit helper is missing. Run desktop:build-native for this target before packaging.');
+    fs.copyFileSync(hitBinary, path.join(stage, 'native', hitName));
+    fs.chmodSync(path.join(stage, 'native', hitName), 0o755);
+  }
   fs.copyFileSync(path.join(__dirname, 'native-audio/THIRD_PARTY_NOTICES.txt'), path.join(stage, 'THIRD_PARTY_NOTICES.txt'));
   fs.copyFileSync(path.join(__dirname, 'offline.html'), path.join(stage, 'offline.html'));
   await bundleUpdater(path.join(stage, 'updater-runtime.cjs'));

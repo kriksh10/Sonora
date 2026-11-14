@@ -23,4 +23,14 @@ const out = path.join(root, 'generated-artifacts/native', key);
 fs.mkdirSync(out, { recursive: true });
 fs.copyFileSync(path.join(targetDir, target, 'release', name), path.join(out, name));
 fs.chmodSync(path.join(out, name), 0o755);
+if (process.platform === 'win32') {
+  const hit = path.join(out, 'sonora-hit.exe');
+  const compiled = spawnSync('rustc', [
+    '--edition', '2021', '-C', 'opt-level=2', '-o', hit,
+    path.join(__dirname, 'win-hit.rs'),
+  ], { stdio: 'inherit' });
+  if (compiled.error) throw compiled.error;
+  if (compiled.status !== 0) process.exit(compiled.status || 1);
+  fs.chmodSync(hit, 0o755);
+}
 console.log(`Built native audio helper for ${key}.`);

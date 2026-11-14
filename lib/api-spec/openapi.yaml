@@ -439,12 +439,57 @@ paths:
                 $ref: "#/components/schemas/CallSession"
         default:
           $ref: "#/components/responses/SessionError"
+  /sessions/{id}/resume:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      operationId: deleteSessionResume
+      tags: [sessions]
+      summary: Remove the resume text saved on a session the caller owns
+      responses:
+        "200":
+          description: Session with resume text cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallSession"
+        default:
+          $ref: "#/components/responses/SessionError"
+  /sessions/{id}/documents:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      operationId: deleteSessionDocument
+      tags: [sessions]
+      summary: Remove the document text saved on a session the caller owns
+      responses:
+        "200":
+          description: Session with document text cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallSession"
+        default:
+          $ref: "#/components/responses/SessionError"
   /sessions/{id}:
     delete:
       operationId: deleteSession
+      summary: Delete a ready or ended session owned by the caller. A live session is rejected.
       responses:
         "204":
-          description: Ended interview and saved history permanently deleted
+          description: Ready or ended session and its saved history permanently deleted
+        "409":
+          description: The session is live and was not deleted
     parameters:
       - name: id
         in: path

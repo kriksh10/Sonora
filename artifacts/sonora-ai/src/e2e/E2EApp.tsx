@@ -6,7 +6,7 @@ import DesktopLiveOverlay from "@/components/desktop-live-overlay";
 import DesktopSelect from "@/components/desktop-select";
 import { requestAnswer } from "@/lib/answer-stream";
 import { interpretDesktopCommand } from "@/lib/desktop-commands";
-import { readSonoraTheme, type SonoraTheme } from "@/lib/theme";
+import { applySonoraTheme, readSonoraTheme, type SonoraTheme } from "@/lib/theme";
 
 type Mode = "ok" | "401" | "500" | "timeout" | "offline" | "speechmatics";
 
@@ -76,6 +76,14 @@ export default function E2EApp() {
     };
   }, []);
 
+  useEffect(() => { applySonoraTheme(theme); }, [theme]);
+
+  useEffect(() => {
+    if (!signedIn || live) return;
+    const timer = window.setInterval(() => { void refresh(); }, 1000);
+    return () => window.clearInterval(timer);
+  }, [signedIn, live]);
+
   useEffect(() => { void window.sonoraDesktop?.setLiveShortcuts?.(live); }, [live]);
 
   useEffect(() => {
@@ -90,7 +98,7 @@ export default function E2EApp() {
   }, []);
 
   const refresh = async () => {
-    const response = await fetch("/api/sessions", { credentials: "include" });
+    const response = await fetch("/api/sessions", { credentials: "include", cache: "no-store" });
     if (response.status === 401) { setSignedIn(false); return; }
     const data = await response.json() as CallSession[];
     setSessions(data);
@@ -195,12 +203,29 @@ export default function E2EApp() {
     await refresh();
   };
 
+  const removeSession = async (session: CallSession) => {
+    const response = await fetch(`/api/sessions/${session.id}`, { method: "DELETE", credentials: "include" });
+    if (response.status === 409) throw new Error("End this session before deleting it.");
+    if (!response.ok) throw new Error("Could not delete that session.");
+    setSessions(items => items.filter(item => item.id !== session.id));
+    if (selectedId === session.id) setSelectedId(null);
+  };
+  const clearSaved = async (session: CallSession, field: "resume" | "documents") => {
+    const response = await fetch(`/api/sessions/${session.id}/${field}`, { method: "DELETE", credentials: "include" });
+    if (!response.ok) throw new Error("Could not delete that item.");
+    const updated = await response.json() as CallSession;
+    setSessions(items => items.map(item => item.id === updated.id ? { ...item, ...updated } : item));
+  };
+
   return (
     <>
       <DesktopVisibilityControls />
       <p id="sonora-last-click" aria-label={`Last click ${lastClick}`} style={{ position: "absolute", width: 1, height: 1, overflow: "hidden" }} />
       <p id="sonora-hover" aria-label={hoverLabel} style={{ position: "absolute", width: 1, height: 1, overflow: "hidden" }}>{hoverLabel}</p>
       <p id="sonora-filter" aria-label={`Filter ${filter}`} style={{ position: "absolute", width: 1, height: 1, overflow: "hidden" }}>{filter}</p>
+      <p id="sonora-theme" aria-label={`Theme ${theme}`} style={{ position: "absolute", width: 1, height: 1, overflow: "hidden" }}>{theme}</p>
+      <p id="sonora-session-count" aria-label={`Session count ${sessions.length}`} style={{ position: "absolute", width: 1, height: 1, overflow: "hidden" }}>{sessions.length}</p>
+      <p id="sonora-scale" aria-label={`Display scale ${Math.round((typeof window !== "undefined" ? window.devicePixelRatio : 1) * 100)}`} style={{ position: "absolute", width: 1, height: 1, overflow: "hidden" }} />
       <main className="sonora-workspace dp-app text-[#e7e8eb]">
         {!signedIn ? (
           <section className="dp-glass dp-card" aria-label="Signed out">
@@ -293,7 +318,11 @@ export default function E2EApp() {
             userEmail="sai@sonora.ai"
             onSignOut={() => { setSignedIn(false); setLive(false); setSessions([]); }}
             theme={theme}
-            onTheme={next => { setTheme(next); document.documentElement.dataset.sonoraTheme = next; }}
+            onTheme={setTheme}
+            onRefresh={refresh}
+            onDeleteSession={removeSession}
+            onDeleteResume={session => clearSaved(session, "resume")}
+            onDeleteDocument={session => clearSaved(session, "documents")}
             now={Date.now()}
             role="user"
             freeSessionsUsed={0}
