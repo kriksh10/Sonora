@@ -238,30 +238,23 @@ function Save-Screen([string]$Name) {
   # SRCCOPY alone skips a layered transparent window, so the shot is only the catcher.
   if ($script:sonoraHwnd -and $script:sonoraHwnd -ne [IntPtr]::Zero) {
     [SonoraInput]::RaiseWithoutFocus($script:sonoraHwnd) | Out-Null
-    Start-Sleep -Milliseconds 200
+    Start-Sleep -Milliseconds 250
   }
   $path = Join-Path $shotDir $Name
-  $rs = [runspacefactory]::CreateRunspace()
-  $rs.ApartmentState = 'STA'
-  $rs.Open()
-  $ps = [powershell]::Create()
-  $ps.Runspace = $rs
-  [void]$ps.AddScript({
+  $job = Start-Job -ScriptBlock {
     param($path)
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
     $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
     $bmp = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
     $g = [System.Drawing.Graphics]::FromImage($bmp)
-    $copy = [System.Drawing.CopyPixelOperation]([int](0x00CC0020 -bor 0x40000000))
-    $g.CopyFromScreen($bounds.X, $bounds.Y, 0, 0, $bounds.Size, $copy)
+    $g.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
     $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
     $g.Dispose(); $bmp.Dispose()
-  }).AddArgument($path)
-  $handle = $ps.BeginInvoke()
-  if (-not $handle.AsyncWaitHandle.WaitOne(8000)) { $ps.Stop(); Write-Host "screenshot timed out $Name" }
-  else { $ps.EndInvoke($handle); Write-Host "screenshot $Name" }
-  $ps.Dispose(); $rs.Close()
+  } -ArgumentList $path
+  if (-not (Wait-Job $job -Timeout 8)) { Stop-Job $job -ErrorAction SilentlyContinue; Write-Host "screenshot timed out $Name" }
+  else { Write-Host "screenshot $Name bytes=$((Get-Item $path -ErrorAction SilentlyContinue).Length)" }
+  Remove-Job $job -Force -ErrorAction SilentlyContinue
 }
 function Get-Luma($Color) { return (0.2126 * $Color.R) + (0.7152 * $Color.G) + (0.0722 * $Color.B) }
 function Read-ThemeShot([IntPtr]$Window, [string]$File, [string]$TextName) {
