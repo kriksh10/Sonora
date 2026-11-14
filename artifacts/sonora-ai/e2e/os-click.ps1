@@ -1588,7 +1588,16 @@ try {
   if ($shown) {
     Bring-SonoraForward
     Start-Sleep -Milliseconds 300
-    Click-Exact 'Minimize' | Out-Null
+    $minimize = Find-Exact 'Minimize'
+    $invoked = $false
+    if ($minimize) {
+      $pattern = $null
+      if ($minimize.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) {
+        $pattern.Invoke()
+        $invoked = $true
+      }
+    }
+    if (-not $invoked) { Click-Exact 'Minimize' | Out-Null }
     Start-Sleep -Milliseconds 700
     $collapsedHeight = Get-WindowHeight $hwnd
     $listeningIcon = Wait-Named 'Sonora listening' 3
