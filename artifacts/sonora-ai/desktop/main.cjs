@@ -178,6 +178,19 @@ function syncCollapsedClass() {
     if (pending && typeof pending.catch === 'function') pending.catch(() => {});
   } catch { /* the state event still updates a live page */ }
 }
+let collapsedPaint = null;
+function holdCollapsedPaint() {
+  if (collapsedPaint) { clearInterval(collapsedPaint); collapsedPaint = null; }
+  syncCollapsedClass();
+  // A later renderer state can clear the class while the window stays 72px.
+  // Keep painting it until the window is expanded again.
+  if (!collapsed || typeof win?.webContents?.executeJavaScript !== 'function') return;
+  collapsedPaint = setInterval(() => {
+    if (!collapsed) { clearInterval(collapsedPaint); collapsedPaint = null; return; }
+    syncCollapsedClass();
+  }, 200);
+  collapsedPaint.unref?.();
+}
 const WINDOW_CLEAR = '#00000000';
 function clearWindowPlate() {
   if (!win || win.isDestroyed()) return;
@@ -221,7 +234,7 @@ function placeCollapsed(x, y) {
 function setCollapsed(value) {
   if (!win || win.isDestroyed()) return;
   const next = Boolean(value);
-  if (next === collapsed) { broadcast(); syncCollapsedClass(); return; }
+  if (next === collapsed) { broadcast(); holdCollapsedPaint(); return; }
   // Flip first so a resize event during the bounds change cannot restore the tall size.
   collapsed = next;
   collapsedDrag = null;
@@ -251,7 +264,7 @@ function setCollapsed(value) {
     expandedBounds = restored;
   }
   broadcast();
-  syncCollapsedClass();
+  holdCollapsedPaint();
 }
 function expandFromIcon() {
   if (!win || win.isDestroyed()) return;
@@ -269,7 +282,7 @@ function expandFromIcon() {
   win.setBounds(restored);
   expandedBounds = restored;
   broadcast();
-  syncCollapsedClass();
+  holdCollapsedPaint();
 }
 function conceal() {
   if (!win || win.isDestroyed()) return;
