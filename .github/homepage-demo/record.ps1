@@ -520,10 +520,7 @@ try {
   }
   Click-Ui (Find-Button 'Chat')
   Sleep-Pump 300
-  $listen = Find-Button 'Listen'
-  if (-not $listen) { throw 'Listen button missing' }
-  Click-Ui $listen
-  if (-not (Wait-Named 'Listening. Speechmatics is connected.' 8)) { Write-UiNames 'listen'; throw 'Listening did not start' }
+  # Leave Listen off. The e2e status line would say Speechmatics is connected, and this clip must not imply a live provider call.
   $expand = Find-Button 'Expand transcript'
   if ($expand) { Click-Ui $expand; Wait-Named 'Collapse transcript' 4 | Out-Null }
   $hwnd = Get-SonoraHwnd
@@ -562,10 +559,10 @@ try {
   if ($hwnd -ne [IntPtr]::Zero) { [DemoWin]::SetForegroundWindow($hwnd) | Out-Null }
   Sleep-Pump 200
   Send-Chord ([byte[]](0x11, 0x0D))
-  $answer = Wait-Named 'written split' 12
+  $answer = Wait-Contains 'written split' 10
   if (-not $answer) {
     Send-Chord ([byte[]](0x11, 0x0D))
-    $answer = Wait-Named 'written split' 8
+    $answer = Wait-Contains 'written split' 8
   }
   if (-not $answer) { Write-UiNames 'answer'; throw 'Suggested answer did not appear after Ctrl+Enter' }
   if (@(Find-AllNamed 'Heard:').Count -gt 0) { throw 'Mock returned the generic Heard answer instead of the demo answer' }
@@ -580,8 +577,15 @@ try {
   if ($slider) {
     $rect = $slider.Current.BoundingRectangle
     $y = [int]($rect.Y + $rect.Height / 2)
-    $from = [int]($rect.X + 8 + (($rect.Width - 16) * ((85 - 15) / 80.0)))
-    $to = [int]($rect.X + 8 + (($rect.Width - 16) * ((45 - 15) / 80.0)))
+    $current = 45.0
+    try {
+      $range = $slider.GetCurrentPattern([System.Windows.Automation.RangeValuePattern]::Pattern)
+      $current = [double]$range.Current.Value
+    } catch { Write-Host 'opacity value unread' }
+    $target = $(if ($current -lt 60) { 85 } else { 35 })
+    $from = [int]($rect.X + 8 + (($rect.Width - 16) * (($current - 15) / 80.0)))
+    $to = [int]($rect.X + 8 + (($rect.Width - 16) * (($target - 15) / 80.0)))
+    Write-Host "opacity drag $current -> $target"
     [DemoWin]::Drag($from, $y, $to, $y, 14)
     Sleep-Pump 400
   } else { Write-Host 'opacity slider not found; continuing' }
