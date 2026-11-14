@@ -72,7 +72,51 @@ public static class SonoraInput {
     if ((style & 0x8) != 0) parts.Add("WS_EX_TOPMOST");
     if ((style & 0x80) != 0) parts.Add("WS_EX_TOOLWINDOW");
     if ((style & 0x40000) != 0) parts.Add("WS_EX_APPWINDOW");
+    if ((style & 0x08000000) != 0) parts.Add("WS_EX_NOACTIVATE");
     return "0x" + style.ToString("X") + " " + string.Join(",", parts);
+  }
+  [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
+  [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT point);
+  [DllImport("user32.dll")] public static extern IntPtr ChildWindowFromPointEx(IntPtr parent, POINT pt, uint flags);
+  [DllImport("user32.dll")] public static extern bool ScreenToClient(IntPtr hWnd, ref POINT lpPoint);
+  [DllImport("user32.dll")] public static extern IntPtr GetTopWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
+  public static string DescribeWindow(IntPtr hWnd) {
+    if (hWnd == IntPtr.Zero) return "null";
+    var cls = new System.Text.StringBuilder(256);
+    GetClassName(hWnd, cls, cls.Capacity);
+    uint pid = 0;
+    GetWindowThreadProcessId(hWnd, out pid);
+    string proc = "";
+    try { proc = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName; } catch { proc = "?"; }
+    RECT box;
+    GetWindowRect(hWnd, out box);
+    return "hwnd=" + hWnd.ToInt64() + " class=" + cls + " title=" + Title(hWnd) + " pid=" + pid + " proc=" + proc
+      + " ex=" + ExStyle(hWnd) + " rect=" + box.Left + "," + box.Top + " " + (box.Right - box.Left) + "x" + (box.Bottom - box.Top)
+      + " visible=" + IsWindowVisible(hWnd);
+  }
+  public static string StackAt(int x, int y) {
+    var screenPoint = new POINT { X = x, Y = y };
+    var top = WindowFromPoint(screenPoint);
+    var lines = new System.Collections.Generic.List<string>();
+    lines.Add("WindowFromPoint " + DescribeWindow(top));
+    if (top != IntPtr.Zero) {
+      var client = screenPoint;
+      ScreenToClient(top, ref client);
+      var child = ChildWindowFromPointEx(top, client, 0);
+      lines.Add("ChildWindowFromPointEx " + DescribeWindow(child));
+    }
+    var walk = GetTopWindow(IntPtr.Zero);
+    int seen = 0;
+    while (walk != IntPtr.Zero && seen < 40) {
+      RECT box;
+      if (GetWindowRect(walk, out box) && x >= box.Left && x < box.Right && y >= box.Top && y < box.Bottom) {
+        lines.Add("z" + seen + " " + DescribeWindow(walk));
+      }
+      walk = GetWindow(walk, 2);
+      seen++;
+    }
+    return string.Join(" || ", lines.ToArray());
   }
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
   [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
@@ -1635,6 +1679,8 @@ try {
       $reader.Close(); $resp.Close()
     } catch { $hitText = "hit-debug $($_.Exception.Message)" }
     Write-Host "HIT $hitText"
+    $stack = [SonoraInput]::StackAt($clickX, $clickY)
+    Write-Host "WINDOWAT $stack"
     # Click the center of the Minimize button. The control 33px to its right is Hide.
     [SonoraInput]::Click($clickX, $clickY)
     Start-Sleep -Milliseconds 400
@@ -1647,8 +1693,8 @@ try {
     $collapsedHeight = Get-WindowHeight $hwnd
     $listeningIcon = Wait-Named 'Sonora listening' 3
     $stillShown = [SonoraInput]::IsWindowVisible($hwnd)
-    $hitBrief = if ($hitText.Length -gt 500) { $hitText.Substring(0, 500) } else { $hitText }
-    Add-Scenario 'Minimize collapses to a listening icon inside the same window' ([bool]($stillShown -and $collapsedHeight -le 140 -and $collapsedHeight -ge 40 -and $listeningIcon)) "height=$collapsedHeight $($script:minimizeWhere) $hitBrief"
+    $stackBrief = if ($stack.Length -gt 700) { $stack.Substring(0, 700) } else { $stack }
+    Add-Scenario 'Minimize collapses to a listening icon inside the same window' ([bool]($stillShown -and $collapsedHeight -le 140 -and $collapsedHeight -ge 40 -and $listeningIcon)) "height=$collapsedHeight $($script:minimizeWhere) $stackBrief"
     Save-Screen '05e-minimized.png'
     if ($listeningIcon) {
       # Click the icon's window, not its accessibility box. That box can sit
