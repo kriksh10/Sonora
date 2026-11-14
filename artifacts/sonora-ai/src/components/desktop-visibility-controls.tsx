@@ -133,7 +133,14 @@ export default function DesktopVisibilityControls() {
         </svg>
         <span className="sonora-dock-live" aria-hidden="true" />
       </button>
-      <span className="sonora-window-drag-handle desktop-drag inline-flex items-center gap-1 text-xs font-semibold text-white/80" title="Drag here to move Sonora">
+      <span className="sonora-window-drag-handle desktop-drag inline-flex items-center gap-1 text-xs font-semibold text-white/80" title="Drag here to move Sonora"
+        onPointerDown={event => {
+          if (event.button !== 0) return;
+          event.currentTarget.setPointerCapture(event.pointerId);
+          void bridge.dragWindow?.("start");
+        }}
+        onPointerMove={() => { void bridge.dragWindow?.("move"); }}
+        onPointerUp={() => { void bridge.dragWindow?.("end"); }}>
         <GripHorizontal size={17} /> Sonora
       </span>
       <div className="desktop-no-drag ml-auto flex items-center gap-1" style={{ WebkitAppRegion: "no-drag" }}>

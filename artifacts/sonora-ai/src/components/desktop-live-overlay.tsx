@@ -122,7 +122,14 @@ export default function DesktopLiveOverlay(props: {
               disabled={!props.listening && !props.paused} onClick={props.onPauseToggle}>{props.paused ? "Resume" : "Pause"}</button>
           )}
         </div>
-        <div className="dp-drag desktop-drag" title="Drag Sonora" />
+        <div className="dp-drag" title="Drag Sonora"
+          onPointerDown={event => {
+            if (event.button !== 0) return;
+            event.currentTarget.setPointerCapture(event.pointerId);
+            void window.sonoraDesktop?.dragWindow?.("start");
+          }}
+          onPointerMove={() => { void window.sonoraDesktop?.dragWindow?.("move"); }}
+          onPointerUp={() => { void window.sonoraDesktop?.dragWindow?.("end"); }} />
         <button type="button" className="dp-icon-btn" aria-label={collapsed ? "Expand overlay" : "Collapse overlay"} onClick={() => setCollapsed(value => !value)}><ChevronLeft size={16} /></button>
         <details className="dp-menu">
           <summary className="dp-icon-btn" aria-label="Overlay menu"><MoreVertical size={16} /></summary>

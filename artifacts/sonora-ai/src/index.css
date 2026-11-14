@@ -8,7 +8,7 @@
 @custom-variant dark (&:is(.dark *));
 
 /* Native frameless title bar. Keep interactive children clickable. */
-.desktop-drag { -webkit-app-region: drag; }
+.desktop-drag { -webkit-app-region: no-drag; app-region: no-drag; }
 .desktop-drag button, .desktop-drag a, .desktop-drag input, .desktop-drag select { -webkit-app-region: no-drag; }
 .desktop-drag textarea, .desktop-drag label, .desktop-drag details, .desktop-no-drag { -webkit-app-region: no-drag; }
 html.sonora-desktop, html.sonora-desktop body, html.sonora-desktop #root { background: transparent !important; background-color: transparent !important; background-image: none !important; margin: 0 !important; }
@@ -215,7 +215,7 @@ html.sonora-desktop .reference-modal-backdrop {
 html.sonora-desktop .sonora-window-error { background: rgba(68, 30, 36, var(--sonora-background-opacity, .4)) !important; }
 .sonora-window-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: .5rem; min-height: 44px; padding: 6px 10px; color: var(--sonora-ink, #e7e8eb); border-bottom: 1px solid #ffffff18; background: color-mix(in srgb, var(--sonora-fill, #1e1e1e) calc(var(--sonora-chrome-opacity, .35) * 100%), transparent); -webkit-backdrop-filter: none; backdrop-filter: none; -webkit-app-region: no-drag; app-region: no-drag; }
 .sonora-window-bar button, .sonora-window-bar input, .sonora-window-bar label, .sonora-window-bar summary { position: relative; z-index: 1; -webkit-app-region: no-drag; app-region: no-drag; }
-.sonora-window-drag-handle { align-self: stretch; flex: 1; min-width: 70px; cursor: grab; user-select: none; }
+.sonora-window-drag-handle { align-self: stretch; flex: 1; min-width: 70px; cursor: grab; user-select: none; touch-action: none; -webkit-app-region: no-drag; app-region: no-drag; }
 .sonora-window-popover, .sonora-window-popover * { -webkit-app-region: no-drag; }
 .sonora-slim-slider { -webkit-appearance: none; appearance: none; display: block; width: 100%; height: 16px; margin: 10px 0 0; background: transparent; cursor: ew-resize; touch-action: none; }
 .sonora-opacity-inline { display: flex; align-items: center; width: 88px; }

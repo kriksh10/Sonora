@@ -385,6 +385,25 @@ function dragCollapsed(phase) {
   if (phase === 'end') collapsedDrag = null;
   return { moved };
 }
+let windowDrag = null;
+function dragWindow(phase) {
+  if (!win || win.isDestroyed() || collapsed) return { moved: false };
+  if (phase !== 'start' && phase !== 'move' && phase !== 'end') throw new Error('Expected a drag.');
+  const cursor = screen.getCursorScreenPoint();
+  if (phase === 'start' || !windowDrag) {
+    const box = win.getBounds();
+    windowDrag = { grabX: cursor.x - box.x, grabY: cursor.y - box.y, startX: cursor.x, startY: cursor.y, moved: false };
+    if (phase === 'start') return { moved: false };
+  }
+  const distance = Math.hypot(cursor.x - windowDrag.startX, cursor.y - windowDrag.startY);
+  if (distance >= 4) windowDrag.moved = true;
+  if (phase === 'move' && windowDrag.moved && typeof win.setPosition === 'function') {
+    win.setPosition(Math.round(cursor.x - windowDrag.grabX), Math.round(cursor.y - windowDrag.grabY));
+  }
+  const moved = windowDrag.moved === true;
+  if (phase === 'end') windowDrag = null;
+  return { moved };
+}
 function destroyTray() {
   if (tray && !tray.isDestroyed?.()) tray.destroy?.();
   tray = null;
@@ -477,6 +496,7 @@ function registerIpc() {
   });
   handle('overlay:move-collapsed', (dx, dy) => moveCollapsed(dx, dy));
   handle('overlay:drag-collapsed', phase => dragCollapsed(phase));
+  handle('overlay:drag-window', phase => dragWindow(phase));
   handle('overlay:set-live-shortcuts', value => {
     liveShortcuts = value === true;
     activateHotkeys();

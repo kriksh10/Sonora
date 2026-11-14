@@ -114,7 +114,7 @@ html.sonora-desktop .sonora-workspace.dp-app {
 .dp-dots i.on { background: #3dd68c; }
 .dp-dots i.warn { background: #f5c451; }
 .dp-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-.dp-drag { flex: 1; min-width: 36px; height: 28px; cursor: grab; -webkit-app-region: drag; app-region: drag; }
+.dp-drag { flex: 1; min-width: 36px; height: 28px; cursor: grab; touch-action: none; -webkit-app-region: no-drag; app-region: no-drag; }
 .dp-bar button, .dp-strip button, .dp-card button, .dp-side button, .dp-main button, .dp-dialog button, .dp-chat, .dp-words, .dp-line {
   -webkit-app-region: no-drag;
   app-region: no-drag;
