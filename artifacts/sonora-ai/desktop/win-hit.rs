@@ -72,7 +72,7 @@ unsafe extern "system" fn mouse_hook(code: i32, wparam: usize, lparam: isize) ->
             HOOK_THREAD.load(Ordering::Relaxed),
             WM_APP_CLICK,
             info.pt.x as u32 as usize,
-            info.pt.y as u32 as usize,
+            info.pt.y as i32 as isize,
         );
     }
     CallNextHookEx(HOOK.load(Ordering::Relaxed), code, wparam, lparam)
