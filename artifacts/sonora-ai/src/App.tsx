@@ -5,6 +5,7 @@ import { ClerkProvider, SignIn, SignUp, useAuth, useClerk } from '@clerk/react';
 import { publishableKeyFromHost } from '@clerk/react/internal';
 import { shadcn } from '@clerk/themes';
 import './sonora-marketing.css';
+import HomepageDemo from '@/components/homepage-demo';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -1043,24 +1044,7 @@ function LandingHome() {
           <p className="sm-fine">Windows desktop app and web. No meeting bot joins your call.</p>
         </div>
 
-        <figure className="sm-overlay-art" aria-label="Illustration of the Sonora overlay during a call">
-          <div className="sm-call-window">
-            <div className="sm-call-bar"><span /><span /><span /><b>Weekly client sync</b></div>
-            <div className="sm-call-tiles"><div>RK</div><div>JT</div><div>You</div><div>AL</div></div>
-          </div>
-          <div className="sm-overlay">
-            <div className="sm-overlay-top"><img src={`${basePath}/logo.svg`} alt="" width={20} height={20} /><span>Listening · mic + call</span><i className="sm-live-dot" /></div>
-            <div className="sm-overlay-lines">
-              <p><b>Rafael</b> What would onboarding look like if we moved the rollout to March?</p>
-              <p className="is-dim"><b>You</b> Good question, let me think about that for a second.</p>
-            </div>
-            <div className="sm-overlay-answer">
-              <span className="sm-key">Ctrl + Enter</span>
-              <p>A March rollout keeps the two-week training window. Suggest piloting with the support team first, then the full group once the import is verified.</p>
-            </div>
-          </div>
-          <figcaption>Illustration. Your overlay shows your own call.</figcaption>
-        </figure>
+        <HomepageDemo />
       </section>
 
       <section className="sm-works" aria-label="Works alongside">
