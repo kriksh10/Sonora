@@ -1608,16 +1608,16 @@ try {
   Add-Scenario 'Opening Sonora again shows the hidden window' $shown ''
   Save-Screen '05c-shown.png'
   if ($shown) {
-    # One click on the painted minus. Its accessibility box is about 33px to the left.
     $minimize = Find-Exact 'Minimize'
     if (-not $minimize) { throw 'Minimize button missing after the tray restore' }
     $r = $minimize.Current.BoundingRectangle
-    [SonoraInput]::Click([int]($r.X + ($r.Width / 2) + 33), [int]($r.Y + ($r.Height / 2)))
+    $script:minimizeWhere = "uia $([int]$r.X),$([int]$r.Y) $([int]$r.Width)x$([int]$r.Height)"
+    Click-Element $minimize
     Start-Sleep -Milliseconds 900
     $collapsedHeight = Get-WindowHeight $hwnd
     $listeningIcon = Wait-Named 'Sonora listening' 3
     $stillShown = [SonoraInput]::IsWindowVisible($hwnd)
-    Add-Scenario 'Minimize collapses to a listening icon inside the same window' ([bool]($stillShown -and $collapsedHeight -le 140 -and $collapsedHeight -ge 40 -and $listeningIcon)) "height=$collapsedHeight"
+    Add-Scenario 'Minimize collapses to a listening icon inside the same window' ([bool]($stillShown -and $collapsedHeight -le 140 -and $collapsedHeight -ge 40 -and $listeningIcon)) "height=$collapsedHeight $($script:minimizeWhere)"
     Save-Screen '05e-minimized.png'
     if ($listeningIcon) {
       # Click the icon's window, not its accessibility box. That box can sit
