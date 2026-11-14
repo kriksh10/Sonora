@@ -81,5 +81,6 @@ test('packaged shell keeps visible UI clickable and stays above other windows', 
   assert.doesNotMatch(main, /setIgnoreMouseEvents\(true/);
   assert.match(main, /scheduleHitRepair\(\)/);
   assert.match(main, /hookWindowMessage\(0x0018/);
+  assert.match(main, /hookWindowMessage\(0x0201/);
   assert.doesNotMatch(main, /powershell/);
 });

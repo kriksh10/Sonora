@@ -836,6 +836,19 @@ function createWindow() {
       try { shown = wParam?.readInt32LE?.(0) !== 0; } catch { return; }
       if (shown) scheduleHitRepair();
     });
+    // After a shell show, the title-bar press arrives as a client click on the
+    // parent and never becomes a DOM event or a caption hit. Collapse from it.
+    win.hookWindowMessage(0x0201, () => {
+      if (!win || win.isDestroyed() || collapsed) return;
+      const cursor = screen.getCursorScreenPoint();
+      const box = win.getBounds();
+      const localY = cursor.y - box.y;
+      const fromRight = box.width - (cursor.x - box.x);
+      if (localY < 0 || localY > 48) return;
+      bootLog(`lbutton y=${Math.round(localY)} fromRight=${Math.round(fromRight)}`);
+      if (fromRight < 160 || fromRight > 210) return;
+      setTimeout(() => { if (win && !win.isDestroyed() && !collapsed) setCollapsed(true); }, 0);
+    });
     win.hookWindowMessage(0x00A1, wParam => {
       let code = -1;
       try { code = typeof wParam?.readInt32LE === 'function' ? wParam.readInt32LE(0) : Number(wParam); } catch { return; }

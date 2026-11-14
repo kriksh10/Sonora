@@ -19,21 +19,13 @@ extern "system" {
 extern "system" {
     fn GetWindow(hwnd: isize, cmd: u32) -> isize;
     fn GetWindowLongPtrW(hwnd: isize, index: i32) -> isize;
-    fn SetWindowLongPtrW(hwnd: isize, index: i32, value: isize) -> isize;
     fn GetClassNameW(hwnd: isize, name: *mut u16, max: i32) -> i32;
     fn IsWindowVisible(hwnd: isize) -> i32;
-    fn SetWindowPos(hwnd: isize, insert: isize, x: i32, y: i32, cx: i32, cy: i32, flags: u32) -> i32;
 }
 
 const GW_CHILD: u32 = 5;
 const GW_HWNDNEXT: u32 = 2;
 const GWL_EXSTYLE: i32 = -20;
-const WS_EX_TRANSPARENT: isize = 0x20;
-const SWP_NOSIZE: u32 = 0x0001;
-const SWP_NOMOVE: u32 = 0x0002;
-const SWP_NOZORDER: u32 = 0x0004;
-const SWP_NOACTIVATE: u32 = 0x0010;
-const SWP_FRAMECHANGED: u32 = 0x0020;
 const STD_OUTPUT_HANDLE: u32 = 0xFFFFFFF5;
 
 fn emit(line: &str) {
@@ -59,31 +51,16 @@ fn class_name(hwnd: isize) -> String {
     String::from_utf16_lossy(&buf[..len as usize])
 }
 
-fn repair_widget(hwnd: isize) -> Option<String> {
+fn describe_widget(hwnd: isize) -> Option<String> {
     let name = class_name(hwnd);
     if !name.contains("RenderWidgetHost") {
         return None;
     }
+    // Leave WS_EX_TRANSPARENT set. Clearing it makes this child the hit target,
+    // and the legacy render-widget window swallows the title-bar click.
     let ex = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) };
     let visible = unsafe { IsWindowVisible(hwnd) } != 0;
-    let mut note = format!("hwnd={hwnd} class={name} ex=0x{ex:X} visible={visible}");
-    if ex & WS_EX_TRANSPARENT != 0 {
-        unsafe {
-            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex & !WS_EX_TRANSPARENT);
-            SetWindowPos(
-                hwnd,
-                0,
-                0,
-                0,
-                0,
-                0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
-            );
-        }
-        let after = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) };
-        note.push_str(&format!(" cleared ex=0x{after:X}"));
-    }
-    Some(note)
+    Some(format!("hwnd={hwnd} class={name} ex=0x{ex:X} visible={visible}"))
 }
 
 fn main() {
@@ -101,7 +78,7 @@ fn main() {
         let mut child = unsafe { GetWindow(hwnd, GW_CHILD) };
         let mut guard = 0;
         while child != 0 && guard < 32 {
-            if let Some(note) = repair_widget(child) {
+            if let Some(note) = describe_widget(child) {
                 notes.push(note);
             }
             child = unsafe { GetWindow(child, GW_HWNDNEXT) };
