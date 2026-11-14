@@ -21,6 +21,7 @@ let collapsed = false;
 let expandedBounds = null;
 let expandedMinimum = null;
 let collapsedDrag = null;
+let collapsedAt = 0;
 const COLLAPSED = 72;
 let snapPlace = { col: 1, row: 0 };
 let liveShortcuts = false;
@@ -271,6 +272,7 @@ function setCollapsed(value) {
     win.setMaximumSize?.(COLLAPSED, COLLAPSED);
     enforceCollapsedSize();
     clearWindowPlate();
+    collapsedAt = Date.now();
   } else if (expandedBounds) {
     const icon = win.getBounds();
     const minimum = expandedMinimum || [390, 620];
@@ -485,6 +487,7 @@ function registerIpc() {
   handle('overlay:minimize', () => {
     const box = win?.getBounds?.() || { width: 0, height: 0 };
     const atIcon = box.width <= COLLAPSED + 2 && box.height <= COLLAPSED + 2;
+    if (atIcon && Date.now() - collapsedAt < 800) return state();
     if (atIcon) expandFromIcon();
     else {
       // A tray restore can leave the flag true while the window is still tall.
@@ -714,7 +717,24 @@ function createWindow() {
     return { action: 'deny' };
   });
   win.on('close', event => { if (!quitting && !localE2E) { event.preventDefault(); hide(); } });
-  win.on('show', () => { win.setSkipTaskbar?.(true); if (alwaysOnTop) applyAlwaysOnTop(true); syncTray(); broadcast(); });
+  win.on('show', () => { win.setSkipTaskbar?.(true); if (alwaysOnTop) applyAlwaysOnTop(true); syncTray(); broadcast(); refreshHitTesting(); });
+  // A frameless window at the top of the screen reports the minus click as a
+  // caption drag. The page never sees it, so collapse from that message.
+  if (process.platform === 'win32' && typeof win.hookWindowMessage === 'function') {
+    win.hookWindowMessage(0x00A1, wParam => {
+      let code = -1;
+      try { code = typeof wParam?.readInt32LE === 'function' ? wParam.readInt32LE(0) : Number(wParam); } catch { return; }
+      if (code !== 2 || !win || win.isDestroyed() || collapsed) return;
+      const cursor = screen.getCursorScreenPoint();
+      const box = win.getBounds();
+      const localX = cursor.x - box.x;
+      const localY = cursor.y - box.y;
+      const fromRight = box.width - localX;
+      if (localY < 0 || localY > 44 || fromRight < 130 || fromRight > 175) return;
+      bootLog(`caption-minimize x=${Math.round(localX)} y=${Math.round(localY)}`);
+      setCollapsed(true);
+    });
+  }
   win.on('hide', () => { syncTray(); broadcast(); });
   win.on('blur', () => { holdOnTop(); });
   win.webContents.on('render-process-gone', () => { nativeAudio.stop(); if (!nativeAudio.isActive()) captureActive = false; broadcast(); });
