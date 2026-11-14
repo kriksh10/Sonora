@@ -253,6 +253,24 @@ function setCollapsed(value) {
   broadcast();
   syncCollapsedClass();
 }
+function expandFromIcon() {
+  if (!win || win.isDestroyed()) return;
+  const icon = win.getBounds();
+  const saved = expandedBounds && expandedBounds.width > COLLAPSED && expandedBounds.height > COLLAPSED ? expandedBounds : null;
+  const minimum = expandedMinimum || [390, 620];
+  collapsed = false;
+  collapsedDrag = null;
+  win.setResizable?.(true);
+  win.setMaximumSize?.(10000, 10000);
+  win.setMinimumSize?.(minimum[0], minimum[1]);
+  clearWindowPlate();
+  let restored = { x: icon.x, y: icon.y, width: saved?.width || 780, height: saved?.height || 720 };
+  try { restored = safeBounds(restored, screen.getAllDisplays()); } catch { /* keep the icon anchor */ }
+  win.setBounds(restored);
+  expandedBounds = restored;
+  broadcast();
+  syncCollapsedClass();
+}
 function conceal() {
   if (!win || win.isDestroyed()) return;
   // Windows leaves a screen-saver-level always-on-top window visible if hide()
@@ -412,7 +430,14 @@ function registerIpc() {
   });
   handle('overlay:show', () => { show(); return state(); });
   handle('overlay:hide', () => { hide(); return state(); });
-  handle('overlay:minimize', () => { setCollapsed(!collapsed); return state(); });
+  handle('overlay:minimize', () => {
+    const box = win?.getBounds?.() || { width: 0, height: 0 };
+    // A second toggle while the window is already the icon leaves the old page
+    // clipped in the 72px box. At that size the button always restores.
+    if (box.width <= COLLAPSED + 2 && box.height <= COLLAPSED + 2) expandFromIcon();
+    else setCollapsed(!collapsed);
+    return state();
+  });
   handle('overlay:move-collapsed', (dx, dy) => moveCollapsed(dx, dy));
   handle('overlay:drag-collapsed', phase => dragCollapsed(phase));
   handle('overlay:set-live-shortcuts', value => {

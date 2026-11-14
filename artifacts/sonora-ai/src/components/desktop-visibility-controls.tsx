@@ -18,7 +18,8 @@ export default function DesktopVisibilityControls() {
   const opacityControl = useRef<ReturnType<typeof createBackgroundOpacity> | null>(null);
   const drag = useRef({ active: false, moved: false, x: 0, y: 0, originX: 0, originY: 0 });
   const applyShell = (next: DesktopState | null | undefined) => {
-    document.documentElement.classList.toggle("sonora-collapsed", !!next?.collapsed);
+    const icon = window.innerWidth <= 96 && window.innerHeight <= 96;
+    document.documentElement.classList.toggle("sonora-collapsed", !!next?.collapsed || icon);
   };
 
   useEffect(() => {
@@ -68,8 +69,15 @@ export default function DesktopVisibilityControls() {
   }, [bridge]);
 
   useLayoutEffect(() => {
-    if (!bridge || !state) return;
+    if (!bridge) return;
     applyShell(state);
+    const sync = () => applyShell(state);
+    window.addEventListener("resize", sync);
+    const timer = window.setInterval(sync, 300);
+    return () => {
+      window.removeEventListener("resize", sync);
+      window.clearInterval(timer);
+    };
   }, [bridge, state]);
 
   const dragDistance = (event: ReactPointerEvent<HTMLElement>) => {
