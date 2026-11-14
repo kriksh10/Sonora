@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/reac
 import { ClerkProvider, SignIn, SignUp, useAuth, useClerk } from '@clerk/react';
 import { publishableKeyFromHost } from '@clerk/react/internal';
 import { shadcn } from '@clerk/themes';
+import './sonora-marketing.css';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -263,8 +264,8 @@ function ClerkProviderWithRoutes() {
       signInUrl={`${basePath}/sign-in`}
       signUpUrl={`${basePath}/sign-up`}
       localization={{
-        signIn: { start: { title: 'Welcome back', subtitle: 'Sign in to access your interview sessions' } },
-        signUp: { start: { title: 'Create your account', subtitle: 'Set up your private interview assistant' } },
+        signIn: { start: { title: 'Welcome back', subtitle: 'Sign in to your Sonora sessions' } },
+        signUp: { start: { title: 'Create your account', subtitle: 'Set up your live meeting companion' } },
       }}
       routerPush={(to) => navigate(to, false)}
       routerReplace={(to) => navigate(to, true)}
@@ -492,14 +493,14 @@ function MarketingHeader({ current }: { current?: 'pricing' | 'privacy' | 'terms
           <span>sonora</span>
         </a>
         <div className="reference-nav-links">
-          <a href={`${homeHref}#features`}>Features</a>
-          <a href={`${homeHref}#reviews`}>Reviews</a>
-          <a href="/privacy" aria-current={current === 'privacy' ? 'page' : undefined}>Privacy</a>
-          <a href="/pricing" aria-current={current === 'pricing' ? 'page' : undefined}>Pricing</a>
+          <a href={`${basePath}/#features`}>Features</a>
+          <a href={`${basePath}/#how`}>How it works</a>
+          <a href={`${basePath}/privacy`} aria-current={current === 'privacy' ? 'page' : undefined}>Privacy</a>
+          <a href={`${basePath}/pricing`} aria-current={current === 'pricing' ? 'page' : undefined}>Pricing</a>
         </div>
         <div className="reference-nav-actions">
           <a className="reference-signin-link" href={isSignedIn ? `${basePath}/settings` : signInHref}>{isSignedIn ? 'Settings' : 'Sign in'}</a>
-          <a className="reference-dark-button" href={isSignedIn ? `${basePath}/dashboard` : signUpHref}>{isSignedIn ? 'Dashboard' : 'Try for Free'} <ArrowRight size={14} /></a>
+          <a className="reference-dark-button" href={isSignedIn ? `${basePath}/dashboard` : signUpHref}>{isSignedIn ? 'Dashboard' : 'Get started'} <ArrowRight size={14} /></a>
         </div>
       </nav>
     </header>
@@ -507,13 +508,14 @@ function MarketingHeader({ current }: { current?: 'pricing' | 'privacy' | 'terms
 }
 
 function PricingPage() {
+  useMarketingMeta('Pricing — Sonora AI', 'Start with free Sonora sessions, then pick a paid option such as a daily pass when you need more live meeting help.');
   return (
     <main className="marketing-page">
       <MarketingHeader current="pricing" />
       <section className="reference-pricing-section">
         <div className="reference-section-kicker">PRICING</div>
         <h2>Start with 10 free sessions.</h2>
-        <p>Use Sonora AI on the free tier, then move to Signal when you want the room described below.</p>
+        <p>Try Sonora on real calls first. When you need more time, choose one of the options below.</p>
         <PricingOffers />
       </section>
     </main>
@@ -537,7 +539,7 @@ function LegalPage({ title, current, children }: { title: string; current: 'priv
 function PrivacyPage() {
   return (
     <LegalPage title="Privacy notice" current="privacy">
-      <p>Sonora AI is an interview assistant. This draft describes the privacy practices we expect to publish after review. It is not the live policy.</p>
+      <p>Sonora AI is a live meeting companion. This draft describes the privacy practices we expect to publish after review. It is not the live policy.</p>
       <h2>What this draft covers</h2>
       <p>Account details you submit at sign-up, session text you choose to save, and technical logs needed to run the service. Original audio files are not the product’s stored record in the current app; live listening depends on the browser permission you grant.</p>
       <h2>How this draft says information is used</h2>
@@ -943,201 +945,222 @@ function LegacyLandingHome() {
   );
 }
 
+const marketingFeatures = [
+  { icon: Mic, title: 'Live transcription, your way', body: 'Listen to your microphone, the call audio, or both. Follow the conversation as words appear live, with audio-source labels to help you follow along.' },
+  { icon: Zap, title: 'Answers in the moment', body: 'Press Ctrl+Enter for a suggested answer to what was just said, or turn on Auto Answer and let Sonora respond to questions as they come.' },
+  { icon: Command, title: 'Screenshot, then ask', body: 'Capture what is on your screen, a slide, a chart, a code snippet, and have Sonora explain or analyze it without leaving the call.' },
+  { icon: Sparkles, title: 'Chat on the side', body: 'Type a quick question mid-meeting. Sonora answers with the conversation and your context already in view.' },
+  { icon: FileAudio, title: 'Bring your context', body: 'Add a resume, a brief, or reference documents before you start so suggestions sound like you and fit the room.' },
+  { icon: Headphones, title: 'Many call languages', body: 'Choose the language of the conversation. Sonora transcribes and responds across multiple call languages.' },
+];
+
+const overlayPoints = [
+  ['See-through', 'Adjust the overlay opacity so your meeting stays visible underneath.'],
+  ['Movable', 'Drag it wherever it stays out of the way of faces and slides.'],
+  ['Collapsible', 'Fold it down to the Sonora logo when you just want to listen.'],
+  ['Screen-share aware', 'Sonora asks Windows to exclude the overlay from screen capture. Whether that holds depends on your OS version and the sharing app, so check before it matters.'],
+];
+
+const howSteps = [
+  ['Set up the session', 'Name it, add any documents or a resume, pick the call language, and decide whether the transcript is saved.'],
+  ['Choose what Sonora hears', 'Microphone, call audio, or both. Nothing joins your meeting as a participant; Sonora listens on your device.'],
+  ['Ask when you need it', 'Ctrl+Enter for an answer, a screenshot for something visual, or chat for anything else. Then get back to the conversation.'],
+];
+
+const meetingUses = ['Sales calls', 'Client meetings', 'Standups', 'Lectures', 'Interviews', 'One-on-ones'];
+const worksWith = ['Zoom', 'Google Meet', 'Microsoft Teams', 'Webex', 'Slack huddles'];
+
+const marketingFaq = [
+  ['Does Sonora join my meeting as a bot?', 'No. There is no meeting bot and no extra name in the participant list. Sonora runs on your computer and listens to the audio sources you pick.'],
+  ['Which meeting apps does it work with?', 'Sonora listens to audio on your device rather than plugging into a specific platform, so it works alongside Zoom, Google Meet, Microsoft Teams, Webex, Slack huddles, and most other call apps.'],
+  ['Will other people see the overlay when I share my screen?', 'On Windows, Sonora asks the system to exclude its overlay from screen capture. Support varies by Windows version and by sharing app, so we cannot promise it is hidden everywhere. Do a quick test share before an important call.'],
+  ['Does it write meeting summaries or action items?', 'Not today. Sonora is built for help during the call. If you turn on transcript saving, you keep the session transcript as a record you can review later.'],
+  ['Is it only for interviews?', 'No. Interviews are one use. People bring Sonora to sales calls, client meetings, standups, lectures, and any conversation where a quick, well-informed answer helps.'],
+  ['What do I need to start?', 'Windows for the desktop overlay, or a modern browser for the web app. Session access requires approval; you will see your account status after you sign up. Audio capture availability depends on your device and browser.'],
+  ['How does pricing work?', 'Start with free sessions, then choose a paid option such as a daily pass when you need more. Current offers are on the pricing page.'],
+];
+
+function useMarketingMeta(title: string, description: string) {
+  useEffect(() => {
+    if (window.sonoraDesktop) return;
+    const previous = document.title;
+    document.title = title;
+    const meta = document.querySelector('meta[name="description"]');
+    const prevDesc = meta?.getAttribute('content') ?? null;
+    meta?.setAttribute('content', description);
+    return () => {
+      document.title = previous;
+      if (meta && prevDesc !== null) meta.setAttribute('content', prevDesc);
+    };
+  }, [title, description]);
+}
+
 function LandingHome() {
-  const [, setLocation] = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [selectedSession, setSelectedSession] = useState(0);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [createSessionOpen, setCreateSessionOpen] = useState(false);
-  const [sessionType, setSessionType] = useState<'interview' | 'call'>(() => new URLSearchParams(window.location.search).get('type') === 'call' ? 'call' : 'interview');
-  const [company, setCompany] = useState('');
-  const [interviewDescription, setInterviewDescription] = useState('');
-  const [callTitle, setCallTitle] = useState('');
-  const [callDescription, setCallDescription] = useState('');
-  const [autoAnswer, setAutoAnswer] = useState(false);
-  const [saveTranscript, setSaveTranscript] = useState(true);
-
-  const sessions = [
-    { company: 'Anthropic', role: 'Software Developer', mode: 'Interview', duration: '11 mins 23 secs', credits: 'Free', date: 'May 12, 2026', state: 'Live', action: 'Join Session', mark: 'AI' },
-    { company: 'Microsoft', role: 'Software Developer', mode: 'Interview', duration: '—', credits: '—', date: 'Jun 3, 2026', state: 'Ready to Start', action: 'Start Session', mark: 'MS' },
-    { company: 'Apple', role: 'Systems Architect', mode: 'Interview', duration: '—', credits: '—', date: 'Jun 3, 2026', state: 'Ready to Start', action: 'Start Session', mark: 'A' },
-    { company: 'OpenAI', role: 'Machine Learning Engineer', mode: 'Interview', duration: '28 mins 12 secs', credits: '0.5', date: 'May 28, 2026', state: 'Ended', action: 'View Transcript', mark: 'O' },
-    { company: 'Google', role: 'Backend Engineer', mode: 'Interview', duration: '37 mins 41 secs', credits: '1.3', date: 'May 15, 2026', state: 'Ended', action: 'View Transcript', mark: 'G' },
-    { company: 'Meta', role: 'Product Designer', mode: 'Interview', duration: '46 mins 5 secs', credits: '2.5', date: 'Apr 28, 2026', state: 'Ended', action: 'View Transcript', mark: '∞' },
-  ];
-
-  const visibleSessions = sessions.filter((session) => `${session.company} ${session.role}`.toLowerCase().includes(searchTerm.toLowerCase()));
-
-  const startSession = () => setLocation('/sign-up');
-  const goToDownloads = () => setLocation('/download');
-  const openCreateSession = () => setLocation('/sign-up');
-  const closeCreateSession = () => setCreateSessionOpen(false);
-  const handleCreateSession = () => setLocation('/sign-up');
+  const [openFaq, setOpenFaq] = useState<number | null>(0);
+  const downloadHref = `${basePath}/download`;
+  const pricingHref = `${basePath}/pricing`;
+  useMarketingMeta('Sonora AI — AI Meeting Assistant & Live Transcription', 'Live transcription, AI answers, screenshot analysis, and chat for your meetings. Sonora works on Windows and web, with no meeting bot joining your calls.');
+  const navItems = [['#features', 'Features'], ['#how', 'How it works'], ['#faq', 'FAQ']];
 
   return (
-    <main id="top" className="sonora-reference-page">
-      <header className="reference-nav-bar">
-        <nav className="reference-nav">
-          <Logo />
-          <div className="reference-nav-links">
-            <a href="#features" data-testid="link-features">Features</a>
-            <a href="#reviews" data-testid="link-reviews">Reviews</a>
-            <a href="#privacy" data-testid="link-privacy">Privacy</a>
-            <a href="#pricing" data-testid="link-pricing">Pricing</a>
+    <main id="top" className="sm-page">
+      <header className="sm-header">
+        <nav className="sm-nav" aria-label="Sonora AI">
+          <a className="sm-brand" href={homeHref} data-testid="link-logo">
+            <img src={`${basePath}/logo.svg`} alt="" width={32} height={32} />
+            <span>sonora</span>
+          </a>
+          <div className="sm-nav-links">
+            {navItems.map(([href, label]) => <a key={href} href={href} data-testid={`link-nav-${href.slice(1)}`}>{label}</a>)}
+            <a href={pricingHref} data-testid="link-nav-pricing">Pricing</a>
           </div>
-          <div className="reference-nav-actions">
-            <a className="reference-signin-link" href={signInHref} data-testid="button-sign-in">Sign in</a>
-            <a className="reference-dark-button" href={signUpHref} data-testid="button-nav-start">Try for Free <ArrowRight size={14} /></a>
+          <div className="sm-nav-actions">
+            <a className="sm-link-quiet" href={signInHref} data-testid="button-sign-in">Sign in</a>
+            <a className="sm-btn sm-btn-primary sm-btn-sm" href={signUpHref} data-testid="button-nav-start">Get started</a>
           </div>
-          <button className="reference-menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label={menuOpen ? 'Close menu' : 'Open menu'} data-testid="button-mobile-menu">
+          <button className="sm-menu-btn" onClick={() => setMenuOpen((open) => !open)} aria-expanded={menuOpen} aria-label={menuOpen ? 'Close menu' : 'Open menu'} data-testid="button-mobile-menu">
             {menuOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
-          {menuOpen && <div className="reference-mobile-menu">
-            {['features', 'reviews', 'privacy', 'pricing'].map((section) => <a key={section} href={`#${section}`} onClick={() => setMenuOpen(false)}>{section[0].toUpperCase() + section.slice(1)}</a>)}
-            <a className="reference-dark-button" href={signUpHref}>Try for Free <ArrowRight size={14} /></a>
-          </div>}
         </nav>
+        {menuOpen && <div className="sm-mobile-menu">
+          {navItems.map(([href, label]) => <a key={href} href={href} onClick={() => setMenuOpen(false)}>{label}</a>)}
+          <a href={pricingHref}>Pricing</a>
+          <a href={signInHref}>Sign in</a>
+          <a className="sm-btn sm-btn-primary" href={signUpHref}>Get started</a>
+        </div>}
       </header>
-      <div className="reference-page-frame">
-      <div className="reference-ambient reference-ambient-one" />
-      <div className="reference-ambient reference-ambient-two" />
 
-      <section className="reference-hero">
-        <div className="reference-proof-row" aria-label="Sonora highlights">
-          <div className="reference-proof"><span className="reference-laurel">‹</span><div><strong>No. 1 Interview App</strong><small>for modern candidates</small></div><span className="reference-laurel flip">›</span></div>
-          <div className="reference-proof"><div className="reference-avatar-stack"><span>JM</span><span>AS</span><span>LK</span></div><div><strong>Trusted by 1.5M+ people</strong><small><span className="reference-stars">★★★★★</span> 4.86 from 340k+ reviews</small></div></div>
-          <div className="reference-proof"><span className="reference-signal-mark"><span /><span /></span><div><strong>#1 AI Interview Assistant</strong><small>for your next conversation</small></div></div>
-        </div>
-
-        <div className="reference-headline">
-          <h1>Your <span>Real-Time</span><br />AI Interview Assistant</h1>
-          <p>Get the right answer while you're still talking, through interviews, sales calls, client meetings, or any conversation where freezing up isn't an option.</p>
-          <div className="reference-hero-actions">
-            <a className="reference-green-button" href={signUpHref} data-testid="button-hero-start">Get 10 Free Sessions <ArrowRight size={16} /></a>
-            <button className="reference-video-button" onClick={startSession} data-testid="button-demo-video"><Play size={14} fill="currentColor" /> Demo Video</button>
+      <section className="sm-hero">
+        <div className="sm-hero-copy">
+          <p className="sm-kicker"><span className="sm-live-dot" /> Your AI meeting assistant</p>
+          <h1>Stay in the conversation. <em>Sonora handles the lookup.</em></h1>
+          <p className="sm-lede">Sonora listens alongside your call, keeps a live transcript, and gives you a clear answer the moment you ask, so you can keep your attention on the people in front of you.</p>
+          <div className="sm-hero-actions">
+            <a className="sm-btn sm-btn-primary" href={downloadHref} data-testid="button-hero-download"><Download size={17} /> Download for Windows</a>
+            <a className="sm-btn sm-btn-ghost" href={signUpHref} data-testid="button-hero-start">Get started <ArrowRight size={16} /></a>
           </div>
+          <p className="sm-fine">Windows desktop app and web. No meeting bot joins your call.</p>
         </div>
 
-        <div className="reference-integrations" aria-hidden="true">
-          <span className="integration-chip integration-zoom">zoom</span>
-          <span className="integration-chip integration-teams">T<span>eams</span></span>
-          <span className="integration-chip integration-meet">meet</span>
-          <span className="integration-chip integration-hire">H<span>ire</span></span>
-          <span className="integration-chip integration-cobalt">◢</span>
-          <span className="integration-chip integration-ring">◉</span>
-          <span className="integration-chip integration-spark">✦</span>
-        </div>
-
-        <div id="session-preview" className="reference-product-window">
-          <aside className="reference-sidebar">
-            <div className="reference-product-logo"><Logo /><span className="reference-ai-tag">AI</span></div>
-            <div className="reference-side-heading">Workspace</div>
-            <button className="reference-side-link is-active"><Activity size={14} /> Call Sessions <span className="reference-live-label"><i /> Call Live</span></button>
-            <button className="reference-side-link"><Calendar size={14} /> CVs &amp; Resumes</button>
-            <button className="reference-side-link"><FileAudio size={14} /> Documents</button>
-            <div className="reference-side-heading reference-side-support">Support</div>
-            <button className="reference-side-link"><Play size={13} /> Tutorials</button>
-            <button className="reference-side-link"><span className="reference-help-icon">?</span> Support Chat</button>
-          </aside>
-          <div className="reference-session-area">
-            <div className="reference-session-header">
-              <div><h2>Call Sessions</h2><p>Prepare for calls and review past sessions.</p></div>
-              <button className="reference-create-button" onClick={openCreateSession}><span>＋</span> Create Session</button>
-            </div>
-            <div className="reference-desktop-promo">
-              <div className="reference-promo-copy"><div className="reference-promo-kicker">DESKTOP APP</div><h3>Sonora for Mac and Windows.</h3><p>Desktop release preparation is in progress. Check installer availability and platform limits before downloading.</p><div className="reference-promo-actions"><button onClick={goToDownloads}><Download size={13} /> Desktop downloads</button><button onClick={goToDownloads}>Availability &amp; requirements</button></div></div>
-              <div className="reference-promo-screen"><div className="reference-promo-toolbar"><span /><span /><span /><b>Answer&nbsp; ⌘↵</b><b>Screenshot&nbsp; ⌘⇧</b><b>Chat&nbsp; ⌘↵</b></div><div className="reference-promo-lines"><i /><i /><i /><i /><i /></div></div>
-            </div>
-            <div className="reference-tabs"><button className="is-active">All</button><button>Active</button><button>Ended</button><span>{visibleSessions.length || sessions.length} Sessions</span></div>
-            <div className="reference-session-toolbar">
-              <div className="reference-search"><Search size={14} /><input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search by title or description" aria-label="Search sessions" /></div>
-              <span className="reference-sort">↑↓</span>
-              <div className="reference-view-toggle"><span>▦</span><span className="is-active">☷</span></div>
-            </div>
-            <div className="reference-table-wrap">
-              <div className="reference-table-head"><span>Session</span><span>Mode</span><span>Duration</span><span>Credits Used</span><span>Created</span><span>Save Transcript</span><span>State</span><span /></div>
-              {visibleSessions.map((session, index) => (
-                <div key={session.company} className={`reference-table-row ${index === selectedSession ? 'is-selected' : ''}`}>
-                  <button className="reference-session-name" onClick={() => setSelectedSession(index)}><span className={`reference-company-mark mark-${index}`}>{session.mark}</span><span><strong>{session.company}</strong><small>{session.role}</small></span></button>
-                  <span>{session.mode}</span><span>{session.duration}</span><span>{session.credits}</span><span>{session.date}</span><span>{index === 0 || index === 1 || index === 2 || index === 3 ? 'Yes' : 'No'}</span>
-                  <span><em className={`reference-state state-${session.state.replaceAll(' ', '-').toLowerCase()}`}><i />{session.state}</em></span>
-                  <button className={`reference-row-action ${session.state === 'Live' ? 'is-dark' : ''}`} onClick={session.state === 'Ended' ? () => setSelectedSession(index) : openCreateSession}>{session.action}</button>
-                </div>
-              ))}
-            </div>
-            <div className="reference-session-footer"><span>Product preview · Sign in to create a real session</span><span><ShieldCheck size={13} /> Sonora only listens after you enable the microphone</span></div>
+        <figure className="sm-overlay-art" aria-label="Illustration of the Sonora overlay during a call">
+          <div className="sm-call-window">
+            <div className="sm-call-bar"><span /><span /><span /><b>Weekly client sync</b></div>
+            <div className="sm-call-tiles"><div>RK</div><div>JT</div><div>You</div><div>AL</div></div>
           </div>
+          <div className="sm-overlay">
+            <div className="sm-overlay-top"><img src={`${basePath}/logo.svg`} alt="" width={20} height={20} /><span>Listening · mic + call</span><i className="sm-live-dot" /></div>
+            <div className="sm-overlay-lines">
+              <p><b>Rafael</b> What would onboarding look like if we moved the rollout to March?</p>
+              <p className="is-dim"><b>You</b> Good question, let me think about that for a second.</p>
+            </div>
+            <div className="sm-overlay-answer">
+              <span className="sm-key">Ctrl + Enter</span>
+              <p>A March rollout keeps the two-week training window. Suggest piloting with the support team first, then the full group once the import is verified.</p>
+            </div>
+          </div>
+          <figcaption>Illustration. Your overlay shows your own call.</figcaption>
+        </figure>
+      </section>
+
+      <section className="sm-works" aria-label="Works alongside">
+        <span>Works alongside</span>
+        <ul>{worksWith.map((name) => <li key={name}>{name}</li>)}</ul>
+      </section>
+
+      <section id="features" className="sm-section sm-anchor">
+        <div className="sm-section-head">
+          <p className="sm-kicker">Features</p>
+          <h2>Help while it still matters, <em>not after the call.</em></h2>
+          <p>Everything in Sonora is built for the live moment: hearing clearly, answering quickly, and staying out of your way.</p>
+        </div>
+        <div className="sm-feature-grid">
+          {marketingFeatures.map(({ icon: Icon, title, body }, index) => (
+            <article key={title} className="sm-feature" data-testid={`card-feature-${index}`}>
+              <span className="sm-feature-icon"><Icon size={18} /></span>
+              <h3>{title}</h3>
+              <p>{body}</p>
+            </article>
+          ))}
+        </div>
+
+        <div className="sm-overlay-band">
+          <div>
+            <p className="sm-kicker">The Windows overlay</p>
+            <h3>A small window that knows its place.</h3>
+            <p>Sonora sits on top of your meeting without covering it. Tune it until it feels like part of the desk.</p>
+          </div>
+          <dl>
+            {overlayPoints.map(([term, detail]) => <div key={term}><dt>{term}</dt><dd>{detail}</dd></div>)}
+          </dl>
+        </div>
+
+        <div className="sm-record">
+          <div><p className="sm-kicker">Keep a record</p><h3>Save the transcript when you want one.</h3></div>
+          <p>Turn on transcript saving for a session and review it in your saved sessions later. You choose whether Sonora saves the transcript.</p>
         </div>
       </section>
 
-      <section id="features" className="reference-lower-section reference-anchor">
-        <div className="reference-section-kicker">THE SONORA ADVANTAGE</div>
-        <h2>Stay sharp when<br /><span>the stakes are high.</span></h2>
-        <p>Sonora quietly follows the conversation, so you can focus on being present, prepared, and yourself.</p>
-        <div className="reference-feature-grid">
-          {[
-            ['01', 'Live guidance', 'Get concise prompts and answer frameworks while the conversation is still happening.'],
-            ['02', 'Every detail, remembered', 'Leave the call with a transcript, clear next steps, and nothing important left behind.'],
-            ['03', 'Your privacy, first', 'You decide when Sonora listens. Every session is visible, controllable, and yours.'],
-          ].map(([number, title, body]) => <article key={number}><span>{number}</span><h3>{title}</h3><p>{body}</p><ArrowRight size={17} /></article>)}
+      <section id="how" className="sm-section sm-how sm-anchor">
+        <div className="sm-section-head">
+          <p className="sm-kicker">How it works</p>
+          <h2>Three steps, <em>then back to the room.</em></h2>
+        </div>
+        <ol className="sm-steps">
+          {howSteps.map(([title, body], index) => (
+            <li key={title}><span>{String(index + 1).padStart(2, '0')}</span><h3>{title}</h3><p>{body}</p></li>
+          ))}
+        </ol>
+      </section>
+
+      <section id="uses" className="sm-section sm-uses sm-anchor">
+        <div className="sm-section-head">
+          <p className="sm-kicker">Where it helps</p>
+          <h2>One companion <em>for every kind of call.</em></h2>
+          <p>A pricing question on a sales call, an acronym in a standup, a definition in a lecture, a follow-up in an interview. Same quiet help, different rooms.</p>
+        </div>
+        <ul className="sm-use-list">{meetingUses.map((use) => <li key={use}>{use}</li>)}</ul>
+      </section>
+
+      <section id="faq" className="sm-section sm-faq sm-anchor">
+        <div className="sm-section-head">
+          <p className="sm-kicker">FAQ</p>
+          <h2>Straight answers.</h2>
+        </div>
+        <div className="sm-faq-list">
+          {marketingFaq.map(([question, answer], index) => {
+            const open = openFaq === index;
+            return (
+              <div key={question} className={`sm-faq-item ${open ? 'is-open' : ''}`}>
+                <button onClick={() => setOpenFaq(open ? null : index)} aria-expanded={open} aria-controls={`faq-${index}`} data-testid={`button-faq-${index}`}>
+                  <span>{question}</span><ChevronDown size={18} />
+                </button>
+                {open && <p id={`faq-${index}`}>{answer}</p>}
+              </div>
+            );
+          })}
         </div>
       </section>
 
-      <section id="reviews" className="reference-quote-section reference-anchor">
-        <div><div className="reference-section-kicker">WHAT CANDIDATES SAY</div><h2>Confidence,<br /><span>on demand.</span></h2></div>
-        <blockquote>“I stopped worrying about forgetting the perfect answer and started having a real conversation.”<cite>— Maya R., Product Designer</cite></blockquote>
+      <section className="sm-cta">
+        <h2>Your next call, <em>with a little backup.</em></h2>
+        <p>Start free. Add a daily pass when you have a big day ahead.</p>
+        <div className="sm-hero-actions">
+          <a className="sm-btn sm-btn-primary" href={downloadHref} data-testid="button-cta-download"><Download size={17} /> Download for Windows</a>
+          <a className="sm-btn sm-btn-ghost" href={signUpHref} data-testid="button-cta-start">Get started <ArrowRight size={16} /></a>
+        </div>
       </section>
 
-      <section id="privacy" className="reference-privacy-section reference-anchor"><ShieldCheck size={25} /><div><div className="reference-section-kicker">BUILT WITH CARE</div><h2>The assistant that never takes over.</h2><p>Sonora is visible when it is active, silent when you want it to be, and always under your control. <a href="/privacy">Read the privacy notice</a></p></div></section>
-
-      <section id="pricing" className="reference-pricing-section reference-anchor">
-        <div className="reference-section-kicker">PRICING</div>
-        <h2>Start with<br /><span>10 free sessions.</span></h2>
-        <p>The free tier is 10 sessions. Signal is the paid plan already described in Sonora’s earlier landing.</p>
-        <PricingOffers />
-      </section>
-      <section className="reference-cta-section"><div className="reference-section-kicker">READY WHEN YOU ARE</div><h2>Walk into your<br /><span>next interview ready.</span></h2><a className="reference-green-button" href={signUpHref}>Try Sonora free <ArrowRight size={16} /></a></section>
-      <footer className="reference-footer"><Logo light /><nav className="reference-footer-links" aria-label="Site"><a href="/pricing">Pricing</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav><span>© 2026 Sonora AI</span><span>Made for conversations worth winning.</span></footer>
-      </div>
-      {createSessionOpen && <div className="reference-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeCreateSession(); }}>
-        <section className="reference-create-modal" role="dialog" aria-modal="true" aria-labelledby="create-session-title">
-          <div className="reference-modal-header"><h2 id="create-session-title">Create Session</h2><button onClick={closeCreateSession} aria-label="Close create session"><X size={21} /></button></div>
-          <div className="reference-modal-label">Session Type <span className="reference-info-dot">i</span><span className="reference-modal-help">{sessionType === 'interview' ? '' : 'Video Tutorial'}</span></div>
-          <div className="reference-type-switch">
-            <button className={sessionType === 'interview' ? 'is-selected' : ''} onClick={() => setSessionType('interview')}><span className="reference-suitcase">▣</span> Interview</button>
-            <button className={sessionType === 'call' ? 'is-selected' : ''} onClick={() => setSessionType('call')}><span className="reference-phone">⌕</span> Regular Call</button>
-          </div>
-          {sessionType === 'interview' ? <>
-            <div className="reference-modal-field-heading"><span><span className="reference-field-icon">▣</span> Company <span className="reference-info-dot">i</span></span><button onClick={() => setCompany('Example Company')}><Sparkles size={15} /> Fill fields from Interview Post URL <ArrowRight size={14} /></button></div>
-            <input className="reference-modal-input" value={company} onChange={(event) => setCompany(event.target.value)} placeholder="Acme..." />
-            <label className="reference-modal-field-heading"><span><span className="reference-field-icon">▤</span> Interview Description <span className="reference-info-dot">i</span></span></label>
-            <textarea className="reference-modal-input reference-modal-textarea" value={interviewDescription} onChange={(event) => setInterviewDescription(event.target.value)} placeholder="Software Engineer versed in Python, SQL, and AWS..." />
-          </> : <>
-            <label className="reference-modal-field-heading"><span><span className="reference-field-icon">▤</span> Call Title <small>(Optional)</small> <span className="reference-info-dot">i</span></span></label>
-            <input className="reference-modal-input" value={callTitle} onChange={(event) => setCallTitle(event.target.value)} placeholder="Feature request discussion..." />
-            <label className="reference-modal-field-heading"><span><span className="reference-field-icon">▤</span> Description <small>(Optional)</small> <span className="reference-info-dot">i</span></span></label>
-            <textarea className="reference-modal-input reference-modal-textarea" value={callDescription} onChange={(event) => setCallDescription(event.target.value)} placeholder="Discussing Q4 targets and partnership opportunities..." />
-          </>}
-          <div className="reference-modal-section-label">Context</div>
-          <div className="reference-context-pills">
-            {sessionType === 'interview' && <button className="is-filled"><span>＋</span> Resume</button>}
-            <button><span>＋</span> Documents</button>
-            <button><span>＋</span> Instructions</button>
-          </div>
-          <div className="reference-modal-section-label">Output Settings</div>
-          <div className="reference-output-pills">
-            <button className="is-filled"><span>▤</span> Answer Preferences <ChevronDown size={16} /></button>
-            <button><span className="reference-google-mark">G</span> Gemini 2.5 Flash <ChevronDown size={16} /></button>
-            <button><span className="reference-globe">◎</span> English <ChevronDown size={16} /></button>
-          </div>
-          <div className="reference-modal-section-label">Behavior</div>
-          <div className="reference-behavior">
-            <label><input type="checkbox" checked={autoAnswer} onChange={(event) => setAutoAnswer(event.target.checked)} /><span className="reference-checkbox" /> Auto Answer (Beta) <span className="reference-info-dot">i</span></label>
-            <label><input type="checkbox" checked={saveTranscript} onChange={(event) => setSaveTranscript(event.target.checked)} /><span className="reference-checkbox" /> Save Transcript <span className="reference-info-dot">i</span></label>
-          </div>
-          <div className="reference-modal-actions"><button onClick={closeCreateSession}>Close</button><button className={sessionType === 'interview' ? 'is-ready' : 'is-ready'} onClick={handleCreateSession}>Create Session</button></div>
-        </section>
-      </div>}
+      <footer className="sm-footer">
+        <a className="sm-brand" href={homeHref}><img src={`${basePath}/logo.svg`} alt="" width={26} height={26} /><span>sonora</span></a>
+        <nav aria-label="Site">
+          <a href={pricingHref}>Pricing</a>
+          <a href={downloadHref}>Download</a>
+          <a href={`${basePath}/privacy`}>Privacy</a>
+          <a href={`${basePath}/terms`}>Terms</a>
+        </nav>
+        <span>© 2026 Sonora AI · A live companion for meetings.</span>
+      </footer>
     </main>
   );
 }
