@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ChevronLeft, ChevronRight, Copy, Expand, MoreVertical, ThumbsDown, ThumbsUp, X } from "lucide-react";
 import type { CallSession, TranscriptEntry } from "@workspace/api-client-react";
 import SafeMarkdown from "@/components/safe-markdown";
 import DesktopSelect from "@/components/desktop-select";
 import { liveAnswerQuestion } from "@/lib/overlay-hit-test";
+import { windowDragAction, type DragPointer } from "@/lib/window-drag";
 
 type AudioSource = "microphone" | "system" | "both";
 
@@ -41,6 +42,15 @@ export default function DesktopLiveOverlay(props: {
   onMicrophoneAutoChange?: (value: boolean) => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
+  const windowMoving = useRef(false);
+  const moveWindow = (type: DragPointer, event: ReactPointerEvent<HTMLDivElement>) => {
+    const action = windowDragAction({ type, button: event.button, buttons: event.buttons, armed: windowMoving.current });
+    windowMoving.current = action.armed;
+    if (action.phase === "start") {
+      try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* the press still starts the drag */ }
+    }
+    if (action.phase) void window.sonoraDesktop?.dragWindow?.(action.phase);
+  };
   const [chat, setChat] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [answerOpen, setAnswerOpen] = useState(true);
@@ -123,13 +133,10 @@ export default function DesktopLiveOverlay(props: {
           )}
         </div>
         <div className="dp-drag" title="Drag Sonora"
-          onPointerDown={event => {
-            if (event.button !== 0) return;
-            event.currentTarget.setPointerCapture(event.pointerId);
-            void window.sonoraDesktop?.dragWindow?.("start");
-          }}
-          onPointerMove={() => { void window.sonoraDesktop?.dragWindow?.("move"); }}
-          onPointerUp={() => { void window.sonoraDesktop?.dragWindow?.("end"); }} />
+          onPointerDown={event => moveWindow("down", event)}
+          onPointerMove={event => moveWindow("move", event)}
+          onPointerUp={event => moveWindow("up", event)}
+          onPointerCancel={event => moveWindow("cancel", event)} />
         <button type="button" className="dp-icon-btn" aria-label={collapsed ? "Expand overlay" : "Collapse overlay"} onClick={() => setCollapsed(value => !value)}><ChevronLeft size={16} /></button>
         <details className="dp-menu">
           <summary className="dp-icon-btn" aria-label="Overlay menu"><MoreVertical size={16} /></summary>

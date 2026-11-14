@@ -3,6 +3,7 @@ import { EyeOff, GripHorizontal, Minus, Pin, Settings2, ShieldCheck, Square } fr
 import DesktopMaintenance from "@/components/desktop-maintenance";
 import DesktopHotkeysSheet from "@/components/desktop-hotkeys-sheet";
 import { createBackgroundOpacity } from "@/lib/background-opacity";
+import { windowDragAction, type DragPointer } from "@/lib/window-drag";
 
 type DesktopState = Awaited<ReturnType<NonNullable<Window["sonoraDesktop"]>["getState"]>>;
 
@@ -17,6 +18,7 @@ export default function DesktopVisibilityControls() {
   const [shortcutError, setShortcutError] = useState("");
   const opacityControl = useRef<ReturnType<typeof createBackgroundOpacity> | null>(null);
   const drag = useRef({ active: false, moved: false, x: 0, y: 0, originX: 0, originY: 0 });
+  const windowMoving = useRef(false);
   const collapseAt = useRef(0);
   const applyShell = (next: DesktopState | null | undefined) => {
     if (!next) return;
@@ -78,15 +80,36 @@ export default function DesktopVisibilityControls() {
     return Math.hypot(event.screenX - drag.current.originX, event.screenY - drag.current.originY) / scale;
   };
   const pointerMove = (event: ReactPointerEvent<HTMLElement>) => {
-    if (!drag.current.active) return;
+    const action = windowDragAction({ type: "move", button: event.button, buttons: event.buttons, armed: drag.current.active });
+    if (action.phase === "end") {
+      drag.current.active = false;
+      void bridge?.dragCollapsed?.("end");
+      return;
+    }
+    if (action.phase !== "move") return;
     if (dragDistance(event) >= 4) drag.current.moved = true;
     void bridge?.dragCollapsed?.("move");
   };
   const pointerUp = (event: ReactPointerEvent<HTMLElement>) => {
-    if (!drag.current.active) return;
+    const action = windowDragAction({ type: "up", button: event.button, buttons: event.buttons, armed: drag.current.active });
+    if (action.phase !== "end") return;
     if (dragDistance(event) >= 4) drag.current.moved = true;
     drag.current.active = false;
     void bridge?.dragCollapsed?.("end");
+  };
+  const pointerCancel = () => {
+    const action = windowDragAction({ type: "cancel", button: 0, buttons: 0, armed: drag.current.active });
+    if (action.phase !== "end") return;
+    drag.current.active = false;
+    void bridge?.dragCollapsed?.("end");
+  };
+  const moveExpanded = (type: DragPointer, event: ReactPointerEvent<HTMLElement>) => {
+    const action = windowDragAction({ type, button: event.button, buttons: event.buttons, armed: windowMoving.current });
+    windowMoving.current = action.armed;
+    if (action.phase === "start") {
+      try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* the press still starts the drag */ }
+    }
+    if (action.phase) void bridge?.dragWindow?.(action.phase);
   };
 
   useLayoutEffect(() => {
@@ -117,13 +140,16 @@ export default function DesktopVisibilityControls() {
     <aside ref={bar} aria-label="Desktop window controls" className="sonora-window-bar sonora-overlay-controls">
       <button type="button" className="sonora-dock" aria-label="Sonora listening" title="Sonora listening. Drag to move. Click to restore."
         onPointerDown={event => {
-          if (!state?.collapsed || event.button !== 0) return;
-          event.currentTarget.setPointerCapture(event.pointerId);
+          if (!state?.collapsed) return;
+          const action = windowDragAction({ type: "down", button: event.button, buttons: event.buttons, armed: drag.current.active });
+          if (action.phase !== "start") return;
+          try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* the press still starts the drag */ }
           drag.current = { active: true, moved: false, x: event.screenX, y: event.screenY, originX: event.screenX, originY: event.screenY };
           void bridge.dragCollapsed?.("start");
         }}
         onPointerMove={pointerMove}
         onPointerUp={pointerUp}
+        onPointerCancel={pointerCancel}
         onClick={() => {
           if (drag.current.moved) { drag.current.moved = false; return; }
           void run(() => bridge.minimize!());
@@ -135,13 +161,10 @@ export default function DesktopVisibilityControls() {
         <span className="sonora-dock-live" aria-hidden="true" />
       </button>
       <span className="sonora-window-drag-handle desktop-drag inline-flex items-center gap-1 text-xs font-semibold text-white/80" title="Drag here to move Sonora"
-        onPointerDown={event => {
-          if (event.button !== 0) return;
-          event.currentTarget.setPointerCapture(event.pointerId);
-          void bridge.dragWindow?.("start");
-        }}
-        onPointerMove={() => { void bridge.dragWindow?.("move"); }}
-        onPointerUp={() => { void bridge.dragWindow?.("end"); }}>
+        onPointerDown={event => moveExpanded("down", event)}
+        onPointerMove={event => moveExpanded("move", event)}
+        onPointerUp={event => moveExpanded("up", event)}
+        onPointerCancel={event => moveExpanded("cancel", event)}>
         <GripHorizontal size={17} /> Sonora
       </span>
       <div className="desktop-no-drag ml-auto flex items-center gap-1" style={{ WebkitAppRegion: "no-drag" }}>
