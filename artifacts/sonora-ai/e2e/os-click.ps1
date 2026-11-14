@@ -138,7 +138,10 @@ public static class SonoraInput {
     return found.ToArray();
   }
   public static void RaiseWithoutFocus(IntPtr hWnd) {
-    SetWindowPos(hWnd, new IntPtr(-1), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    // HWND_TOPMOST (-1) replaces Sonora's screen-saver band. After that, clicks
+    // on the title bar never reach the page. Keep the current z-order.
+    const uint SWP_NOZORDER = 0x0004;
+    SetWindowPos(hWnd, IntPtr.Zero, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW);
   }
   public static void Wheel(int x, int y, int delta) {
     int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
