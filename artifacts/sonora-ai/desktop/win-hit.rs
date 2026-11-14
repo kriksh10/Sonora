@@ -6,6 +6,7 @@
 #[link(name = "kernel32")]
 extern "system" {
     fn GetStdHandle(kind: u32) -> isize;
+    fn GetCurrentThreadId() -> u32;
     fn WriteFile(
         handle: isize,
         buffer: *const u8,
@@ -21,6 +22,85 @@ extern "system" {
     fn GetWindowLongPtrW(hwnd: isize, index: i32) -> isize;
     fn GetClassNameW(hwnd: isize, name: *mut u16, max: i32) -> i32;
     fn IsWindowVisible(hwnd: isize) -> i32;
+    fn SetWindowsHookExW(id: i32, hook: HookProc, module: isize, thread: u32) -> isize;
+    fn CallNextHookEx(hook: isize, code: i32, wparam: usize, lparam: isize) -> isize;
+    fn GetMessageW(msg: *mut Msg, hwnd: isize, min: u32, max: u32) -> i32;
+    fn PeekMessageW(msg: *mut Msg, hwnd: isize, min: u32, max: u32, remove: u32) -> i32;
+    fn PostThreadMessageW(thread: u32, msg: u32, wparam: usize, lparam: isize) -> i32;
+}
+
+type HookProc = unsafe extern "system" fn(code: i32, wparam: usize, lparam: isize) -> isize;
+
+#[repr(C)]
+struct WinPoint {
+    x: i32,
+    y: i32,
+}
+
+#[repr(C)]
+struct MouseHook {
+    pt: WinPoint,
+    mouse_data: u32,
+    flags: u32,
+    time: u32,
+    extra: usize,
+}
+
+#[repr(C)]
+struct Msg {
+    hwnd: isize,
+    message: u32,
+    wparam: usize,
+    lparam: isize,
+    time: u32,
+    pt: WinPoint,
+}
+
+const WH_MOUSE_LL: i32 = 14;
+const HC_ACTION: i32 = 0;
+const WM_LBUTTONDOWN: usize = 0x0201;
+const WM_APP_CLICK: u32 = 0x8000;
+
+use std::sync::atomic::{AtomicIsize, AtomicU32, Ordering};
+static HOOK: AtomicIsize = AtomicIsize::new(0);
+static HOOK_THREAD: AtomicU32 = AtomicU32::new(0);
+
+unsafe extern "system" fn mouse_hook(code: i32, wparam: usize, lparam: isize) -> isize {
+    if code == HC_ACTION && wparam == WM_LBUTTONDOWN && lparam != 0 {
+        let info = &*(lparam as *const MouseHook);
+        PostThreadMessageW(
+            HOOK_THREAD.load(Ordering::Relaxed),
+            WM_APP_CLICK,
+            info.pt.x as u32 as usize,
+            info.pt.y as u32 as usize,
+        );
+    }
+    CallNextHookEx(HOOK.load(Ordering::Relaxed), code, wparam, lparam)
+}
+
+fn watch_clicks() {
+    HOOK_THREAD.store(unsafe { GetCurrentThreadId() }, Ordering::Relaxed);
+    let mut msg = Msg { hwnd: 0, message: 0, wparam: 0, lparam: 0, time: 0, pt: WinPoint { x: 0, y: 0 } };
+    // Creating the queue first lets the hook post a click before GetMessage runs.
+    unsafe { PeekMessageW(&mut msg, 0, 0, 0, 0) };
+    let hook = unsafe { SetWindowsHookExW(WH_MOUSE_LL, mouse_hook, 0, 0) };
+    if hook == 0 {
+        emit("watch-failed");
+        return;
+    }
+    HOOK.store(hook, Ordering::Relaxed);
+    emit("watch-ready");
+    loop {
+        let status = unsafe { GetMessageW(&mut msg, 0, 0, 0) };
+        if status <= 0 {
+            break;
+        }
+        if msg.message == WM_APP_CLICK {
+            let x = msg.wparam as u32 as i32;
+            let y = msg.lparam as u32 as i32;
+            emit(&format!("down {x} {y}"));
+        }
+    }
 }
 
 const GW_CHILD: u32 = 5;
@@ -64,6 +144,10 @@ fn describe_widget(hwnd: isize) -> Option<String> {
 }
 
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--watch") {
+        watch_clicks();
+        return;
+    }
     let hwnd = std::env::args()
         .nth(1)
         .and_then(|value| value.parse::<u64>().ok())

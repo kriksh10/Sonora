@@ -294,6 +294,47 @@ function scheduleHitRepair() {
   // until the render widget is actually on screen.
   clearRenderWidgetClickThrough();
 }
+function dipPoint(x, y) {
+  const point = { x, y };
+  try {
+    if (typeof screen.screenToDipPoint === 'function') return screen.screenToDipPoint(point);
+  } catch { /* physical pixels match DIP when the scale is 1 */ }
+  const scale = screen.getPrimaryDisplay?.().scaleFactor || 1;
+  return { x: x / scale, y: y / scale };
+}
+let titleClickWatcher = null;
+function watchTitleClicks() {
+  // The visible render-widget child receives the press and does not deliver it
+  // to the page or to the parent window procedure. A low-level hook sees it anyway.
+  if (process.platform !== 'win32' || titleClickWatcher) return;
+  const child = spawn(renderWidgetHelper(), ['--watch'], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  titleClickWatcher = child;
+  let pending = '';
+  child.stdout?.setEncoding?.('utf8');
+  child.stdout?.on?.('data', chunk => {
+    pending += chunk;
+    let split;
+    while ((split = pending.indexOf('\n')) >= 0) {
+      const line = pending.slice(0, split).trim();
+      pending = pending.slice(split + 1);
+      if (!line.startsWith('down ')) {
+        if (line) bootLog(`title-click ${line}`);
+        continue;
+      }
+      const parts = line.split(' ');
+      const dip = dipPoint(Number(parts[1]), Number(parts[2]));
+      if (!win || win.isDestroyed() || collapsed || !Number.isFinite(dip.x) || !Number.isFinite(dip.y)) continue;
+      const box = win.getBounds();
+      const localY = dip.y - box.y;
+      const fromRight = box.width - (dip.x - box.x);
+      if (localY < 0 || localY > 48 || dip.x < box.x || dip.x >= box.x + box.width) continue;
+      bootLog(`title-click y=${Math.round(localY)} fromRight=${Math.round(fromRight)}`);
+      if (fromRight < 160 || fromRight > 210) continue;
+      setCollapsed(true);
+    }
+  });
+  child.on('error', error => bootLog(`title-click watcher ${error.message || error}`));
+}
 function finishPresent() {
   if (!win || win.isDestroyed()) return;
   // Never toggle ignore-mouse through true here. On a transparent Windows
@@ -750,6 +791,7 @@ function createWindow() {
       if (hitRepairPending) scheduleHitRepair();
     }, 1000);
     win.on('closed', () => clearInterval(topTimer));
+    watchTitleClicks();
   }
   if (migrateOpacity) persistWindow();
   applyAlwaysOnTop(alwaysOnTop);
@@ -1106,6 +1148,6 @@ else {
     app.on('activate', show);
   });
 }
-app.on('before-quit', () => { quitting = true; stopUpdates(); clearTimeout(saveTimer); persistWindow(); void browserAuth?.cancel(); nativeAudio?.shutdown(); win?.destroy(); });
+app.on('before-quit', () => { quitting = true; stopUpdates(); clearTimeout(saveTimer); persistWindow(); void browserAuth?.cancel(); nativeAudio?.shutdown(); try { titleClickWatcher?.kill(); } catch { /* the watcher already exited */ } win?.destroy(); });
 app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('window-all-closed', () => { if (quitting || localE2E) app.quit(); });
