@@ -172,7 +172,7 @@ function syncCollapsedClass() {
   const flag = collapsed ? 'true' : 'false';
   try {
     const pending = win.webContents.executeJavaScript(
-      `document.documentElement.classList.toggle('sonora-collapsed', ${flag})`,
+      `document.documentElement.classList.toggle('sonora-collapsed', ${flag}); document.documentElement.classList.toggle('sonora-force-collapsed', ${flag});`,
       false,
     );
     if (pending && typeof pending.catch === 'function') pending.catch(() => {});

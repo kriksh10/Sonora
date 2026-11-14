@@ -1626,7 +1626,16 @@ try {
     $fy = [int]($box.Y + 22)
     $tries = @("bar $fx,$fy enabled=$enabled")
     [SonoraInput]::Click($fx, $fy)
-    Start-Sleep -Milliseconds 900
+    Start-Sleep -Milliseconds 700
+    if ((Get-WindowHeight $hwnd) -gt 140) {
+      $invoke = Find-Exact 'Minimize'
+      $pattern = $null
+      if ($invoke -and $invoke.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) {
+        $pattern.Invoke()
+        $tries += 'invoke'
+      }
+      Start-Sleep -Milliseconds 900
+    }
     $collapsedHeight = Get-WindowHeight $hwnd
     $listeningIcon = Wait-Named 'Sonora listening' 3
     $stillShown = [SonoraInput]::IsWindowVisible($hwnd)
