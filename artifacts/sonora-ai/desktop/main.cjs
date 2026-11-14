@@ -781,15 +781,96 @@ function createWindow() {
       else { quitting = true; app.quit(); }
     }
   });
+  win.webContents.on('console-message', (_event, _level, message) => {
+    if (typeof message === 'string' && message.startsWith('[sonora-hit]')) bootLog(message);
+  });
   win.webContents.on('did-finish-load', () => {
     try { app.setAccessibilitySupportEnabled(true); } catch (error) { bootLog(`accessibility ${error}`); }
     bootLog(`did-finish-load ${win.webContents.getURL()} scale=${screen.getPrimaryDisplay?.().scaleFactor ?? 1}`);
+    if (!localE2E) return;
+    win.webContents.executeJavaScript(`(() => {
+      if (window.__sonoraClickProbe) return;
+      window.__sonoraClickProbe = true;
+      const describe = (node) => {
+        if (!node || node === document) return 'none';
+        const label = node.getAttribute && node.getAttribute('aria-label');
+        const cls = typeof node.className === 'string' ? node.className.split(/\\s+/).slice(0, 3).join('.') : '';
+        return (node.tagName || '?') + (label ? ':' + label : '') + (node.id ? '#' + node.id : '') + (cls ? '.' + cls : '');
+      };
+      const report = (type, event) => {
+        const hit = document.elementFromPoint(event.clientX, event.clientY);
+        console.log('[sonora-hit] ' + type + ' client=' + event.clientX + ',' + event.clientY + ' target=' + describe(event.target) + ' fromPoint=' + describe(hit));
+      };
+      document.addEventListener('pointerdown', event => report('pointerdown', event), true);
+      document.addEventListener('click', event => report('click', event), true);
+    })();`, true).catch(error => bootLog(`click probe ${error}`));
   });
   configurePermissions();
   win.once('ready-to-show', show);
   void loadService();
 }
 
+async function debugHit(screenX, screenY) {
+  if (!win || win.isDestroyed()) return { error: 'no window' };
+  const bounds = win.getBounds();
+  const content = typeof win.getContentBounds === 'function' ? win.getContentBounds() : null;
+  const x = Number(screenX);
+  const y = Number(screenY);
+  const originX = content ? content.x : bounds.x;
+  const originY = content ? content.y : bounds.y;
+  const clientX = Math.round(x - originX);
+  const clientY = Math.round(y - originY);
+  let page = null;
+  try {
+    page = await win.webContents.executeJavaScript(`(() => {
+      const x = ${clientX};
+      const y = ${clientY};
+      const describe = (node) => {
+        if (!node || node === document) return 'none';
+        const label = node.getAttribute && node.getAttribute('aria-label');
+        const cls = typeof node.className === 'string' ? node.className.split(/\\s+/).slice(0, 4).join('.') : '';
+        return (node.tagName || '?') + (label ? ':' + label : '') + (node.id ? '#' + node.id : '') + (cls ? '.' + cls : '');
+      };
+      const hit = document.elementFromPoint(x, y);
+      const chain = [];
+      for (let node = hit, i = 0; node && node !== document && i < 5; i++, node = node.parentElement) chain.push(describe(node));
+      return {
+        innerWidth: window.innerWidth, innerHeight: window.innerHeight,
+        dpr: window.devicePixelRatio, clientX: x, clientY: y,
+        element: describe(hit), chain: chain.join(' > '),
+        collapsed: document.documentElement.classList.contains('sonora-collapsed'),
+        force: document.documentElement.classList.contains('sonora-force-collapsed'),
+      };
+    })()`, true);
+  } catch (error) { page = { error: String(error) }; }
+  const report = {
+    bounds, content, ignoringMouse, clickThrough, collapsed,
+    screen: { x, y }, page,
+  };
+  bootLog(`hit ${JSON.stringify(report)}`);
+  return report;
+}
+function startHitProbe() {
+  if (!localE2E) return;
+  const server = http.createServer(async (req, res) => {
+    try {
+      if (req.method !== 'POST' || req.url !== '/hit') { res.writeHead(404); res.end(); return; }
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const body = JSON.parse(Buffer.concat(chunks).toString() || '{}');
+      const report = await debugHit(body.x, body.y);
+      const json = JSON.stringify(report);
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(json) });
+      res.end(json);
+    } catch (error) {
+      const text = String(error);
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end(text);
+    }
+  });
+  server.listen(4174, '127.0.0.1');
+  bootLog('hit probe on 127.0.0.1:4174');
+}
 function startVisualProofCapture() {
   if (!localE2E || !process.argv.includes('--visual-proof')) return;
   const server = http.createServer(async (req, res) => {
@@ -903,6 +984,7 @@ else {
     } catch { updates = createAutoUpdate({ isPackaged: false }); }
     browserAuth = createBrowserAuth({ serviceUrl: target, openExternal: url => shell.openExternal(url) });
     createWindow();
+    startHitProbe();
     startVisualProofCapture();
     activateHotkeys();
     syncTray();

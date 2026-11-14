@@ -1612,13 +1612,40 @@ try {
     if (-not $minimize) { throw 'Minimize button missing after the tray restore' }
     $r = $minimize.Current.BoundingRectangle
     $script:minimizeWhere = "uia $([int]$r.X),$([int]$r.Y) $([int]$r.Width)x$([int]$r.Height)"
+    $clickX = [int]($r.X + ($r.Width / 2) + 33)
+    $clickY = [int]($r.Y + ($r.Height / 2))
+    $hitText = ''
+    try {
+      $payload = "{`"x`":$clickX,`"y`":$clickY}"
+      $bytes = [System.Text.Encoding]::UTF8.GetBytes($payload)
+      $req = [System.Net.HttpWebRequest]::Create('http://127.0.0.1:4174/hit')
+      $req.Method = 'POST'
+      $req.ContentType = 'application/json'
+      $req.Timeout = 5000
+      $req.Proxy = $null
+      $stream = $req.GetRequestStream()
+      $stream.Write($bytes, 0, $bytes.Length)
+      $stream.Close()
+      $resp = $req.GetResponse()
+      $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())
+      $hitText = $reader.ReadToEnd()
+      $reader.Close(); $resp.Close()
+    } catch { $hitText = "hit-debug $($_.Exception.Message)" }
+    Write-Host "HIT $hitText"
     # The painted minus sits about 33px to the right of that box.
-    [SonoraInput]::Click([int]($r.X + ($r.Width / 2) + 33), [int]($r.Y + ($r.Height / 2)))
-    Start-Sleep -Milliseconds 900
+    [SonoraInput]::Click($clickX, $clickY)
+    Start-Sleep -Milliseconds 400
+    $afterHit = ''
+    if (Test-Path $env:SONORA_BOOT_LOG) {
+      $afterHit = ((Get-Content $env:SONORA_BOOT_LOG -Tail 8) -join ' || ')
+    }
+    Write-Host "HIT-AFTER $afterHit"
+    Start-Sleep -Milliseconds 500
     $collapsedHeight = Get-WindowHeight $hwnd
     $listeningIcon = Wait-Named 'Sonora listening' 3
     $stillShown = [SonoraInput]::IsWindowVisible($hwnd)
-    Add-Scenario 'Minimize collapses to a listening icon inside the same window' ([bool]($stillShown -and $collapsedHeight -le 140 -and $collapsedHeight -ge 40 -and $listeningIcon)) "height=$collapsedHeight $($script:minimizeWhere)"
+    $hitBrief = if ($hitText.Length -gt 500) { $hitText.Substring(0, 500) } else { $hitText }
+    Add-Scenario 'Minimize collapses to a listening icon inside the same window' ([bool]($stillShown -and $collapsedHeight -le 140 -and $collapsedHeight -ge 40 -and $listeningIcon)) "height=$collapsedHeight $($script:minimizeWhere) $hitBrief"
     Save-Screen '05e-minimized.png'
     if ($listeningIcon) {
       # Click the icon's window, not its accessibility box. That box can sit
