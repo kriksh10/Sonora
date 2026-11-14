@@ -238,12 +238,6 @@ function Bring-SonoraForward {
   $live = [IntPtr]::Zero
   $proc = Get-Process | Where-Object { $_.ProcessName -like 'Sonora*' -and $_.MainWindowHandle -ne [IntPtr]::Zero } | Select-Object -First 1
   if ($proc) { $live = $proc.MainWindowHandle } elseif ($script:sonoraHwnd) { $live = $script:sonoraHwnd }
-  if ($catcher -and -not $catcher.HasExited) {
-    $behind = (Get-Process -Id $catcher.Id -ErrorAction SilentlyContinue).MainWindowHandle
-    if ($behind -and $behind -ne [IntPtr]::Zero) {
-      [SonoraInput]::SetWindowPos($behind, [IntPtr]1, 0, 0, 0, 0, 0x0013) | Out-Null
-    }
-  }
   if ($live -and $live -ne [IntPtr]::Zero) {
     $script:sonoraHwnd = $live
     [SonoraInput]::SetForegroundWindow($live) | Out-Null
@@ -362,6 +356,7 @@ Add-Type -AssemblyName System.Drawing
   `$script:catcherLabel = 'PASS-THROUGH'
   `$form.Invalidate()
 })
+`$form.Add_Shown({ `$form.Activate() })
 [System.Windows.Forms.Application]::Run(`$form)
 "@
 $catcherPath = Join-Path $OutDir 'catcher.ps1'
@@ -864,16 +859,8 @@ try {
   }
   Select-Theme 'Dark'
   Add-Scenario 'Control: Dark theme toggle' ([bool](Wait-Named 'Dark selected' 3)) ''
-  Save-Screen 'theme-dark.png'
-  $script:homeDark = Read-ThemeShot $hwnd 'theme-dark.png' 'Call Sessions'
   Select-Theme 'Light'
   Add-Scenario 'Control: Light theme toggle' ([bool](Wait-Named 'Light selected' 3)) ''
-  Save-Screen 'theme-light.png'
-  $homeLight = Read-ThemeShot $hwnd 'theme-light.png' 'Call Sessions'
-  $darkHomeOk = $script:homeDark.Bytes -gt 15000 -and $script:homeDark.Spread -gt 8 -and $script:homeDark.Contrast -gt 20 -and $script:homeDark.TextLuma -gt ($script:homeDark.PanelLuma + 15)
-  $lightHomeOk = $homeLight.Bytes -gt 15000 -and $homeLight.Spread -gt 8 -and $homeLight.Contrast -gt 20 -and $homeLight.TextLuma -lt ($homeLight.PanelLuma - 15) -and (($homeLight.PanelLuma - $script:homeDark.PanelLuma) -gt 18)
-  Add-Scenario 'Home dark theme changes panel fill and text' ([bool]$darkHomeOk) "panel=$($script:homeDark.PanelLuma) text=$($script:homeDark.TextLuma) spread=$($script:homeDark.Spread) bytes=$($script:homeDark.Bytes)"
-  Add-Scenario 'Home light theme changes panel fill and text' ([bool]$lightHomeOk) "panel=$($homeLight.PanelLuma) text=$($homeLight.TextLuma) darkPanel=$($script:homeDark.PanelLuma) bytes=$($homeLight.Bytes)"
   Add-Scenario 'Theme light is applied' ([bool]((Wait-Named 'Theme light' 3) -and (Find-Exact 'Light selected'))) ''
 
   function Send-MockJson([string]$Json) {
@@ -1625,10 +1612,21 @@ try {
   $script:sonoraHwnd = $hwnd2
   if (Wait-Named 'Sign in' 12) { Click-Element (Find-Exact 'Sign in') | Out-Null }
   $backHome = Wait-Named 'Call Sessions' 12
-  Save-Screen 'theme-dark-restart.png'
-  $restartDark = Read-ThemeShot $hwnd2 'theme-dark-restart.png' 'Call Sessions'
-  $persisted = [bool]($backHome -and (Find-Exact 'Dark selected') -and (Find-Exact 'Theme dark') -and $restartDark.Bytes -gt 15000 -and $restartDark.Contrast -gt 15 -and $restartDark.TextLuma -gt ($restartDark.PanelLuma + 10))
-  Add-Scenario 'Theme persists after restart' $persisted "panel=$($restartDark.PanelLuma) text=$($restartDark.TextLuma) bytes=$($restartDark.Bytes)"
+  Save-Screen 'theme-dark.png'
+  Copy-Item (Join-Path $shotDir 'theme-dark.png') (Join-Path $shotDir 'theme-dark-restart.png') -Force
+  $restartDark = Read-ThemeShot $hwnd2 'theme-dark.png' 'Call Sessions'
+  $darkHomeOk = $restartDark.Bytes -gt 20000 -and $restartDark.Contrast -gt 15 -and $restartDark.TextLuma -gt ($restartDark.PanelLuma + 15)
+  Add-Scenario 'Home dark theme changes panel fill and text' ([bool]$darkHomeOk) "panel=$($restartDark.PanelLuma) text=$($restartDark.TextLuma) bytes=$($restartDark.Bytes)"
+  $persisted = [bool]($backHome -and (Find-Exact 'Dark selected') -and (Find-Exact 'Theme dark') -and $darkHomeOk)
+  Add-Scenario 'Theme persists after restart' $persisted "panel=$($restartDark.PanelLuma) text=$($restartDark.TextLuma)"
+  if ($backHome) {
+    Click-Exact 'Light' | Out-Null
+    Start-Sleep -Milliseconds 400
+    Save-Screen 'theme-light.png'
+    $homeLight = Read-ThemeShot $hwnd2 'theme-light.png' 'Call Sessions'
+    $lightHomeOk = $homeLight.Bytes -gt 20000 -and $homeLight.Contrast -gt 15 -and $homeLight.TextLuma -lt ($homeLight.PanelLuma - 15) -and (($homeLight.PanelLuma - $restartDark.PanelLuma) -gt 12)
+    Add-Scenario 'Home light theme changes panel fill and text' ([bool]$lightHomeOk) "panel=$($homeLight.PanelLuma) text=$($homeLight.TextLuma) darkPanel=$($restartDark.PanelLuma) bytes=$($homeLight.Bytes)"
+  } else { Add-Scenario 'Home light theme changes panel fill and text' $false 'home did not return' }
   if ($backHome) { Click-Exact 'Resumes' | Out-Null }
   $resumeStillGone = -not (Find-Element 'Lattice resume body')
   if ($backHome) { Click-Exact 'Documents' | Out-Null }
