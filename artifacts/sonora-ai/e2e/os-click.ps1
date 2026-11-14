@@ -313,6 +313,25 @@ function Read-ThemeShot([IntPtr]$Window, [string]$File, [string]$TextName) {
     Bytes = (Get-Item $path).Length
   }
 }
+function Measure-LogoGreen([string]$File, [IntPtr]$Window) {
+  $path = Join-Path $shotDir $File
+  $bmp = [System.Drawing.Bitmap]::FromFile($path)
+  $origin = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+  $box = New-Object SonoraInput+RECT
+  [SonoraInput]::GetWindowRect($Window, [ref]$box) | Out-Null
+  $width = [Math]::Max(1, $box.Right - $box.Left)
+  $height = [Math]::Max(1, $box.Bottom - $box.Top)
+  $hits = 0
+  foreach ($pair in @(@(0.22, 0.22), @(0.78, 0.22), @(0.22, 0.78))) {
+    $ix = [int](($box.Left + ($width * $pair[0])) - $origin.X)
+    $iy = [int](($box.Top + ($height * $pair[1])) - $origin.Y)
+    if ($ix -lt 0 -or $iy -lt 0 -or $ix -ge $bmp.Width -or $iy -ge $bmp.Height) { continue }
+    $pixel = $bmp.GetPixel($ix, $iy)
+    if ($pixel.G -gt 150 -and $pixel.G -gt ($pixel.R + 25) -and $pixel.G -gt ($pixel.B + 25)) { $hits++ }
+  }
+  $bmp.Dispose()
+  return $hits
+}
 
 $catcherScript = @"
 `$ErrorActionPreference = 'Stop'
@@ -1138,6 +1157,9 @@ try {
   $listeningIcon = Wait-Named 'Sonora listening' 3
   Add-Scenario 'Ctrl+H collapses the live overlay to a listening icon' ([bool]([SonoraInput]::IsWindowVisible($hwnd) -and $collapsedHeight -le 140 -and $collapsedHeight -ge 40 -and $listeningIcon)) "full=$fullHeight collapsed=$collapsedHeight"
   Save-Screen '05d-collapsed.png'
+  Copy-Item (Join-Path $shotDir '05d-collapsed.png') (Join-Path $shotDir 'collapsed-logo-bands.png') -Force
+  $logoGreen = Measure-LogoGreen 'collapsed-logo-bands.png' $hwnd
+  Add-Scenario 'Collapsed icon uses the Sonora logo' ($logoGreen -ge 2) "green=$logoGreen"
   function Get-WindowBox([IntPtr]$handle) {
     $box = New-Object SonoraInput+RECT
     [SonoraInput]::GetWindowRect($handle, [ref]$box) | Out-Null
@@ -1677,6 +1699,7 @@ try {
   if (Wait-Named 'Sign in' 8) { Click-Element (Find-Exact 'Sign in') | Out-Null; Wait-Named 'Call Sessions' 10 | Out-Null }
   Click-Exact 'Minimize' | Out-Null
   $scaledIcon = Wait-Named 'Sonora listening' 4
+  if ($scaledIcon) { Save-Screen 'collapsed-logo-150.png' }
   $scaledBefore = Get-WindowBox $scaleHwnd
   $scaledDrags = $false
   if ($scaledIcon) {

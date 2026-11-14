@@ -134,7 +134,13 @@ export default function DesktopVisibilityControls() {
         onClick={() => {
           if (drag.current.moved) { drag.current.moved = false; return; }
           void run(() => bridge.minimize!());
-        }}>S</button>
+        }}>
+        <svg className="sonora-dock-mark" viewBox="0 0 64 64" width="64" height="64" aria-hidden="true">
+          <rect width="64" height="64" rx="16" fill="#75c853" />
+          <path d="M32 12v40M18 20l28 24M46 20 18 44" fill="none" stroke="#19321d" strokeLinecap="round" strokeWidth="6" />
+        </svg>
+        <span className="sonora-dock-live" aria-hidden="true" />
+      </button>
       <span className="sonora-window-drag-handle desktop-drag inline-flex items-center gap-1 text-xs font-semibold text-white/80" title="Drag here to move Sonora">
         <GripHorizontal size={17} /> Sonora
       </span>
