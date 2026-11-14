@@ -1608,9 +1608,12 @@ try {
   Add-Scenario 'Opening Sonora again shows the hidden window' $shown ''
   Save-Screen '05c-shown.png'
   if ($shown) {
-    # The accessibility box sits about 30px left of the visible minus.
-    $box = Get-WindowBox $hwnd
-    [SonoraInput]::Click([int]($box.X + $box.W - 151), [int]($box.Y + 22))
+    # The accessibility box is about 33px left of the visible minus.
+    $minimize = Find-Exact 'Minimize'
+    if ($minimize) {
+      $r = $minimize.Current.BoundingRectangle
+      [SonoraInput]::Click([int]($r.X + ($r.Width / 2) + 33), [int]($r.Y + ($r.Height / 2)))
+    }
     Start-Sleep -Milliseconds 900
     $collapsedHeight = Get-WindowHeight $hwnd
     $listeningIcon = Wait-Named 'Sonora listening' 3
