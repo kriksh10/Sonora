@@ -1624,9 +1624,16 @@ try {
     $box = Get-WindowBox $hwnd
     $fx = [int]($box.X + $box.W - 151)
     $fy = [int]($box.Y + 22)
-    $tries = @("bar $fx,$fy enabled=$enabled")
-    [SonoraInput]::Click($fx, $fy)
-    Start-Sleep -Milliseconds 900
+    $tries = @("enabled=$enabled")
+    foreach ($dx in @(0, -30, 30, -60, 60)) {
+      $fx = [int]($box.X + $box.W - 151 + $dx)
+      $fy = [int]($box.Y + 22)
+      $tries += "$fx,$fy"
+      [SonoraInput]::Click($fx, $fy)
+      Start-Sleep -Milliseconds 450
+      if ((Get-WindowHeight $hwnd) -le 140) { break }
+    }
+    Start-Sleep -Milliseconds 500
     $collapsedHeight = Get-WindowHeight $hwnd
     $listeningIcon = Wait-Named 'Sonora listening' 3
     $stillShown = [SonoraInput]::IsWindowVisible($hwnd)
