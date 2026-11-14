@@ -1,7 +1,19 @@
-// Clears WS_EX_TRANSPARENT on Sonora's render-widget child. PowerShell Add-Type
-// does not finish when Electron spawns it, so the installed app ships this
-// instead. One decimal HWND argument, one status line on stdout.
-use std::process::ExitCode;
+// GUI subsystem on purpose. A console binary spawned from the Electron window
+// hangs in CRT startup and flashes a console. Status goes to the inherited
+// stdout handle, which Node sets up as a pipe.
+#![windows_subsystem = "windows"]
+
+#[link(name = "kernel32")]
+extern "system" {
+    fn GetStdHandle(kind: u32) -> isize;
+    fn WriteFile(
+        handle: isize,
+        buffer: *const u8,
+        length: u32,
+        written: *mut u32,
+        overlapped: *mut core::ffi::c_void,
+    ) -> i32;
+}
 
 #[link(name = "user32")]
 extern "system" {
@@ -22,6 +34,21 @@ const SWP_NOMOVE: u32 = 0x0002;
 const SWP_NOZORDER: u32 = 0x0004;
 const SWP_NOACTIVATE: u32 = 0x0010;
 const SWP_FRAMECHANGED: u32 = 0x0020;
+const STD_OUTPUT_HANDLE: u32 = 0xFFFFFFF5;
+
+fn emit(line: &str) {
+    let handle = unsafe { GetStdHandle(STD_OUTPUT_HANDLE) };
+    if handle == 0 || handle == -1 {
+        return;
+    }
+    let mut bytes = Vec::with_capacity(line.len() + 1);
+    bytes.extend_from_slice(line.as_bytes());
+    bytes.push(b'\n');
+    let mut written = 0u32;
+    unsafe {
+        WriteFile(handle, bytes.as_ptr(), bytes.len() as u32, &mut written, core::ptr::null_mut());
+    }
+}
 
 fn class_name(hwnd: isize) -> String {
     let mut buf = [0u16; 256];
@@ -59,29 +86,27 @@ fn repair_widget(hwnd: isize) -> Option<String> {
     Some(note)
 }
 
-fn main() -> ExitCode {
+fn main() {
     let hwnd = std::env::args()
         .nth(1)
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(0) as isize;
     if hwnd == 0 {
-        println!("none");
-        return ExitCode::SUCCESS;
+        emit("parent-visible=0");
+        return;
     }
-    let mut notes = Vec::new();
-    let mut child = unsafe { GetWindow(hwnd, GW_CHILD) };
-    let mut guard = 0;
-    while child != 0 && guard < 32 {
-        if let Some(note) = repair_widget(child) {
-            notes.push(note);
+    let parent_visible = unsafe { IsWindowVisible(hwnd) } != 0;
+    let mut notes = vec![format!("parent-visible={}", if parent_visible { 1 } else { 0 })];
+    if parent_visible {
+        let mut child = unsafe { GetWindow(hwnd, GW_CHILD) };
+        let mut guard = 0;
+        while child != 0 && guard < 32 {
+            if let Some(note) = repair_widget(child) {
+                notes.push(note);
+            }
+            child = unsafe { GetWindow(child, GW_HWNDNEXT) };
+            guard += 1;
         }
-        child = unsafe { GetWindow(child, GW_HWNDNEXT) };
-        guard += 1;
     }
-    if notes.is_empty() {
-        println!("none");
-    } else {
-        println!("{}", notes.join(" | "));
-    }
-    ExitCode::SUCCESS
+    emit(&notes.join(" | "));
 }

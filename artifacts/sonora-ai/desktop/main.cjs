@@ -1,6 +1,6 @@
 const { app, BrowserWindow, globalShortcut, ipcMain, Menu, Tray, nativeImage, screen, dialog, desktopCapturer, shell } = require('electron');
 const http = require('node:http');
-const { execFileSync } = require('node:child_process');
+const { spawn } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
 const { validateServiceUrl, isAllowedNavigation } = require('./security.cjs');
@@ -216,51 +216,83 @@ function renderWidgetHelper() {
     ? path.join(process.resourcesPath, 'native', 'sonora-hit.exe')
     : path.resolve(__dirname, '../../../generated-artifacts/native', `${process.platform}-${process.arch}`, 'sonora-hit.exe');
 }
+let hitRepairPending = true;
+let hitRepairRunning = false;
+let hitRepairNudged = false;
+function nudgeTitleBar() {
+  if (!win || win.isDestroyed() || collapsed) return;
+  const again = win.getBounds();
+  try {
+    win.setBounds({ x: again.x, y: again.y, width: again.width, height: again.height + 1 });
+    win.setBounds(again);
+  } catch { /* the click path still uses the button handler */ }
+}
+function presentHitTarget() {
+  if (!win || win.isDestroyed()) return;
+  if (!clickThrough && typeof win.setIgnoreMouseEvents === 'function') {
+    try { win.setIgnoreMouseEvents(false); ignoringMouse = false; } catch { /* mouse events stay as they were */ }
+  }
+  try { win.webContents.invalidate(); } catch { /* an older runtime has no invalidate */ }
+  try { win.webContents.focus(); } catch { /* focus already moved */ }
+  if (alwaysOnTop) holdOnTop();
+  nudgeTitleBar();
+}
 function clearRenderWidgetClickThrough() {
-  // After a shell ShowWindow, Chrome_RenderWidgetHostHWND keeps WS_EX_TRANSPARENT.
-  // WindowFromPoint returns the parent, and the title-bar press never reaches the page.
-  if (process.platform !== 'win32' || !win || win.isDestroyed() || clickThrough) return;
+  // The helper is a GUI-subsystem binary and is spawned with windowsHide, so it
+  // cannot open a console. It stays off the UI thread: a synchronous spawn is
+  // what froze launch for the whole PowerShell timeout.
+  if (process.platform !== 'win32' || !win || win.isDestroyed() || clickThrough || hitRepairRunning) return;
   let hwnd = '';
   try {
     const raw = win.getNativeWindowHandle();
     hwnd = raw.length >= 8 ? raw.readBigUInt64LE(0).toString() : String(raw.readUInt32LE(0));
   } catch (error) {
-    bootLog(`render-widget-hit failed handle ${error}`);
+    bootLog(`render-widget-wait handle ${error}`);
     return;
   }
-  try {
-    const out = execFileSync(renderWidgetHelper(), [hwnd], {
-      encoding: 'utf8', timeout: 3000, windowsHide: true,
-    });
-    bootLog(`render-widget-hit ${String(out).replace(/\s+/g, ' ').trim()}`);
-  } catch (error) { bootLog(`render-widget-hit failed ${error.stderr || error.message || error}`); }
-}
-let hitRepairAt = 0;
-function scheduleHitRepair() {
-  // Tray restore can ShowWindow the HWND without calling show(). Rebuild the
-  // title-bar hit target off the window procedure so the message pump stays live.
-  if (process.platform !== 'win32' || !win || win.isDestroyed()) return;
-  const now = Date.now();
-  if (now - hitRepairAt < 400) return;
-  hitRepairAt = now;
-  const timer = setTimeout(() => {
-    if (!win || win.isDestroyed()) return;
-    bootLog('window-shown repair');
-    if (!clickThrough && typeof win.setIgnoreMouseEvents === 'function') {
-      try { win.setIgnoreMouseEvents(false); ignoringMouse = false; } catch { /* mouse events stay as they were */ }
+  hitRepairRunning = true;
+  let out = '';
+  let err = '';
+  let settled = false;
+  const child = spawn(renderWidgetHelper(), [hwnd], {
+    windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  child.stdout?.setEncoding?.('utf8');
+  child.stderr?.setEncoding?.('utf8');
+  child.stdout?.on?.('data', chunk => { out += chunk; });
+  child.stderr?.on?.('data', chunk => { err += chunk; });
+  const killer = setTimeout(() => { try { child.kill(); } catch { /* already exited */ } }, 2000);
+  const finish = () => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(killer);
+    hitRepairRunning = false;
+    const text = `${out} ${err}`.replace(/\s+/g, ' ').trim();
+    const visible = text.includes('parent-visible=1') && text.includes('RenderWidgetHost');
+    if (!visible) {
+      hitRepairPending = true;
+      bootLog(`render-widget-wait ${text || 'none'}`);
+      return;
     }
-    try { win.webContents.invalidate(); } catch { /* an older runtime has no invalidate */ }
-    try { win.webContents.focus(); } catch { /* focus already moved */ }
-    if (alwaysOnTop) holdOnTop();
-    clearRenderWidgetClickThrough();
-    if (collapsed) return;
-    const again = win.getBounds();
-    try {
-      win.setBounds({ x: again.x, y: again.y, width: again.width, height: again.height + 1 });
-      win.setBounds(again);
-    } catch { /* the click path still uses the button handler */ }
-  }, 30);
-  timer.unref?.();
+    if (!hitRepairNudged) {
+      hitRepairNudged = true;
+      presentHitTarget();
+      clearRenderWidgetClickThrough();
+      return;
+    }
+    hitRepairPending = false;
+    bootLog(`render-widget-hit ${text}`);
+  };
+  child.on('error', error => {
+    out += ` ${error.message || error}`;
+    finish();
+  });
+  child.on('close', finish);
+}
+function scheduleHitRepair() {
+  // Tray restore can show the HWND without show(). The poll below calls this
+  // until the render widget is actually on screen.
+  clearRenderWidgetClickThrough();
 }
 function finishPresent() {
   if (!win || win.isDestroyed()) return;
@@ -388,6 +420,8 @@ function conceal() {
   win.setSkipTaskbar?.(true);
   win.hide();
   win.setSkipTaskbar?.(true);
+  hitRepairPending = true;
+  hitRepairNudged = false;
   syncTray();
   broadcast();
 }
@@ -711,7 +745,10 @@ function createWindow() {
   win.setSkipTaskbar(true);
   clearWindowPlate();
   if (process.platform === 'win32') {
-    const topTimer = setInterval(() => holdOnTop(), 1000);
+    const topTimer = setInterval(() => {
+      holdOnTop();
+      if (hitRepairPending) scheduleHitRepair();
+    }, 1000);
     win.on('closed', () => clearInterval(topTimer));
   }
   if (migrateOpacity) persistWindow();
