@@ -1461,6 +1461,8 @@ try {
     Add-Scenario 'Control: Log out returns to the sign-in screen' $false 'Log out missing on the session list'
   }
 
+  $script:bootLinesBeforeHide = 0
+  if (Test-Path $env:SONORA_BOOT_LOG) { $script:bootLinesBeforeHide = @(Get-Content $env:SONORA_BOOT_LOG).Count }
   Click-Name 'Hide Sonora' | Out-Null
   Start-Sleep -Milliseconds 700
   $hidden = -not [SonoraInput]::IsWindowVisible($hwnd)
@@ -1655,6 +1657,19 @@ try {
   Add-Scenario 'Opening Sonora again shows the hidden window' $shown ''
   Save-Screen '05c-shown.png'
   if ($shown) {
+    $widgetUntil = (Get-Date).AddSeconds(12)
+    $widgetCleared = $false
+    do {
+      if (Test-Path $env:SONORA_BOOT_LOG) {
+        $bootLines = @(Get-Content $env:SONORA_BOOT_LOG)
+        if ($bootLines.Count -gt $script:bootLinesBeforeHide) {
+          $fresh = $bootLines[$script:bootLinesBeforeHide..($bootLines.Count - 1)] -join "`n"
+          if ($fresh -match 'render-widget-hit') { $widgetCleared = $true }
+        }
+      }
+      if (-not $widgetCleared) { Start-Sleep -Milliseconds 200 }
+    } while (-not $widgetCleared -and (Get-Date) -lt $widgetUntil)
+    Write-Host "WIDGET-HIT cleared=$widgetCleared"
     $minimize = Find-Exact 'Minimize'
     if (-not $minimize) { throw 'Minimize button missing after the tray restore' }
     $r = $minimize.Current.BoundingRectangle
