@@ -259,6 +259,16 @@ function Wait-Named([string]$Name, [int]$Seconds = 12) {
   return $null
 }
 
+function Wait-Contains([string]$Name, [int]$Seconds = 12) {
+  $until = (Get-Date).AddSeconds($Seconds)
+  while ((Get-Date) -lt $until) {
+    $items = @(Find-AllNamed $Name)
+    if ($items.Count -gt 0) { return $items[0] }
+    Sleep-Pump 200
+  }
+  return $null
+}
+
 function Find-Button([string]$Name) {
   foreach ($el in @(Find-AllNamed $Name)) {
     if ($el.Current.Name -ne $Name) { continue }
@@ -274,7 +284,7 @@ function Write-UiNames([string]$Label) {
   if (-not $root) { Write-Host "$Label UI: no Sonora window"; return }
   $all = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
   $names = @()
-  for ($i = 0; $i -lt [Math]::Min(40, $all.Count); $i++) {
+  for ($i = 0; $i -lt [Math]::Min(80, $all.Count); $i++) {
     $n = $all.Item($i).Current.Name
     if ($n) { $names += $n }
   }
@@ -456,8 +466,12 @@ try {
   Move-Sonora $hwnd $setupX $setupY $setupW $setupH | Out-Null
   Click-Ui (Find-Exact 'Sign in')
   if (-not (Wait-Named 'Call Sessions' 15)) { Write-UiNames 'sessions'; throw 'Sign-in did not open Call Sessions' }
-  $seed = Post-Json 'http://127.0.0.1:4173/api/e2e/seed' '{"title":"Client sync","company":"","sessionType":"call","status":"ready"}'
-  if (-not (Wait-Named 'Client sync' 10)) { Write-UiNames 'seed'; throw "Seeded session did not appear: $seed" }
+  $seed = Post-Json 'http://127.0.0.1:4173/api/e2e/seed' '{"title":"Client sync","company":"Client sync","sessionType":"call","status":"ready"}'
+  if (-not (Wait-Contains 'Client sync' 12)) {
+    Write-UiNames 'seed'
+    if (-not (Find-Button 'Start')) { throw "Seeded session did not appear: $seed" }
+    Write-Host 'Session title was not exposed; Start is visible'
+  }
   $start = $null
   $startUntil = (Get-Date).AddSeconds(8)
   while ((Get-Date) -lt $startUntil -and -not $start) {
