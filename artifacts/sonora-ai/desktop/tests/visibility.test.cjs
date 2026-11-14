@@ -113,7 +113,7 @@ test('minimize collapses inside the same window and the tray is only for a hidde
   assert.match(main, /type: 'toolbar'/);
   assert.match(main, /title: 'Sonora'/);
   assert.match(main, /hiddenInMissionControl: true/);
-  assert.match(main, /setInterval\(\(\) => holdOnTop\(\), 1000\)/);
+  assert.match(main, /holdOnTop\(\);\r?\n\s*if \(hitRepairPending\) scheduleHitRepair\(\);\r?\n\s*\}, 1000\)/);
   assert.doesNotMatch(main, /page-title-updated/);
   assert.doesNotMatch(main, /createEmpty\(\)/);
 });
