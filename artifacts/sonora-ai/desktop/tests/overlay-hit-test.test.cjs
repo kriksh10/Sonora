@@ -79,4 +79,7 @@ test('packaged shell keeps visible UI clickable and stays above other windows', 
   assert.match(css, /\.dp-select-list \{[^}]*background: #1b1b1d/);
   assert.match(css, /\.dp-select-option \{[^}]*color: #f7f7f8/);
   assert.doesNotMatch(main, /setIgnoreMouseEvents\(true/);
+  assert.match(main, /scheduleHitRepair\(\)/);
+  assert.match(main, /hookWindowMessage\(0x0018/);
+  assert.doesNotMatch(main, /powershell/);
 });

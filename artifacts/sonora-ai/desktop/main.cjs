@@ -1,6 +1,5 @@
 const { app, BrowserWindow, globalShortcut, ipcMain, Menu, Tray, nativeImage, screen, dialog, desktopCapturer, shell } = require('electron');
 const http = require('node:http');
-const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -212,58 +211,56 @@ function placeReachable(box) {
   const y = Math.max(area.y + 40, Math.min(box.y, area.y + area.height - Math.min(box.height, area.height)));
   return y === box.y ? box : { ...box, y };
 }
+function renderWidgetHelper() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'native', 'sonora-hit.exe')
+    : path.resolve(__dirname, '../../../generated-artifacts/native', `${process.platform}-${process.arch}`, 'sonora-hit.exe');
+}
 function clearRenderWidgetClickThrough() {
-  // After hide/show, Chrome_RenderWidgetHostHWND keeps WS_EX_TRANSPARENT even
-  // though setIgnoreMouseEvents is off. Clicks hit the parent and never reach
-  // the page. Clear that style on the render-widget child.
+  // After a shell ShowWindow, Chrome_RenderWidgetHostHWND keeps WS_EX_TRANSPARENT.
+  // WindowFromPoint returns the parent, and the title-bar press never reaches the page.
   if (process.platform !== 'win32' || !win || win.isDestroyed() || clickThrough) return;
   let hwnd = '';
   try {
     const raw = win.getNativeWindowHandle();
     hwnd = raw.length >= 8 ? raw.readBigUInt64LE(0).toString() : String(raw.readUInt32LE(0));
-  } catch { return; }
-  const scriptPath = path.join(os.tmpdir(), 'sonora-clear-render-widget.ps1');
-  if (!fs.existsSync(scriptPath)) {
-    fs.writeFileSync(scriptPath, [
-      'param([Int64]$Hwnd)',
-      '$code = @"',
-      'using System;',
-      'using System.Text;',
-      'using System.Runtime.InteropServices;',
-      'public static class SonoraChildHit2 {',
-      '  [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr h, uint c);',
-      '  [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr h, int i);',
-      '  [DllImport("user32.dll")] public static extern int SetWindowLong(IntPtr h, int i, int v);',
-      '  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h, StringBuilder s, int n);',
-      '  public static string Clear(long value) {',
-      '    var child = GetWindow(new IntPtr(value), 5);',
-      '    var notes = "";',
-      '    while (child != IntPtr.Zero) {',
-      '      var name = new StringBuilder(256);',
-      '      GetClassName(child, name, 256);',
-      '      int ex = GetWindowLong(child, -20);',
-      '      if (name.ToString().IndexOf("RenderWidgetHost") >= 0 && (ex & 0x20) != 0) {',
-      '        SetWindowLong(child, -20, ex & ~0x20);',
-      '        notes += "cleared;";',
-      '      }',
-      '      child = GetWindow(child, 2);',
-      '    }',
-      '    return notes.Length == 0 ? "none" : notes;',
-      '  }',
-      '}',
-      '"@',
-      'Add-Type -TypeDefinition $code -Language CSharp',
-      '[SonoraChildHit2]::Clear($Hwnd)',
-      '',
-    ].join('\r\n'));
+  } catch (error) {
+    bootLog(`render-widget-hit failed handle ${error}`);
+    return;
   }
-  const shell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
   try {
-    const out = execFileSync(shell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, hwnd], {
-      encoding: 'utf8', timeout: 20000, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+    const out = execFileSync(renderWidgetHelper(), [hwnd], {
+      encoding: 'utf8', timeout: 3000, windowsHide: true,
     });
     bootLog(`render-widget-hit ${String(out).replace(/\s+/g, ' ').trim()}`);
   } catch (error) { bootLog(`render-widget-hit failed ${error.stderr || error.message || error}`); }
+}
+let hitRepairAt = 0;
+function scheduleHitRepair() {
+  // Tray restore can ShowWindow the HWND without calling show(). Rebuild the
+  // title-bar hit target off the window procedure so the message pump stays live.
+  if (process.platform !== 'win32' || !win || win.isDestroyed()) return;
+  const now = Date.now();
+  if (now - hitRepairAt < 400) return;
+  hitRepairAt = now;
+  const timer = setTimeout(() => {
+    if (!win || win.isDestroyed()) return;
+    bootLog('window-shown repair');
+    if (!clickThrough && typeof win.setIgnoreMouseEvents === 'function') {
+      try { win.setIgnoreMouseEvents(false); ignoringMouse = false; } catch { /* mouse events stay as they were */ }
+    }
+    try { win.webContents.invalidate(); } catch { /* an older runtime has no invalidate */ }
+    try { win.webContents.focus(); } catch { /* focus already moved */ }
+    if (alwaysOnTop) holdOnTop();
+    clearRenderWidgetClickThrough();
+    if (collapsed) return;
+    const again = win.getBounds();
+    try {
+      win.setBounds({ x: again.x, y: again.y, width: again.width, height: again.height + 1 });
+      win.setBounds(again);
+    } catch { /* the click path still uses the button handler */ }
+  }, 30);
+  timer.unref?.();
 }
 function finishPresent() {
   if (!win || win.isDestroyed()) return;
@@ -279,7 +276,7 @@ function finishPresent() {
     win.webContents.executeJavaScript('window.dispatchEvent(new Event("resize"))', true).catch(() => {});
   } catch { /* the bounds were already sent */ }
   if (alwaysOnTop) holdOnTop();
-  clearRenderWidgetClickThrough();
+  scheduleHitRepair();
   syncTray();
   broadcast();
   syncCollapsedClass();
@@ -300,17 +297,6 @@ function show() {
   win.focus();
   win.setSkipTaskbar?.(true);
   finishPresent();
-  // A resize after the window is on screen rebuilds the title-bar hit target.
-  // Doing it during show, or toggling ignore-mouse, leaves that strip dead.
-  if (typeof setTimeout === 'function') setTimeout(() => {
-    if (!win || win.isDestroyed() || collapsed) return;
-    const again = win.getBounds();
-    try {
-      win.setBounds({ x: again.x, y: again.y, width: again.width, height: again.height + 1 });
-      win.setBounds(again);
-      clearRenderWidgetClickThrough();
-    } catch { /* the click path still uses the button handler */ }
-  }, 200);
 }
 let enforcingCollapsed = false;
 function enforceCollapsedSize() {
@@ -803,10 +789,16 @@ function createWindow() {
     return { action: 'deny' };
   });
   win.on('close', event => { if (!quitting && !localE2E) { event.preventDefault(); hide(); } });
-  win.on('show', () => { win.setSkipTaskbar?.(true); if (alwaysOnTop) applyAlwaysOnTop(true); syncTray(); broadcast(); });
+  win.on('show', () => { win.setSkipTaskbar?.(true); if (alwaysOnTop) applyAlwaysOnTop(true); syncTray(); broadcast(); scheduleHitRepair(); });
   // A frameless window at the top of the screen reports the minus click as a
   // caption drag. The page never sees it, so collapse from that message.
   if (process.platform === 'win32' && typeof win.hookWindowMessage === 'function') {
+    // A shell ShowWindow (tray click) emits this without going through show().
+    win.hookWindowMessage(0x0018, wParam => {
+      let shown = false;
+      try { shown = wParam?.readInt32LE?.(0) !== 0; } catch { return; }
+      if (shown) scheduleHitRepair();
+    });
     win.hookWindowMessage(0x00A1, wParam => {
       let code = -1;
       try { code = typeof wParam?.readInt32LE === 'function' ? wParam.readInt32LE(0) : Number(wParam); } catch { return; }
