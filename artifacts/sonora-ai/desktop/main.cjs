@@ -198,6 +198,18 @@ function clearWindowPlate() {
   // The window plate and material are fixed at creation. Touching either
   // afterward paints an opaque white sheet on Windows.
 }
+function placeReachable(box) {
+  // A frameless window flush with the top of the screen does not receive
+  // title-bar clicks on Windows. Keep the minus button below that edge.
+  let area;
+  try {
+    const areas = screen.getAllDisplays().map(display => display.workArea).filter(Boolean);
+    area = areas.find(item => box.x < item.x + item.width && box.x + box.width > item.x) || areas[0];
+  } catch { return box; }
+  if (!area) return box;
+  const y = Math.max(area.y + 40, Math.min(box.y, area.y + area.height - Math.min(box.height, area.height)));
+  return y === box.y ? box : { ...box, y };
+}
 function refreshHitTesting() {
   if (!win || win.isDestroyed() || collapsed || clickThrough) return;
   // Hide/show on a transparent frameless window leaves the Windows drag-region
@@ -223,6 +235,10 @@ function show() {
   win.show();
   win.focus();
   win.setSkipTaskbar?.(true);
+  if (!collapsed) {
+    const placed = placeReachable(win.getBounds());
+    if (placed.y !== win.getBounds().y) win.setBounds(placed);
+  }
   if (alwaysOnTop) holdOnTop();
   refreshHitTesting();
   syncTray();
@@ -280,8 +296,9 @@ function setCollapsed(value) {
     win.setMaximumSize?.(10000, 10000);
     win.setMinimumSize?.(minimum[0], minimum[1]);
     clearWindowPlate();
-    let restored = { x: icon.x, y: icon.y, width: expandedBounds.width, height: expandedBounds.height };
+    let restored = placeReachable({ x: icon.x, y: icon.y, width: expandedBounds.width, height: expandedBounds.height });
     try { restored = safeBounds(restored, screen.getAllDisplays()); } catch { /* keep the icon anchor */ }
+    restored = placeReachable(restored);
     win.setBounds(restored);
     expandedBounds = restored;
   }
@@ -299,8 +316,9 @@ function expandFromIcon() {
   win.setMaximumSize?.(10000, 10000);
   win.setMinimumSize?.(minimum[0], minimum[1]);
   clearWindowPlate();
-  let restored = { x: icon.x, y: icon.y, width: saved?.width || 780, height: saved?.height || 720 };
+  let restored = placeReachable({ x: icon.x, y: icon.y, width: saved?.width || 780, height: saved?.height || 720 });
   try { restored = safeBounds(restored, screen.getAllDisplays()); } catch { /* keep the icon anchor */ }
+  restored = placeReachable(restored);
   win.setBounds(restored);
   expandedBounds = restored;
   broadcast();
