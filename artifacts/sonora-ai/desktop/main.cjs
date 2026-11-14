@@ -253,6 +253,7 @@ function placeCollapsed(x, y) {
 }
 function setCollapsed(value) {
   if (!win || win.isDestroyed()) return;
+  bootLog(`setCollapsed request=${value} current=${collapsed}`);
   const next = Boolean(value);
   if (next === collapsed) { broadcast(); holdCollapsedPaint(); return; }
   // Flip first so a resize event during the bounds change cannot restore the tall size.
