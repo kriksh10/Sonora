@@ -1612,7 +1612,8 @@ try {
     if (-not $minimize) { throw 'Minimize button missing after the tray restore' }
     $r = $minimize.Current.BoundingRectangle
     $script:minimizeWhere = "uia $([int]$r.X),$([int]$r.Y) $([int]$r.Width)x$([int]$r.Height)"
-    Click-Element $minimize
+    # The painted minus sits about 33px to the right of that box.
+    [SonoraInput]::Click([int]($r.X + ($r.Width / 2) + 33), [int]($r.Y + ($r.Height / 2)))
     Start-Sleep -Milliseconds 900
     $collapsedHeight = Get-WindowHeight $hwnd
     $listeningIcon = Wait-Named 'Sonora listening' 3
