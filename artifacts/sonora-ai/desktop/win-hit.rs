@@ -59,6 +59,7 @@ struct Msg {
 const WH_MOUSE_LL: i32 = 14;
 const HC_ACTION: i32 = 0;
 const WM_LBUTTONDOWN: usize = 0x0201;
+const WM_LBUTTONUP: usize = 0x0202;
 const WM_APP_CLICK: u32 = 0x8000;
 
 use std::sync::atomic::{AtomicIsize, AtomicU32, Ordering};
@@ -66,11 +67,12 @@ static HOOK: AtomicIsize = AtomicIsize::new(0);
 static HOOK_THREAD: AtomicU32 = AtomicU32::new(0);
 
 unsafe extern "system" fn mouse_hook(code: i32, wparam: usize, lparam: isize) -> isize {
-    if code == HC_ACTION && wparam == WM_LBUTTONDOWN && lparam != 0 {
+    if code == HC_ACTION && lparam != 0 && (wparam == WM_LBUTTONDOWN || wparam == WM_LBUTTONUP) {
         let info = &*(lparam as *const MouseHook);
+        let message = if wparam == WM_LBUTTONDOWN { WM_APP_CLICK } else { WM_APP_CLICK + 1 };
         PostThreadMessageW(
             HOOK_THREAD.load(Ordering::Relaxed),
-            WM_APP_CLICK,
+            message,
             info.pt.x as u32 as usize,
             info.pt.y as i32 as isize,
         );
@@ -95,10 +97,11 @@ fn watch_clicks() {
         if status <= 0 {
             break;
         }
-        if msg.message == WM_APP_CLICK {
+        if msg.message == WM_APP_CLICK || msg.message == WM_APP_CLICK + 1 {
             let x = msg.wparam as u32 as i32;
             let y = msg.lparam as u32 as i32;
-            emit(&format!("down {x} {y}"));
+            let kind = if msg.message == WM_APP_CLICK { "down" } else { "up" };
+            emit(&format!("{kind} {x} {y}"));
         }
     }
 }

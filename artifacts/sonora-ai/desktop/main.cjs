@@ -310,6 +310,7 @@ function watchTitleClicks() {
   const child = spawn(renderWidgetHelper(), ['--watch'], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
   titleClickWatcher = child;
   let pending = '';
+  let pressed = null;
   child.stdout?.setEncoding?.('utf8');
   child.stdout?.on?.('data', chunk => {
     pending += chunk;
@@ -317,20 +318,32 @@ function watchTitleClicks() {
     while ((split = pending.indexOf('\n')) >= 0) {
       const line = pending.slice(0, split).trim();
       pending = pending.slice(split + 1);
-      if (!line.startsWith('down ')) {
+      const parts = line.split(' ');
+      if (parts[0] !== 'down' && parts[0] !== 'up') {
         if (line) bootLog(`title-click ${line}`);
         continue;
       }
-      const parts = line.split(' ');
       const dip = dipPoint(Number(parts[1]), Number(parts[2]));
-      if (!win || win.isDestroyed() || collapsed || !Number.isFinite(dip.x) || !Number.isFinite(dip.y)) continue;
+      if (!win || win.isDestroyed() || !Number.isFinite(dip.x) || !Number.isFinite(dip.y)) continue;
       const box = win.getBounds();
-      const localY = dip.y - box.y;
-      const fromRight = box.width - (dip.x - box.x);
-      if (localY < 0 || localY > 48 || dip.x < box.x || dip.x >= box.x + box.width) continue;
-      bootLog(`title-click y=${Math.round(localY)} fromRight=${Math.round(fromRight)}`);
-      if (fromRight < 160 || fromRight > 210) continue;
-      setCollapsed(true);
+      const inside = dip.x >= box.x && dip.x < box.x + box.width && dip.y >= box.y && dip.y < box.y + box.height;
+      if (parts[0] === 'down') {
+        pressed = { x: dip.x, y: dip.y, collapsed, inside };
+        if (!inside || collapsed) continue;
+        const localY = dip.y - box.y;
+        const fromRight = box.width - (dip.x - box.x);
+        if (localY < 0 || localY > 48 || fromRight < 160 || fromRight > 210) continue;
+        bootLog(`title-click y=${Math.round(localY)} fromRight=${Math.round(fromRight)}`);
+        setCollapsed(true);
+        continue;
+      }
+      // A short click on the listening icon restores it. A drag keeps moving.
+      const start = pressed;
+      pressed = null;
+      if (!start || !start.collapsed || !collapsed || !start.inside || !inside) continue;
+      if (Math.hypot(dip.x - start.x, dip.y - start.y) >= 4) continue;
+      bootLog('title-click expand');
+      setCollapsed(false);
     }
   });
   child.on('error', error => bootLog(`title-click watcher ${error.message || error}`));
