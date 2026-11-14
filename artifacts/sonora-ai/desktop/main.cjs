@@ -743,14 +743,17 @@ function createWindow() {
     win.hookWindowMessage(0x00A1, wParam => {
       let code = -1;
       try { code = typeof wParam?.readInt32LE === 'function' ? wParam.readInt32LE(0) : Number(wParam); } catch { return; }
-      if (code !== 2 || !win || win.isDestroyed() || collapsed) return;
+      if (!win || win.isDestroyed()) return;
       const cursor = screen.getCursorScreenPoint();
       const box = win.getBounds();
       const localX = cursor.x - box.x;
       const localY = cursor.y - box.y;
       const fromRight = box.width - localX;
-      if (localY < 0 || localY > 44 || fromRight < 130 || fromRight > 175) return;
-      bootLog(`caption-minimize x=${Math.round(localX)} y=${Math.round(localY)}`);
+      bootLog(`caption ht=${code} x=${Math.round(localX)} fromRight=${Math.round(fromRight)} y=${Math.round(localY)} collapsed=${collapsed}`);
+      // Minimize is the button about 185px in from the right of the title bar.
+      // Windows delivers that press as a caption hit, so the page never sees it.
+      if (code !== 2 || collapsed) return;
+      if (localY < 0 || localY > 48 || fromRight < 160 || fromRight > 210) return;
       setCollapsed(true);
     });
   }
