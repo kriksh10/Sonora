@@ -1608,32 +1608,25 @@ try {
   Add-Scenario 'Opening Sonora again shows the hidden window' $shown ''
   Save-Screen '05c-shown.png'
   if ($shown) {
-    # The accessibility box for Minimize is not the visible minus after the tray
-    # restore. The button sits in the title bar, about 151px in from the right.
-    Bring-SonoraForward
-    Start-Sleep -Milliseconds 300
+    # The restored window sits on the top edge, and a click there never reaches
+    # the minus. Move it down, then click the glyph in the title bar.
     $box = Get-WindowBox $hwnd
-    $tries = @()
-    foreach ($el in @(Find-All 'Minimize')) {
-      if ($el.Current.Name -ne 'Minimize') { continue }
-      $r = $el.Current.BoundingRectangle
-      if ($r.Width -lt 8 -or $r.Height -lt 8) { continue }
-      $cx = [int]($r.X + ($r.Width / 2))
-      $cy = [int]($r.Y + ($r.Height / 2))
-      $inside = ($cx -ge $box.X -and $cx -le ($box.X + $box.W) -and $cy -ge $box.Y -and $cy -le ($box.Y + $box.H))
-      if (-not $inside) { continue }
-      $tries += "$cx,$cy"
-      [SonoraInput]::Click($cx, $cy)
-      Start-Sleep -Milliseconds 700
-      if ((Get-WindowHeight $hwnd) -le 140) { break }
-    }
-    if ((Get-WindowHeight $hwnd) -gt 140) {
-      $fx = [int]($box.X + $box.W - 151)
-      $fy = [int]($box.Y + 22)
-      $tries += "bar $fx,$fy"
-      [SonoraInput]::Click($fx, $fy)
-      Start-Sleep -Milliseconds 800
-    }
+    [SonoraInput]::SetWindowPos($hwnd, [IntPtr]::Zero, $box.X, 80, 0, 0, [SonoraInput]::SWP_NOSIZE -bor [SonoraInput]::SWP_SHOWWINDOW) | Out-Null
+    Bring-SonoraForward
+    Start-Sleep -Milliseconds 400
+    $ready = (Get-Date).AddSeconds(4)
+    do {
+      $minimize = Find-Exact 'Minimize'
+      $enabled = $false
+      if ($minimize) { try { $enabled = [bool]$minimize.Current.IsEnabled } catch { $enabled = $true } }
+      if (-not $enabled) { Start-Sleep -Milliseconds 200 }
+    } while (-not $enabled -and (Get-Date) -lt $ready)
+    $box = Get-WindowBox $hwnd
+    $fx = [int]($box.X + $box.W - 151)
+    $fy = [int]($box.Y + 22)
+    $tries = @("bar $fx,$fy enabled=$enabled")
+    [SonoraInput]::Click($fx, $fy)
+    Start-Sleep -Milliseconds 900
     $collapsedHeight = Get-WindowHeight $hwnd
     $listeningIcon = Wait-Named 'Sonora listening' 3
     $stillShown = [SonoraInput]::IsWindowVisible($hwnd)

@@ -148,7 +148,7 @@ export default function DesktopVisibilityControls() {
           aria-label="Hide from screen sharing (best effort)" title="Screen-share exclusion is best effort"
           className={`sonora-window-action ${state?.contentProtection ? "text-emerald-300" : ""}`}
           onClick={() => void run(() => bridge.setContentProtection(!state?.contentProtection))}><ShieldCheck size={14} /></button>
-        <button type="button" disabled={!state || pending || !bridge.minimize} className="sonora-window-action" aria-label="Minimize"
+        <button type="button" disabled={pending || !bridge.minimize} className="sonora-window-action" aria-label="Minimize"
           title="Collapse to a listening icon. Ctrl+H does the same during a live session."
           onClick={() => void run(() => bridge.minimize!())}><Minus size={14} /></button>
         <button type="button" disabled={!state || pending} className="sonora-window-action" aria-label="Hide Sonora"
