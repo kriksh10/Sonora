@@ -1,5 +1,6 @@
 const { app, BrowserWindow, globalShortcut, ipcMain, Menu, Tray, nativeImage, screen, dialog, desktopCapturer, shell } = require('electron');
 const http = require('node:http');
+const { execFileSync } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
 const { validateServiceUrl, isAllowedNavigation } = require('./security.cjs');
@@ -210,6 +211,49 @@ function placeReachable(box) {
   const y = Math.max(area.y + 40, Math.min(box.y, area.y + area.height - Math.min(box.height, area.height)));
   return y === box.y ? box : { ...box, y };
 }
+function clearRenderWidgetClickThrough() {
+  // After hide/show, Chrome_RenderWidgetHostHWND keeps WS_EX_TRANSPARENT even
+  // though setIgnoreMouseEvents is off. Clicks hit the parent and never reach
+  // the page. Clear that style on the render-widget child.
+  if (process.platform !== 'win32' || !win || win.isDestroyed() || clickThrough) return;
+  let hwnd = '';
+  try {
+    const raw = win.getNativeWindowHandle();
+    hwnd = raw.length >= 8 ? raw.readBigUInt64LE(0).toString() : String(raw.readUInt32LE(0));
+  } catch { return; }
+  const script = [
+    'Add-Type -TypeDefinition @"',
+    'using System;',
+    'using System.Runtime.InteropServices;',
+    'public static class SonoraChildHit {',
+    '  [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr h, uint c);',
+    '  [DllImport("user32.dll", EntryPoint="GetWindowLongPtrW")] public static extern IntPtr GetEx(IntPtr h, int i);',
+    '  [DllImport("user32.dll", EntryPoint="SetWindowLongPtrW")] public static extern IntPtr SetEx(IntPtr h, int i, IntPtr v);',
+    '  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h, System.Text.StringBuilder s, int n);',
+    '  public static string Clear(long value) {',
+    '    var child = GetWindow(new IntPtr(value), 5);',
+    '    var notes = "";',
+    '    while (child != IntPtr.Zero) {',
+    '      var name = new System.Text.StringBuilder(256);',
+    '      GetClassName(child, name, 256);',
+    '      long ex = GetEx(child, -20).ToInt64();',
+    '      if (name.ToString().IndexOf("RenderWidgetHost") >= 0 && (ex & 0x20) != 0) {',
+    '        SetEx(child, -20, new IntPtr(ex & ~0x20L));',
+    '        notes += name.ToString() + " cleared;";',
+    '      }',
+    '      child = GetWindow(child, 2);',
+    '    }',
+    '    return notes.Length == 0 ? "none" : notes;',
+    '  }',
+    '}',
+    '"@',
+    `[SonoraChildHit]::Clear(${hwnd})`,
+  ].join('\n');
+  try {
+    const out = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', timeout: 8000, windowsHide: true });
+    bootLog(`render-widget-hit ${String(out).replace(/\\s+/g, ' ').trim()}`);
+  } catch (error) { bootLog(`render-widget-hit failed ${error}`); }
+}
 function finishPresent() {
   if (!win || win.isDestroyed()) return;
   // Never toggle ignore-mouse through true here. On a transparent Windows
@@ -224,6 +268,7 @@ function finishPresent() {
     win.webContents.executeJavaScript('window.dispatchEvent(new Event("resize"))', true).catch(() => {});
   } catch { /* the bounds were already sent */ }
   if (alwaysOnTop) holdOnTop();
+  clearRenderWidgetClickThrough();
   syncTray();
   broadcast();
   syncCollapsedClass();
@@ -246,12 +291,13 @@ function show() {
   finishPresent();
   // A resize after the window is on screen rebuilds the title-bar hit target.
   // Doing it during show, or toggling ignore-mouse, leaves that strip dead.
-  setTimeout(() => {
+  if (typeof setTimeout === 'function') setTimeout(() => {
     if (!win || win.isDestroyed() || collapsed) return;
     const again = win.getBounds();
     try {
       win.setBounds({ x: again.x, y: again.y, width: again.width, height: again.height + 1 });
       win.setBounds(again);
+      clearRenderWidgetClickThrough();
     } catch { /* the click path still uses the button handler */ }
   }, 200);
 }
