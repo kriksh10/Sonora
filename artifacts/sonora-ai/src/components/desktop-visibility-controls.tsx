@@ -17,6 +17,7 @@ export default function DesktopVisibilityControls() {
   const [shortcutError, setShortcutError] = useState("");
   const opacityControl = useRef<ReturnType<typeof createBackgroundOpacity> | null>(null);
   const drag = useRef({ active: false, moved: false, x: 0, y: 0, originX: 0, originY: 0 });
+  const collapseAt = useRef(0);
   const applyShell = (next: DesktopState | null | undefined) => {
     if (!next) return;
     document.documentElement.classList.toggle("sonora-collapsed", !!next.collapsed);
@@ -157,7 +158,19 @@ export default function DesktopVisibilityControls() {
           onClick={() => void run(() => bridge.setContentProtection(!state?.contentProtection))}><ShieldCheck size={14} /></button>
         <button type="button" disabled={pending || !bridge.minimize} className="sonora-window-action" aria-label="Minimize" style={{ WebkitAppRegion: "no-drag", backgroundColor: "rgba(128, 128, 128, 0.01)" }}
           title="Collapse to a listening icon. Ctrl+H does the same during a live session."
-          onClick={() => void run(() => bridge.minimize!())}><Minus size={14} /></button>
+          onPointerDown={event => {
+            if (event.button !== 0) return;
+            const now = Date.now();
+            if (now - collapseAt.current < 1500) return;
+            collapseAt.current = now;
+            void run(() => bridge.minimize!());
+          }}
+          onClick={() => {
+            const now = Date.now();
+            if (now - collapseAt.current < 1500) return;
+            collapseAt.current = now;
+            void run(() => bridge.minimize!());
+          }}><Minus size={14} /></button>
         <button type="button" disabled={!state || pending} className="sonora-window-action" aria-label="Hide Sonora"
           title="Close the window. The tray icon appears until you open Sonora again. Audio keeps running."
           onClick={() => void run(() => bridge.hide())}><EyeOff size={14} /></button>
