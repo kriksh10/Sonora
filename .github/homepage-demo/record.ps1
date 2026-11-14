@@ -122,6 +122,9 @@ public class DemoWallpaper {
   [DllImport("user32.dll", CharSet=CharSet.Auto)] public static extern IntPtr FindWindow(string cls, string name);
   [DllImport("user32.dll", CharSet=CharSet.Auto)] public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr child, string cls, string name);
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd, int cmd);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
+  [DllImport("user32.dll", CharSet=CharSet.Auto)] public static extern int GetWindowText(IntPtr hwnd, System.Text.StringBuilder text, int count);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
   [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc proc, IntPtr param);
   public static int Apply(string path) { return SystemParametersInfo(0x0014, 0, path, 0x0001 | 0x0002); }
   static void HideList(IntPtr parent) {
@@ -131,10 +134,26 @@ public class DemoWallpaper {
     if (list != IntPtr.Zero) ShowWindow(list, 0);
   }
   public static bool HideOne(IntPtr hwnd, IntPtr param) { HideList(hwnd); return true; }
+  public static bool MinimizeForeign(IntPtr hwnd, IntPtr param) {
+    if (!IsWindowVisible(hwnd)) return true;
+    uint pid;
+    GetWindowThreadProcessId(hwnd, out pid);
+    var text = new System.Text.StringBuilder(512);
+    GetWindowText(hwnd, text, text.Capacity);
+    string title = text.ToString();
+    bool noisy = title.IndexOf("GitHub", System.StringComparison.OrdinalIgnoreCase) >= 0
+      || title.IndexOf("ProgramData", System.StringComparison.OrdinalIgnoreCase) >= 0
+      || title.IndexOf("Windows PowerShell", System.StringComparison.OrdinalIgnoreCase) >= 0
+      || title.IndexOf("pwsh", System.StringComparison.OrdinalIgnoreCase) >= 0;
+    if (!noisy) return true;
+    ShowWindow(hwnd, 6);
+    return true;
+  }
   public static void HideDesktopIcons() {
     HideList(FindWindow("Progman", null));
     EnumWindows(HideOne, IntPtr.Zero);
   }
+  public static void MinimizeLogWindows() { EnumWindows(MinimizeForeign, IntPtr.Zero); }
 }
 "@
 function Set-HeroResolution {
@@ -161,8 +180,51 @@ $lines = @(
 # The third line is the question the client asks. The chat box holds the same question without the speaker label.
 $lines[2] = 'Client: If the work runs one extra month, what budget should we set aside?'
 
+function Hide-OtherWindows {
+  try { [DemoWallpaper]::MinimizeLogWindows() } catch {}
+  $skip = '^(Sonora|explorer|dwm|csrss|winlogon|TextInputHost|SearchHost|StartMenuExperienceHost|ShellExperienceHost|sihost|fontdrvhost|RuntimeBroker|ApplicationFrameHost)$'
+  Get-Process | Where-Object {
+    $_.MainWindowHandle -ne [IntPtr]::Zero -and $_.ProcessName -notmatch $skip
+  } | ForEach-Object {
+    try { [DemoWallpaper]::ShowWindow($_.MainWindowHandle, 6) | Out-Null } catch {}
+  }
+}
+
+function Keep-BackdropUnderOverlay {
+  Hide-OtherWindows
+  if ($global:backdropHwnd -and $global:backdropHwnd -ne [IntPtr]::Zero) {
+    # Topmost, but no activation and no move. Sonora is raised immediately after.
+    [DemoWin]::SetWindowPos($global:backdropHwnd, [IntPtr](-1), 0, 0, 0, 0, 0x0001 -bor 0x0002 -bor 0x0010 -bor 0x0040) | Out-Null
+  }
+  if ($global:sonoraHwnd -and $global:sonoraHwnd -ne [IntPtr]::Zero) {
+    [DemoWin]::SetWindowPos($global:sonoraHwnd, [IntPtr](-1), 0, 0, 0, 0, 0x0001 -bor 0x0002 -bor 0x0010) | Out-Null
+  }
+}
+
 function Sleep-Pump([int]$Milliseconds) {
-  Start-Sleep -Milliseconds $Milliseconds
+  $until = [DateTime]::UtcNow.AddMilliseconds($Milliseconds)
+  while ([DateTime]::UtcNow -lt $until) {
+    Keep-BackdropUnderOverlay
+    Start-Sleep -Milliseconds 50
+  }
+}
+
+function Show-StaticBackdrop([int]$X, [int]$Y, [int]$Width, [int]$Height) {
+  $image = [System.Drawing.Image]::FromFile((Join-Path $OutDir 'backdrop.bmp'))
+  $form = New-Object System.Windows.Forms.Form
+  $form.FormBorderStyle = 'None'
+  $form.StartPosition = 'Manual'
+  $form.ShowInTaskbar = $false
+  $form.TopMost = $true
+  $form.ControlBox = $false
+  $form.Location = New-Object System.Drawing.Point $X, $Y
+  $form.ClientSize = New-Object System.Drawing.Size $Width, $Height
+  $form.BackgroundImage = $image
+  $form.BackgroundImageLayout = 'None'
+  $form.Show()
+  $global:backdrop = $form
+  $global:backdropHwnd = $form.Handle
+  Keep-BackdropUnderOverlay
 }
 
 function Set-BackdropWallpaper([int]$ScreenW, [int]$ScreenH, [int]$AreaX, [int]$AreaY, [int]$AreaW, [int]$AreaH, [int]$Column) {
@@ -495,6 +557,8 @@ try {
   Write-Host "capture $originX,$originY ${capW}x${capH} overlay $overlayX,$overlayY ${overlayW}x${overlayH}"
 
   Set-BackdropWallpaper ([int]$screen.Bounds.Width) ([int]$screen.Bounds.Height) $originX $originY $capW $capH $global:clientColumn
+  Show-StaticBackdrop $originX $originY $capW $capH
+  Hide-OtherWindows
   Start-Mock
   Seed-WindowPreferences $setupX $setupY $setupW $setupH
 
@@ -503,12 +567,12 @@ try {
   $hwnd = [IntPtr]::Zero
   $deadline = (Get-Date).AddSeconds(90)
   while ((Get-Date) -lt $deadline) {
-    $hwnd = Get-SonoraHwnd
+    $hwnd = Get-SonoraHwnd; if ($hwnd -ne [IntPtr]::Zero) { $global:sonoraHwnd = $hwnd }
     if ($hwnd -ne [IntPtr]::Zero -and (Wait-Named 'Sign in' 1)) { break }
     Sleep-Pump 300
   }
   if (-not (Find-Exact 'Sign in')) { Write-UiNames 'sign-in'; throw 'Sign in did not appear' }
-  $hwnd = Get-SonoraHwnd
+  $hwnd = Get-SonoraHwnd; if ($hwnd -ne [IntPtr]::Zero) { $global:sonoraHwnd = $hwnd }
   Move-Sonora $hwnd $setupX $setupY $setupW $setupH | Out-Null
   Click-Ui (Find-Exact 'Sign in')
   if (-not (Wait-Named 'Call Sessions' 15)) { Write-UiNames 'sessions'; throw 'Sign-in did not open Call Sessions' }
@@ -531,7 +595,7 @@ try {
     if ($again) { Click-Ui $again }
   }
   if (-not (Wait-Named 'Answer' 10)) { Write-UiNames 'overlay'; throw 'Live overlay did not open' }
-  $hwnd = Get-SonoraHwnd
+  $hwnd = Get-SonoraHwnd; if ($hwnd -ne [IntPtr]::Zero) { $global:sonoraHwnd = $hwnd }
   Move-Sonora $hwnd $overlayX $overlayY $overlayW $overlayH | Out-Null
 
   $chat = Find-Button 'Chat'
@@ -579,7 +643,7 @@ try {
   Assert-UiAbsent 'Waiting for a question'
   [DemoWin]::Move($originX + 160, $originY + 280)
   Sleep-Pump 200
-  $hwnd = Get-SonoraHwnd
+  $hwnd = Get-SonoraHwnd; if ($hwnd -ne [IntPtr]::Zero) { $global:sonoraHwnd = $hwnd }
   $placed = Move-Sonora $hwnd $overlayX $overlayY $overlayW $overlayH
   Sleep-Pump 400
 
@@ -611,7 +675,7 @@ try {
     Sleep-Pump 850
   }
   Sleep-Pump 350
-  $hwnd = Get-SonoraHwnd
+  $hwnd = Get-SonoraHwnd; if ($hwnd -ne [IntPtr]::Zero) { $global:sonoraHwnd = $hwnd }
   if ($hwnd -ne [IntPtr]::Zero) { [DemoWin]::SetForegroundWindow($hwnd) | Out-Null }
   Sleep-Pump 150
   Send-Chord ([byte[]](0x11, 0x0D))
@@ -671,6 +735,7 @@ try {
     Receive-Job $frameJob -ErrorAction SilentlyContinue | Out-String | Write-Host
   }
   Get-Process | Where-Object { $_.ProcessName -like 'Sonora*' } | Stop-Process -Force -ErrorAction SilentlyContinue
+  if ($global:backdrop -and -not $global:backdrop.IsDisposed) { $global:backdrop.Close() }
 }
 
 if (-not (Test-Path (Join-Path $OutDir 'grab.mkv'))) { throw 'gdigrab did not write a recording' }
@@ -751,6 +816,12 @@ function Test-BackdropSteady([string]$Video) {
       $reasons = @()
       if ($mean -lt 40) { $reasons += 'backdrop-dark' }
       if ($tileDist -gt 48) { $reasons += ('tile-color {0:0}' -f $tileDist) }
+      foreach ($px in @(($col + 48), [Math]::Min($bmp.Width - 8, 900), [Math]::Min($bmp.Width - 8, 1100))) {
+        if ($px -lt 8 -or 4 -ge $bmp.Height) { continue }
+        $stage = $bmp.GetPixel($px, 4)
+        $stageDist = [math]::Sqrt(($stage.R - 26) * ($stage.R - 26) + ($stage.G - 29) * ($stage.G - 29) + ($stage.B - 34) * ($stage.B - 34))
+        if ($stageDist -gt 42) { $reasons += "foreign-window@$px" }
+      }
       if ($full -lt 8) { $reasons += 'blank-frame' }
       if ($full -gt 150) { $reasons += 'white-flash' }
       if ($means.Count -gt 0) {
