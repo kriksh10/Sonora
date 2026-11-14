@@ -5,7 +5,7 @@ if (!file) {
   console.error('usage: node patch-server.mjs <server.mjs>');
   process.exit(1);
 }
-let source = fs.readFileSync(file, 'utf8');
+let source = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
 
 function replaceOnce(label, from, to) {
   const index = source.indexOf(from);
