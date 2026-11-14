@@ -342,8 +342,15 @@ function watchTitleClicks() {
       pressed = null;
       if (!start || !start.collapsed || !collapsed || !start.inside || !inside) continue;
       if (Math.hypot(dip.x - start.x, dip.y - start.y) >= 4) continue;
-      bootLog('title-click expand');
-      setCollapsed(false);
+      // The icon's own click expands when the page receives it. Wait, and only
+      // expand here when that click never arrived.
+      setTimeout(() => {
+        if (!win || win.isDestroyed() || !collapsed) return;
+        const boxNow = win.getBounds();
+        if (boxNow.width > COLLAPSED + 2 || boxNow.height > COLLAPSED + 2) return;
+        bootLog('title-click expand');
+        setCollapsed(false);
+      }, 300);
     }
   });
   child.on('error', error => bootLog(`title-click watcher ${error.message || error}`));
