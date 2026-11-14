@@ -165,6 +165,19 @@ function broadcast() {
   if (win && !win.isDestroyed()) win.webContents.send('overlay:state-changed', state());
   updateTray();
 }
+function syncCollapsedClass() {
+  // The state event can be dropped while Windows is iconic. Paint the class
+  // directly once the page can run script again.
+  if (!win || win.isDestroyed() || typeof win.webContents?.executeJavaScript !== 'function') return;
+  const flag = collapsed ? 'true' : 'false';
+  try {
+    const pending = win.webContents.executeJavaScript(
+      `document.documentElement.classList.toggle('sonora-collapsed', ${flag})`,
+      false,
+    );
+    if (pending && typeof pending.catch === 'function') pending.catch(() => {});
+  } catch { /* the state event still updates a live page */ }
+}
 const WINDOW_CLEAR = '#00000000';
 function clearWindowPlate() {
   if (!win || win.isDestroyed()) return;
@@ -208,7 +221,7 @@ function placeCollapsed(x, y) {
 function setCollapsed(value) {
   if (!win || win.isDestroyed()) return;
   const next = Boolean(value);
-  if (next === collapsed) { broadcast(); return; }
+  if (next === collapsed) { broadcast(); syncCollapsedClass(); return; }
   // Flip first so a resize event during the bounds change cannot restore the tall size.
   collapsed = next;
   collapsedDrag = null;
@@ -238,6 +251,7 @@ function setCollapsed(value) {
     expandedBounds = restored;
   }
   broadcast();
+  syncCollapsedClass();
 }
 function conceal() {
   if (!win || win.isDestroyed()) return;
@@ -572,6 +586,20 @@ function createWindow() {
   win.on('minimize', () => {
     try { if (win.isMinimized?.()) win.restore(); } catch { /* stay expanded in the window */ }
     setCollapsed(true);
+    // restore() lands after this handler and can wake the page after the
+    // collapsed event was dropped. Push the icon class again once it is awake.
+    setTimeout(() => {
+      if (!win || win.isDestroyed() || !collapsed) return;
+      enforceCollapsedSize();
+      syncCollapsedClass();
+      broadcast();
+    }, 200);
+  });
+  win.on('restore', () => {
+    if (!collapsed) return;
+    enforceCollapsedSize();
+    syncCollapsedClass();
+    broadcast();
   });
   win.on('will-resize', (event, newBounds) => {
     if (!collapsed || !newBounds) return;

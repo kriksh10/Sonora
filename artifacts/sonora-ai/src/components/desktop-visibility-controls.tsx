@@ -17,6 +17,9 @@ export default function DesktopVisibilityControls() {
   const [shortcutError, setShortcutError] = useState("");
   const opacityControl = useRef<ReturnType<typeof createBackgroundOpacity> | null>(null);
   const drag = useRef({ active: false, moved: false, x: 0, y: 0, originX: 0, originY: 0 });
+  const applyShell = (next: DesktopState | null | undefined) => {
+    document.documentElement.classList.toggle("sonora-collapsed", !!next?.collapsed);
+  };
 
   useEffect(() => {
     if (!bridge) return;
@@ -43,7 +46,7 @@ export default function DesktopVisibilityControls() {
       if (mounted) {
         setState(next);
         control.sync(next.backgroundOpacity ?? 0.45);
-        document.documentElement.classList.toggle("sonora-collapsed", !!next.collapsed);
+        applyShell(next);
         document.documentElement.style.setProperty("--sonora-font-scale", String(next.fontScale ?? 1));
       }
     });
@@ -51,7 +54,7 @@ export default function DesktopVisibilityControls() {
       if (mounted && !received) {
         setState(next);
         control.sync(next.backgroundOpacity ?? 0.45);
-        document.documentElement.classList.toggle("sonora-collapsed", !!next.collapsed);
+        applyShell(next);
         document.documentElement.style.setProperty("--sonora-font-scale", String(next.fontScale ?? 1));
       }
     }).catch(() => { if (mounted) setError("Desktop controls unavailable. Use the Sonora tray menu."); });
@@ -63,6 +66,11 @@ export default function DesktopVisibilityControls() {
       document.documentElement.style.removeProperty("--sonora-font-scale");
     };
   }, [bridge]);
+
+  useLayoutEffect(() => {
+    if (!bridge || !state) return;
+    applyShell(state);
+  }, [bridge, state]);
 
   const dragDistance = (event: ReactPointerEvent<HTMLElement>) => {
     const scale = window.devicePixelRatio || 1;
@@ -95,7 +103,11 @@ export default function DesktopVisibilityControls() {
   const supported = state && ["win32", "darwin"].includes(state.platform);
   const run = async (action: () => Promise<DesktopState>) => {
     setPending(true); setError("");
-    try { setState(await action()); }
+    try {
+      const next = await action();
+      setState(next);
+      applyShell(next);
+    }
     catch { setError("Setting not applied. Try again or use the tray menu."); }
     finally { setPending(false); }
   };
