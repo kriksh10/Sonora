@@ -24,7 +24,7 @@ import { sessionPreferences, summarizePreferences } from "@/lib/answer-preferenc
 import LiveSessionView from "@/components/live-session-view";
 import DesktopSessions from "@/components/desktop-sessions";
 import DesktopLiveOverlay from "@/components/desktop-live-overlay";
-import { readSonoraTheme, type SonoraTheme } from "@/lib/theme";
+import { applySonoraTheme, readSonoraTheme, type SonoraTheme } from "@/lib/theme";
 import { createDesktopAudio, createAudioGroup, serverSttAvailable, type AudioCapture } from "@/lib/desktop-audio";
 import type { CaptureDiagnostic } from "@/lib/continuous-audio";
 import { browserLanguage } from "@/lib/call-languages";
@@ -147,6 +147,7 @@ export default function InterviewWorkspace() {
   const [createOpen, setCreateOpen] = useState(false);
   const [wizardType, setWizardType] = useState<"interview" | "call" | "mock">("interview");
   const [desktopTheme, setDesktopTheme] = useState<SonoraTheme>(() => readSonoraTheme());
+  useEffect(() => { applySonoraTheme(desktopTheme); }, [desktopTheme]);
   const launchLiveRef = useRef(false);
   const [editOpen, setEditOpen] = useState(false);
   const [answerInput, setAnswerInput] = useState("");
@@ -663,6 +664,22 @@ export default function InterviewWorkspace() {
     } finally { setRestarting(false); }
   };
 
+  const deleteOwnedSession = async (session: CallSession) => {
+    if (session.status === "active") throw new Error("End this session before deleting it.");
+    await api<unknown>(`/sessions/${session.id}`, { method: "DELETE" });
+    settingsRevisionRef.current += 1;
+    setSessions(items => items.filter(item => item.id !== session.id));
+    if (selectedIdRef.current === session.id) {
+      selectedSessionRef.current = null;
+      setSelectedId(null);
+    }
+  };
+  const clearOwnedText = async (session: CallSession, field: "resume" | "documents") => {
+    const updated = await api<CallSession>(`/sessions/${session.id}/${field}`, { method: "DELETE" });
+    settingsRevisionRef.current += 1;
+    setSessions(items => items.map(item => item.id === session.id ? { ...item, ...updated, transcript: item.transcript } : item));
+  };
+
   const deleteInterview = async () => {
     if (!selected || selected.status !== "ended" || deleting) return;
     const id = selected.id;
@@ -1139,11 +1156,11 @@ export default function InterviewWorkspace() {
           userEmail={user?.primaryEmailAddress?.emailAddress}
           onSignOut={() => void signOut({ redirectUrl: import.meta.env.BASE_URL })}
           theme={desktopTheme}
-          onTheme={theme => {
-            setDesktopTheme(theme);
-            document.documentElement.dataset.sonoraTheme = theme;
-            try { localStorage.setItem("sonora-theme", theme); } catch { /* storage is optional */ }
-          }}
+          onTheme={setDesktopTheme}
+          onRefresh={refreshSessions}
+          onDeleteSession={deleteOwnedSession}
+          onDeleteResume={session => clearOwnedText(session, "resume")}
+          onDeleteDocument={session => clearOwnedText(session, "documents")}
           now={now}
           role={access.role}
           freeSessionsUsed={Math.max(0, 10 - (credits?.freeRemaining ?? 10))}

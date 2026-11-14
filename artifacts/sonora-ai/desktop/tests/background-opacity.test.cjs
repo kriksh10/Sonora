@@ -102,6 +102,10 @@ test('dragging is confined to handle and range has keyboard semantics and compat
   assert.match(css, /\[class\*="bg-black\/"\]/);
   assert.match(css, /\.sonora-window-popover, \.sonora-window-popover \* \{ -webkit-app-region: no-drag;/);
   assert.match(css, /html\.sonora-desktop, html\.sonora-desktop body, html\.sonora-desktop #root \{ background: transparent !important;/);
+  assert.match(css, /html\.sonora-collapsed, html\.sonora-collapsed body, html\.sonora-collapsed #root \{ background: transparent !important;/);
+  assert.match(css, /--sonora-glass: color-mix\(in srgb, var\(--sonora-fill\)/);
+  assert.match(css, /html\.sonora-desktop\[data-sonora-theme="light"\]/);
+  assert.doesNotMatch(css, /html\.sonora-collapsed, html\.sonora-collapsed body, html\.sonora-collapsed #root \{ background-color: #1e1e1e/);
   assert.match(css, /background-color: var\(--sonora-glass\) !important;/);
   assert.match(css, /backdrop-filter: blur\(18px\) saturate\(1\.35\)/);
   assert.match(css, /html\.sonora-desktop \.lsv-answer-pane \.lsv-scroll/);

@@ -8,21 +8,28 @@
 @custom-variant dark (&:is(.dark *));
 
 /* Native frameless title bar. Keep interactive children clickable. */
-.desktop-drag { -webkit-app-region: drag; }
+.desktop-drag { -webkit-app-region: no-drag; app-region: no-drag; }
 .desktop-drag button, .desktop-drag a, .desktop-drag input, .desktop-drag select { -webkit-app-region: no-drag; }
 .desktop-drag textarea, .desktop-drag label, .desktop-drag details, .desktop-no-drag { -webkit-app-region: no-drag; }
 html.sonora-desktop, html.sonora-desktop body, html.sonora-desktop #root { background: transparent !important; background-color: transparent !important; background-image: none !important; margin: 0 !important; }
 html.sonora-desktop, html.sonora-desktop body, html.sonora-desktop .dp-app, html.sonora-desktop .dp-app *, html.sonora-desktop .sonora-window-bar, html.sonora-desktop .sonora-window-bar * { cursor: default; }
-html.sonora-collapsed .sonora-window-bar > :not(.sonora-dock) { display: none !important; }
-html.sonora-collapsed #root > :not(.sonora-window-bar) { display: none !important; }
-html.sonora-collapsed, html.sonora-collapsed body, html.sonora-collapsed #root { background-color: #1e1e1e !important; }
-html.sonora-collapsed .sonora-window-bar { justify-content: center; width: 72px; height: 72px; min-height: 72px; border: 0; background: #1e1e1e; -webkit-app-region: drag; app-region: drag; }
-html.sonora-collapsed .sonora-dock { display: inline-flex; align-items: center; justify-content: center; -webkit-app-region: no-drag; app-region: no-drag; }
-.sonora-dock { display: none; width: 56px; height: 56px; border: 0; border-radius: 18px; background: #1e1e1e; color: #f7f8f8; font-weight: 700; cursor: pointer; }
+html.sonora-collapsed .sonora-window-bar > :not(.sonora-dock),
+html.sonora-force-collapsed .sonora-window-bar > :not(.sonora-dock) { display: none !important; }
+html.sonora-collapsed #root > :not(.sonora-window-bar),
+html.sonora-force-collapsed #root > :not(.sonora-window-bar) { display: none !important; }
+html.sonora-collapsed, html.sonora-collapsed body, html.sonora-collapsed #root { background: transparent !important; background-color: transparent !important; }
+html.sonora-collapsed .sonora-window-bar,
+html.sonora-force-collapsed .sonora-window-bar { justify-content: center; align-items: center; width: 72px; height: 72px; min-height: 72px; padding: 0; border: 0; background: transparent !important; background-color: transparent !important; box-shadow: none; color: var(--sonora-ink, #f7f8f8); -webkit-app-region: no-drag; app-region: no-drag; }
+html.sonora-collapsed .sonora-dock,
+html.sonora-force-collapsed .sonora-dock { display: inline-flex; align-items: center; justify-content: center; -webkit-app-region: no-drag; app-region: no-drag; touch-action: none; }
+.sonora-dock { display: none; position: relative; width: 64px; height: 64px; padding: 0; border: 0; border-radius: 18px; background: transparent; color: inherit; cursor: pointer; overflow: visible; }
+.sonora-dock-mark { display: block; width: 64px; height: 64px; border-radius: 16px; filter: drop-shadow(0 3px 6px rgba(0, 0, 0, .38)); pointer-events: none; }
+.sonora-dock-live { position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; border-radius: 50%; background: #3ddc84; border: 2px solid #102014; pointer-events: none; box-shadow: 0 0 0 0 rgba(61, 220, 132, .7); animation: sonora-listen-pulse 1.4s ease-out infinite; }
+@keyframes sonora-listen-pulse { 0% { box-shadow: 0 0 0 0 rgba(61, 220, 132, .7); } 100% { box-shadow: 0 0 0 7px rgba(61, 220, 132, 0); } }
 .sonora-scroll-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 html.sonora-desktop, html.sonora-desktop body { height: 100% !important; width: 100% !important; overflow: hidden !important; }
 html.sonora-desktop #root { height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-html.sonora-desktop .sonora-window-bar { flex: 0 0 auto; }
+html.sonora-desktop .sonora-window-bar { flex: 0 0 auto; position: relative; }
 html.sonora-desktop #root > :not(.sonora-window-bar) { flex: 1 1 auto; min-height: 0; overflow: auto; }
 html.sonora-desktop #root > main.dp-app { overflow: hidden; }
 html.sonora-desktop {
@@ -31,7 +38,10 @@ html.sonora-desktop {
   --sonora-chrome-opacity: max(0.05, calc(var(--sonora-card-opacity) - 0.10));
   --sonora-panel-opacity: var(--sonora-card-opacity);
   --sonora-font-scale: 1;
-  --sonora-glass: color-mix(in srgb, #1e1e1e calc(var(--sonora-card-opacity, 0.45) * 100%), transparent);
+  --sonora-fill: #1e1e1e;
+  --sonora-ink: #f5f6f7;
+  --sonora-muted: rgba(255, 255, 255, .55);
+  --sonora-glass: color-mix(in srgb, var(--sonora-fill) calc(var(--sonora-card-opacity, 0.45) * 100%), transparent);
   --background: 220 8% 8% / var(--sonora-panel-opacity, 0.4);
   --card: 220 8% 10% / var(--sonora-panel-opacity, 0.4);
   --popover: 220 8% 10% / var(--sonora-panel-opacity, 0.4);
@@ -41,6 +51,13 @@ html.sonora-desktop {
   --input: 220 6% 12% / var(--sonora-panel-opacity, 0.4);
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, .35) transparent;
+}
+html.sonora-desktop[data-sonora-theme="light"] {
+  --sonora-fill: #f4f1ea;
+  --sonora-ink: #17191d;
+  --sonora-muted: #4e5852;
+  --sonora-glass: color-mix(in srgb, var(--sonora-fill) calc(var(--sonora-card-opacity, 0.45) * 100%), transparent);
+  color-scheme: normal;
 }
 html.sonora-desktop * { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .35) transparent; }
 html.sonora-desktop *::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -196,9 +213,9 @@ html.sonora-desktop .reference-modal-backdrop {
   backdrop-filter: none !important;
 }
 html.sonora-desktop .sonora-window-error { background: rgba(68, 30, 36, var(--sonora-background-opacity, .4)) !important; }
-.sonora-window-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: .5rem; min-height: 44px; padding: 6px 10px; color: #e7e8eb; border-bottom: 1px solid #ffffff18; background: color-mix(in srgb, #1e1e1e calc(var(--sonora-chrome-opacity, .35) * 100%), transparent); -webkit-backdrop-filter: none; backdrop-filter: none; -webkit-app-region: no-drag; app-region: no-drag; }
+.sonora-window-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: .5rem; min-height: 44px; padding: 6px 10px; color: var(--sonora-ink, #e7e8eb); border-bottom: 1px solid #ffffff18; background: color-mix(in srgb, var(--sonora-fill, #1e1e1e) calc(var(--sonora-chrome-opacity, .35) * 100%), transparent); -webkit-backdrop-filter: none; backdrop-filter: none; -webkit-app-region: no-drag; app-region: no-drag; }
 .sonora-window-bar button, .sonora-window-bar input, .sonora-window-bar label, .sonora-window-bar summary { position: relative; z-index: 1; -webkit-app-region: no-drag; app-region: no-drag; }
-.sonora-window-drag-handle { align-self: stretch; flex: 1; min-width: 70px; cursor: grab; user-select: none; }
+.sonora-window-drag-handle { align-self: stretch; flex: 1; min-width: 70px; cursor: grab; user-select: none; touch-action: none; -webkit-app-region: no-drag; app-region: no-drag; }
 .sonora-window-popover, .sonora-window-popover * { -webkit-app-region: no-drag; }
 .sonora-slim-slider { -webkit-appearance: none; appearance: none; display: block; width: 100%; height: 16px; margin: 10px 0 0; background: transparent; cursor: ew-resize; touch-action: none; }
 .sonora-opacity-inline { display: flex; align-items: center; width: 88px; }
@@ -209,7 +226,7 @@ html.sonora-desktop .sonora-window-error { background: rgba(68, 30, 36, var(--so
 .sonora-slim-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 12px; height: 12px; margin-top: -4.5px; border: 0; border-radius: 999px; background: #f4f6f8; box-shadow: 0 0 0 1px rgba(0,0,0,.45), 0 1px 3px rgba(0,0,0,.4); }
 .sonora-slim-slider::-moz-range-track { height: 3px; border: 0; border-radius: 999px; background: rgba(255,255,255,.4); }
 .sonora-slim-slider::-moz-range-thumb { width: 12px; height: 12px; border: 0; border-radius: 999px; background: #f4f6f8; box-shadow: 0 0 0 1px rgba(0,0,0,.45); }
-.sonora-window-action { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 30px; min-height: 30px; border-radius: 6px; padding: 4px 7px; font-size: 11px; cursor: pointer; }
+.sonora-window-action { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 30px; min-height: 30px; border-radius: 6px; padding: 4px 7px; font-size: 11px; cursor: pointer; background-color: rgba(128, 128, 128, 0.01); -webkit-app-region: no-drag; app-region: no-drag; }
 .sonora-window-action:hover { background: #ffffff12; }
 .sonora-window-action:disabled { opacity: .45; cursor: default; }
 .sonora-window-action:focus-visible { outline: 2px solid #75c853; }
@@ -1488,3 +1505,23 @@ html[data-sonora-theme="light"]:not(.sonora-desktop) .sonora-workspace .bg-\[\#2
   .credits-counter { width: 100%; text-align: center; }
   .parity-grid { grid-template-columns: 1fr; }
 }
+
+html.sonora-desktop[data-sonora-theme="light"] .dp-pill,
+html.sonora-desktop[data-sonora-theme="light"] .dp-tabs button,
+html.sonora-desktop[data-sonora-theme="light"] .lsv-btn:not(.lsv-primary):not(.lsv-stop) {
+  background: #eceae4 !important;
+  background-color: #eceae4 !important;
+  color: #17191d !important;
+  border-color: rgba(23, 25, 29, .16);
+}
+html.sonora-desktop[data-sonora-theme="light"] .dp-tabs button.is-active,
+html.sonora-desktop[data-sonora-theme="light"] .dp-pill.is-active {
+  background: #dedbd3 !important;
+  background-color: #dedbd3 !important;
+  color: #17191d !important;
+}
+html.sonora-desktop[data-sonora-theme="light"] .sonora-window-action:hover { background: rgba(23, 25, 29, .08); }
+html.sonora-desktop[data-sonora-theme="light"] .lsv-answer,
+html.sonora-desktop[data-sonora-theme="light"] .lsv-md,
+html.sonora-desktop[data-sonora-theme="light"] .lsv-text,
+html.sonora-desktop[data-sonora-theme="light"] .lsv-title strong { color: #17191d; }

@@ -20,12 +20,11 @@
       try {
         if (window.sonoraDesktop) {
           document.documentElement.classList.add("sonora-desktop");
-        } else {
-          var savedTheme = localStorage.getItem("sonora-theme");
-          if (savedTheme === "light" || savedTheme === "dark") {
-            document.documentElement.dataset.sonoraTheme = savedTheme;
-            document.documentElement.style.colorScheme = savedTheme;
-          }
+        }
+        var savedTheme = localStorage.getItem("sonora-theme");
+        if (savedTheme === "light" || savedTheme === "dark") {
+          document.documentElement.dataset.sonoraTheme = savedTheme;
+          if (!window.sonoraDesktop) document.documentElement.style.colorScheme = savedTheme;
         }
       } catch (error) { /* theme is optional */ }
     </script>

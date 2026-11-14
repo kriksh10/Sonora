@@ -19,12 +19,24 @@ function fixture(platform = 'win32') {
     bounds: { x: 10, y: 20, width: 800, height: 600 },
     getBounds() { return { ...this.bounds }; },
     setBounds(next) { this.bounds = { ...this.bounds, ...next }; },
+    setPosition(x, y) { this.bounds.x = x; this.bounds.y = y; },
+    setMinimumSize(w, h) { this.min = [w, h]; },
+    setMaximumSize(w, h) { this.max = [w, h]; },
+    getMinimumSize() { return this.min || [390, 620]; },
     setResizable() {}, setSkipTaskbar(value) { this.skip = value; },
     isMinimized: () => false, restore() {},
     webContents: { send: (...args) => sends.push(args) },
   };
   const tray = { isDestroyed: () => false, destroy() { this.destroyed = true; }, destroyed: false, on() {}, setToolTip() {}, setContextMenu: next => { menu = next; } };
+  const cursor = { x: 40, y: 50 };
+  const area = { x: 0, y: 0, width: 1920, height: 1080 };
   const electron = {
+    screen: {
+      getCursorScreenPoint: () => ({ x: cursor.x, y: cursor.y }),
+      getPrimaryDisplay: () => ({ scaleFactor: 1, workArea: area, size: { width: 1920, height: 1080 } }),
+      getAllDisplays: () => [{ workArea: area, bounds: area, scaleFactor: 1, size: { width: 1920, height: 1080 } }],
+      on() {},
+    },
     app: { isPackaged: true, getVersion: () => '0.3.0', requestSingleInstanceLock: () => false, quit() {}, on() {} },
     Menu: { buildFromTemplate: items => items },
     nativeImage: { createFromPath: () => ({}) },
@@ -39,7 +51,7 @@ function fixture(platform = 'win32') {
   context.testWindow = window;
   context.testTray = tray;
   vm.runInContext('win = testWindow; tray = testTray; updateTray();', context);
-  return { context, window, protections, sends, menu: () => vm.runInContext('trayMenu', context) };
+  return { context, window, cursor, protections, sends, menu: () => vm.runInContext('trayMenu', context) };
 }
 
 test('capture exclusion and native state stay synchronized', () => {
@@ -104,6 +116,37 @@ test('minimize collapses inside the same window and the tray is only for a hidde
   assert.match(main, /setInterval\(\(\) => holdOnTop\(\), 1000\)/);
   assert.doesNotMatch(main, /page-title-updated/);
   assert.doesNotMatch(main, /createEmpty\(\)/);
+});
+
+test('dragging the collapsed icon keeps the collapsed size and a click-sized nudge does not count as a drag', () => {
+  const f = fixture();
+  vm.runInContext('setCollapsed(true);', f.context);
+  assert.equal(f.window.bounds.width, 72);
+  assert.equal(f.window.bounds.height, 72);
+  assert.deepEqual(f.window.max, [72, 72]);
+  vm.runInContext('dragCollapsed("start")', f.context);
+  f.cursor.x = 43; f.cursor.y = 52;
+  assert.equal(vm.runInContext('dragCollapsed("move").moved', f.context), false);
+  assert.equal(f.window.bounds.width, 72);
+  f.cursor.x = 340; f.cursor.y = 50;
+  assert.equal(vm.runInContext('dragCollapsed("move").moved', f.context), true);
+  assert.deepEqual({ w: f.window.bounds.width, h: f.window.bounds.height, x: f.window.bounds.x, y: f.window.bounds.y }, { w: 72, h: 72, x: 310, y: 20 });
+  f.cursor.y = 350;
+  vm.runInContext('dragCollapsed("move")', f.context);
+  assert.equal(f.window.bounds.width, 72);
+  assert.equal(f.window.bounds.height, 72);
+  assert.equal(vm.runInContext('dragCollapsed("end").moved', f.context), true);
+  vm.runInContext('moveCollapsed(300, -300)', f.context);
+  assert.equal(f.window.bounds.width, 72);
+  assert.equal(f.window.bounds.height, 72);
+  vm.runInContext('setCollapsed(false)', f.context);
+  assert.equal(f.window.bounds.width, 800);
+  assert.ok(f.window.bounds.height >= 620);
+  assert.ok(f.window.bounds.x >= 0 && f.window.bounds.y >= 0);
+  const main = fs.readFileSync(path.resolve(__dirname, '../main.cjs'), 'utf8');
+  assert.match(main, /setMaximumSize\?\.\(COLLAPSED, COLLAPSED\)/);
+  assert.match(main, /placeCollapsed/);
+  assert.doesNotMatch(main, /setBounds\(\{ x: Math\.round\(box\.x \+ dx\)/);
 });
 
 test('failed native protection change does not falsely update requested state', () => {
