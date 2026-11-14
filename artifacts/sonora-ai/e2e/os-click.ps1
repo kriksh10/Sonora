@@ -234,12 +234,25 @@ function Send-Chord([byte[]]$Keys) {
   [SonoraKeys]::Chord($Keys)
   Start-Sleep -Milliseconds 550
 }
-function Save-Screen([string]$Name) {
-  # SRCCOPY alone skips a layered transparent window, so the shot is only the catcher.
-  if ($script:sonoraHwnd -and $script:sonoraHwnd -ne [IntPtr]::Zero) {
-    [SonoraInput]::RaiseWithoutFocus($script:sonoraHwnd) | Out-Null
-    Start-Sleep -Milliseconds 250
+function Bring-SonoraForward {
+  $live = [IntPtr]::Zero
+  $proc = Get-Process | Where-Object { $_.ProcessName -like 'Sonora*' -and $_.MainWindowHandle -ne [IntPtr]::Zero } | Select-Object -First 1
+  if ($proc) { $live = $proc.MainWindowHandle } elseif ($script:sonoraHwnd) { $live = $script:sonoraHwnd }
+  if ($catcher -and -not $catcher.HasExited) {
+    $behind = (Get-Process -Id $catcher.Id -ErrorAction SilentlyContinue).MainWindowHandle
+    if ($behind -and $behind -ne [IntPtr]::Zero) {
+      [SonoraInput]::SetWindowPos($behind, [IntPtr]1, 0, 0, 0, 0, 0x0013) | Out-Null
+    }
   }
+  if ($live -and $live -ne [IntPtr]::Zero) {
+    $script:sonoraHwnd = $live
+    [SonoraInput]::SetForegroundWindow($live) | Out-Null
+    [SonoraInput]::RaiseWithoutFocus($live) | Out-Null
+  }
+}
+function Save-Screen([string]$Name) {
+  Bring-SonoraForward
+  Start-Sleep -Milliseconds 400
   $path = Join-Path $shotDir $Name
   $job = Start-Job -ScriptBlock {
     param($path)
@@ -349,7 +362,6 @@ Add-Type -AssemblyName System.Drawing
   `$script:catcherLabel = 'PASS-THROUGH'
   `$form.Invalidate()
 })
-`$form.Add_Shown({ `$form.Activate() })
 [System.Windows.Forms.Application]::Run(`$form)
 "@
 $catcherPath = Join-Path $OutDir 'catcher.ps1'
@@ -1587,6 +1599,8 @@ try {
   Add-Scenario 'Opening Sonora again shows the hidden window' $shown ''
   Save-Screen '05c-shown.png'
   if ($shown) {
+    Bring-SonoraForward
+    Start-Sleep -Milliseconds 300
     Click-Exact 'Minimize' | Out-Null
     Start-Sleep -Milliseconds 700
     $collapsedHeight = Get-WindowHeight $hwnd
