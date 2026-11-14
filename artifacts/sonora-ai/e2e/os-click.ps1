@@ -1608,17 +1608,28 @@ try {
   Add-Scenario 'Opening Sonora again shows the hidden window' $shown ''
   Save-Screen '05c-shown.png'
   if ($shown) {
-    # The accessibility box is about 33px left of the visible minus.
+    # The accessibility box is about 33px left of the visible minus. Try that
+    # glyph, then the title-bar position, and stop as soon as the icon appears.
+    $box = Get-WindowBox $hwnd
     $minimize = Find-Exact 'Minimize'
+    $points = @()
     if ($minimize) {
       $r = $minimize.Current.BoundingRectangle
-      [SonoraInput]::Click([int]($r.X + ($r.Width / 2) + 33), [int]($r.Y + ($r.Height / 2)))
+      $points += ,@([int]($r.X + ($r.Width / 2) + 33), [int]($r.Y + ($r.Height / 2)))
+      $points += ,@([int]($r.X + ($r.Width / 2)), [int]($r.Y + ($r.Height / 2)))
     }
-    Start-Sleep -Milliseconds 900
+    $points += ,@([int]($box.X + $box.W - 151), [int]($box.Y + 22))
+    $script:minimizeTries = @()
+    foreach ($point in $points) {
+      $script:minimizeTries += "$($point[0]),$($point[1])"
+      [SonoraInput]::Click($point[0], $point[1])
+      Start-Sleep -Milliseconds 700
+      if ((Get-WindowHeight $hwnd) -le 140) { break }
+    }
     $collapsedHeight = Get-WindowHeight $hwnd
     $listeningIcon = Wait-Named 'Sonora listening' 3
     $stillShown = [SonoraInput]::IsWindowVisible($hwnd)
-    Add-Scenario 'Minimize collapses to a listening icon inside the same window' ([bool]($stillShown -and $collapsedHeight -le 140 -and $collapsedHeight -ge 40 -and $listeningIcon)) "height=$collapsedHeight"
+    Add-Scenario 'Minimize collapses to a listening icon inside the same window' ([bool]($stillShown -and $collapsedHeight -le 140 -and $collapsedHeight -ge 40 -and $listeningIcon)) "height=$collapsedHeight clicks=$($script:minimizeTries -join ' | ')"
     Save-Screen '05e-minimized.png'
     if ($listeningIcon) {
       # Click the icon's window, not its accessibility box. That box can sit
