@@ -1604,7 +1604,11 @@ try {
     $stillShown = [SonoraInput]::IsWindowVisible($hwnd)
     Add-Scenario 'Minimize collapses to a listening icon inside the same window' ([bool]($stillShown -and $collapsedHeight -le 140 -and $collapsedHeight -ge 40 -and $listeningIcon)) "height=$collapsedHeight"
     Save-Screen '05e-minimized.png'
-    if ($listeningIcon) { Click-Element $listeningIcon; Start-Sleep -Milliseconds 500 }
+    if ($listeningIcon) {
+      $icon = Get-WindowBox $hwnd
+      [SonoraInput]::Click([int]($icon.X + ($icon.W / 2)), [int]($icon.Y + ($icon.H / 2)))
+      Start-Sleep -Milliseconds 500
+    }
     $grown = Get-WindowHeight $hwnd
     Add-Scenario 'Clicking the listening icon restores the overlay' ($grown -gt 240) "height=$grown"
   } else {
