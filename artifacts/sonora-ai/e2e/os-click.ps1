@@ -1657,7 +1657,7 @@ try {
   Add-Scenario 'Opening Sonora again shows the hidden window' $shown ''
   Save-Screen '05c-shown.png'
   if ($shown) {
-    $widgetUntil = (Get-Date).AddSeconds(12)
+    $widgetUntil = (Get-Date).AddSeconds(18)
     $widgetCleared = $false
     do {
       if (Test-Path $env:SONORA_BOOT_LOG) {

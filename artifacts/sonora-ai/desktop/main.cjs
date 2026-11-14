@@ -226,14 +226,14 @@ function clearRenderWidgetClickThrough() {
   if (!fs.existsSync(scriptPath)) {
     fs.writeFileSync(scriptPath, [
       'param([Int64]$Hwnd)',
-      'Add-Type -TypeDefinition @"',
+      '$code = @"',
       'using System;',
       'using System.Text;',
       'using System.Runtime.InteropServices;',
-      'public static class SonoraChildHit {',
+      'public static class SonoraChildHit2 {',
       '  [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr h, uint c);',
-      '  [DllImport("user32.dll", EntryPoint="GetWindowLongPtrW")] public static extern IntPtr GetEx(IntPtr h, int i);',
-      '  [DllImport("user32.dll", EntryPoint="SetWindowLongPtrW")] public static extern IntPtr SetEx(IntPtr h, int i, IntPtr v);',
+      '  [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr h, int i);',
+      '  [DllImport("user32.dll")] public static extern int SetWindowLong(IntPtr h, int i, int v);',
       '  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h, StringBuilder s, int n);',
       '  public static string Clear(long value) {',
       '    var child = GetWindow(new IntPtr(value), 5);',
@@ -241,9 +241,9 @@ function clearRenderWidgetClickThrough() {
       '    while (child != IntPtr.Zero) {',
       '      var name = new StringBuilder(256);',
       '      GetClassName(child, name, 256);',
-      '      long ex = GetEx(child, -20).ToInt64();',
+      '      int ex = GetWindowLong(child, -20);',
       '      if (name.ToString().IndexOf("RenderWidgetHost") >= 0 && (ex & 0x20) != 0) {',
-      '        SetEx(child, -20, new IntPtr(ex & ~0x20L));',
+      '        SetWindowLong(child, -20, ex & ~0x20);',
       '        notes += "cleared;";',
       '      }',
       '      child = GetWindow(child, 2);',
@@ -252,16 +252,18 @@ function clearRenderWidgetClickThrough() {
       '  }',
       '}',
       '"@',
-      '[SonoraChildHit]::Clear($Hwnd)',
+      'Add-Type -TypeDefinition $code -Language CSharp',
+      '[SonoraChildHit2]::Clear($Hwnd)',
       '',
     ].join('\r\n'));
   }
+  const shell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
   try {
-    const out = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, hwnd], {
-      encoding: 'utf8', timeout: 15000, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+    const out = execFileSync(shell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, hwnd], {
+      encoding: 'utf8', timeout: 20000, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
     });
     bootLog(`render-widget-hit ${String(out).replace(/\s+/g, ' ').trim()}`);
-  } catch (error) { bootLog(`render-widget-hit failed ${error.message || error}`); }
+  } catch (error) { bootLog(`render-widget-hit failed ${error.stderr || error.message || error}`); }
 }
 function finishPresent() {
   if (!win || win.isDestroyed()) return;
