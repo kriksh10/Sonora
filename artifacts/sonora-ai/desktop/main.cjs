@@ -165,38 +165,18 @@ function broadcast() {
   if (win && !win.isDestroyed()) win.webContents.send('overlay:state-changed', state());
   updateTray();
 }
-const COLLAPSED_CSS = 'html.sonora-desktop .sonora-window-bar>:not(.sonora-dock){display:none!important}html.sonora-desktop #root>:not(.sonora-window-bar){display:none!important}html.sonora-desktop .sonora-window-bar{background:transparent!important;background-color:transparent!important;width:72px;height:72px;min-height:72px;padding:0!important;justify-content:center;align-items:center}html.sonora-desktop .sonora-dock{display:inline-flex!important;width:64px;height:64px}';
-let collapsedCssKey = null;
 function syncCollapsedClass() {
-  // The state event can be dropped while Windows is iconic. Paint the icon
-  // with inserted CSS so a later renderer update cannot bring the old page back.
-  if (!win || win.isDestroyed() || !win.webContents) return;
-  const wc = win.webContents;
+  // The state event can be dropped while Windows is iconic. Paint the class
+  // directly once the page can run script again.
+  if (!win || win.isDestroyed() || typeof win.webContents?.executeJavaScript !== 'function') return;
   const flag = collapsed ? 'true' : 'false';
-  if (typeof wc.executeJavaScript === 'function') {
-    try {
-      const pending = wc.executeJavaScript(
-        `document.documentElement.classList.toggle('sonora-collapsed', ${flag}); document.documentElement.classList.toggle('sonora-force-collapsed', ${flag});`,
-        false,
-      );
-      if (pending && typeof pending.catch === 'function') pending.catch(() => {});
-    } catch { /* the state event still updates a live page */ }
-  }
-  if (typeof wc.insertCSS !== 'function') return;
-  const paint = async () => {
-    if (!collapsed) {
-      if (!collapsedCssKey) return;
-      try { await wc.removeInsertedCSS(collapsedCssKey); } catch { /* already gone */ }
-      collapsedCssKey = null;
-      return;
-    }
-    if (collapsedCssKey) return;
-    try { collapsedCssKey = await wc.insertCSS(COLLAPSED_CSS); } catch { collapsedCssKey = null; }
-  };
   try {
-    const pending = paint();
+    const pending = win.webContents.executeJavaScript(
+      `document.documentElement.classList.toggle('sonora-collapsed', ${flag}); document.documentElement.classList.toggle('sonora-force-collapsed', ${flag}); var leaked = document.getElementById('sonora-collapsed-style'); if (leaked) leaked.remove();`,
+      false,
+    );
     if (pending && typeof pending.catch === 'function') pending.catch(() => {});
-  } catch { /* retry on the next paint */ }
+  } catch { /* the state event still updates a live page */ }
 }
 let collapsedPaint = null;
 function holdCollapsedPaint() {
@@ -698,12 +678,7 @@ function createWindow() {
   win.webContents.on('unresponsive', () => bootLog('unresponsive'));
   win.webContents.on('responsive', () => bootLog('responsive'));
   win.webContents.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => {
-    if (mainFrame && !inPlace) {
-      collapsedCssKey = null;
-      nativeAudio.stop();
-      if (!nativeAudio.isActive()) captureActive = false;
-      broadcast();
-    }
+    if (mainFrame && !inPlace) { nativeAudio.stop(); if (!nativeAudio.isActive()) captureActive = false; broadcast(); }
   });
   win.webContents.on('did-fail-load', async (_event, code, description, url, mainFrame) => {
     if (!mainFrame || code === -3 || isBundledOfflineNavigation(url, offlineFileUrl)) return;
