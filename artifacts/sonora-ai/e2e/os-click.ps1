@@ -235,21 +235,83 @@ function Send-Chord([byte[]]$Keys) {
   Start-Sleep -Milliseconds 550
 }
 function Save-Screen([string]$Name) {
-  # CopyFromScreen can stall the runner when another grabber holds the desktop DC.
-  $job = Start-Job -ScriptBlock {
-    param($shotDir, $Name)
+  # SRCCOPY alone skips a layered transparent window, so the shot is only the catcher.
+  if ($script:sonoraHwnd -and $script:sonoraHwnd -ne [IntPtr]::Zero) {
+    [SonoraInput]::RaiseWithoutFocus($script:sonoraHwnd) | Out-Null
+    Start-Sleep -Milliseconds 200
+  }
+  $path = Join-Path $shotDir $Name
+  $rs = [runspacefactory]::CreateRunspace()
+  $rs.ApartmentState = 'STA'
+  $rs.Open()
+  $ps = [powershell]::Create()
+  $ps.Runspace = $rs
+  [void]$ps.AddScript({
+    param($path)
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
     $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
     $bmp = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
     $g = [System.Drawing.Graphics]::FromImage($bmp)
-    $g.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
-    $bmp.Save((Join-Path $shotDir $Name), [System.Drawing.Imaging.ImageFormat]::Png)
+    $copy = [System.Drawing.CopyPixelOperation]([int](0x00CC0020 -bor 0x40000000))
+    $g.CopyFromScreen($bounds.X, $bounds.Y, 0, 0, $bounds.Size, $copy)
+    $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
     $g.Dispose(); $bmp.Dispose()
-  } -ArgumentList $shotDir, $Name
-  if (-not (Wait-Job $job -Timeout 8)) { Stop-Job $job -ErrorAction SilentlyContinue; Write-Host "screenshot timed out $Name" }
-  else { Write-Host "screenshot $Name" }
-  Remove-Job $job -Force -ErrorAction SilentlyContinue
+  }).AddArgument($path)
+  $handle = $ps.BeginInvoke()
+  if (-not $handle.AsyncWaitHandle.WaitOne(8000)) { $ps.Stop(); Write-Host "screenshot timed out $Name" }
+  else { $ps.EndInvoke($handle); Write-Host "screenshot $Name" }
+  $ps.Dispose(); $rs.Close()
+}
+function Get-Luma($Color) { return (0.2126 * $Color.R) + (0.7152 * $Color.G) + (0.0722 * $Color.B) }
+function Read-ThemeShot([IntPtr]$Window, [string]$File, [string]$TextName) {
+  $path = Join-Path $shotDir $File
+  $bmp = [System.Drawing.Bitmap]::FromFile($path)
+  $origin = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+  $box = New-Object SonoraInput+RECT
+  [SonoraInput]::GetWindowRect($Window, [ref]$box) | Out-Null
+  $pixel = {
+    param($sx, $sy)
+    $ix = [int]($sx - $origin.X); $iy = [int]($sy - $origin.Y)
+    if ($ix -lt 1 -or $iy -lt 1 -or $ix -ge ($bmp.Width - 1) -or $iy -ge ($bmp.Height - 1)) { return $null }
+    return $bmp.GetPixel($ix, $iy)
+  }
+  $panel = & $pixel ($box.Left + (($box.Right - $box.Left) * 0.62)) ($box.Top + (($box.Bottom - $box.Top) * 0.62))
+  $el = $null
+  foreach ($candidate in @(Find-All $TextName)) {
+    if ($candidate.Current.Name -eq $TextName) {
+      $area = $candidate.Current.BoundingRectangle
+      if ($area.Height -gt 72 -or $area.Width -lt 8) { continue }
+      if (-not $el -or ($area.Width * $area.Height) -gt ($el.Current.BoundingRectangle.Width * $el.Current.BoundingRectangle.Height)) { $el = $candidate }
+    }
+  }
+  $text = $null
+  $contrast = 0
+  if ($el -and $panel) {
+    $rect = $el.Current.BoundingRectangle
+    $panelLuma = Get-Luma $panel
+    for ($i = 2; $i -lt [Math]::Max(3, $rect.Width - 2); $i += 2) {
+      $sample = & $pixel ($rect.X + $i) ($rect.Y + ($rect.Height / 2))
+      if (-not $sample) { continue }
+      $delta = [Math]::Abs((Get-Luma $sample) - $panelLuma)
+      if ($delta -gt $contrast) { $contrast = $delta; $text = $sample }
+    }
+  }
+  $spread = 0
+  if ($panel) {
+    foreach ($pair in @(@(0.2, 0.3), @(0.8, 0.3), @(0.5, 0.8))) {
+      $sample = & $pixel ($box.Left + (($box.Right - $box.Left) * $pair[0])) ($box.Top + (($box.Bottom - $box.Top) * $pair[1]))
+      if ($sample) { $spread = [Math]::Max($spread, [Math]::Abs((Get-Luma $sample) - (Get-Luma $panel))) }
+    }
+  }
+  $bmp.Dispose()
+  return [pscustomobject]@{
+    PanelLuma = $(if ($panel) { [int](Get-Luma $panel) } else { -1 })
+    TextLuma = $(if ($text) { [int](Get-Luma $text) } else { -1 })
+    Contrast = [int]$contrast
+    Spread = [int]$spread
+    Bytes = (Get-Item $path).Length
+  }
 }
 
 $catcherScript = @"
@@ -263,22 +325,37 @@ Add-Type -AssemblyName System.Drawing
 `$form.TopMost = `$false
 `$form.BackColor = [System.Drawing.Color]::FromArgb(255, 32, 36, 48)
 `$form.ShowInTaskbar = `$true
-`$label = New-Object System.Windows.Forms.Label
-`$label.Text = 'CATCHER waiting'
-`$label.Dock = 'Fill'
-`$label.Font = New-Object System.Drawing.Font('Segoe UI', 32, [System.Drawing.FontStyle]::Bold)
-`$label.ForeColor = [System.Drawing.Color]::White
-`$label.TextAlign = 'MiddleCenter'
-`$form.Controls.Add(`$label)
+`$script:catcherLabel = 'CATCHER waiting'
+`$form.Add_Paint({
+  param(`$sender, `$event)
+  `$g = `$event.Graphics
+  `$w = `$sender.ClientSize.Width
+  `$h = `$sender.ClientSize.Height
+  `$colors = @(
+    [System.Drawing.Color]::FromArgb(255, 220, 48, 48),
+    [System.Drawing.Color]::FromArgb(255, 240, 210, 48),
+    [System.Drawing.Color]::FromArgb(255, 48, 96, 220),
+    [System.Drawing.Color]::FromArgb(255, 36, 180, 110),
+    [System.Drawing.Color]::FromArgb(255, 240, 120, 36),
+    [System.Drawing.Color]::FromArgb(255, 120, 64, 220)
+  )
+  `$band = [Math]::Max(1, [int](`$w / `$colors.Count))
+  for (`$i = 0; `$i -lt `$colors.Count; `$i++) {
+    `$brush = New-Object System.Drawing.SolidBrush `$colors[`$i]
+    `$g.FillRectangle(`$brush, (`$i * `$band), 0, `$band + 2, `$h)
+    `$brush.Dispose()
+  }
+  `$font = New-Object System.Drawing.Font('Segoe UI', 32, [System.Drawing.FontStyle]::Bold)
+  `$size = `$g.MeasureString(`$script:catcherLabel, `$font)
+  `$g.DrawString(`$script:catcherLabel, `$font, [System.Drawing.Brushes]::White, (`$w - `$size.Width) / 2, (`$h - `$size.Height) / 2)
+  `$font.Dispose()
+})
 `$file = '$($clickFile.Replace("'", "''"))'
-`$onClick = {
+`$form.Add_MouseDown({
   Add-Content -Path `$file -Value ("click {0}" -f [DateTime]::UtcNow.ToString('o'))
-  `$form.BackColor = [System.Drawing.Color]::FromArgb(255, 210, 32, 32)
-  `$label.Text = 'PASS-THROUGH'
-  `$form.Refresh()
-}
-`$form.Add_MouseDown(`$onClick)
-`$label.Add_MouseDown(`$onClick)
+  `$script:catcherLabel = 'PASS-THROUGH'
+  `$form.Invalidate()
+})
 `$form.Add_Shown({ `$form.Activate() })
 [System.Windows.Forms.Application]::Run(`$form)
 "@
@@ -494,6 +571,7 @@ try {
   Write-Host "runner $($os.Caption) $($os.Version)"
   $launched = Start-Sonora @('--force-renderer-accessibility')
   $hwnd = $launched.hwnd
+  $script:sonoraHwnd = $hwnd
   $windowTitle = [SonoraInput]::Title($hwnd)
   Add-Scenario 'Task Manager process name stays Sonora' ($launched.proc.ProcessName -like 'Sonora*' -and $windowTitle -match 'Sonora') "process=$($launched.proc.ProcessName) title=$windowTitle"
   Write-Host 'PHASE live-ui'
@@ -779,13 +857,18 @@ try {
     if ($plain) { Click-Element $plain; return }
     if (-not (Find-Exact "$Name selected")) { throw "No theme button named $Name" }
   }
-  Select-Theme 'Light'
-  Add-Scenario 'Control: Light theme toggle' ([bool](Wait-Named 'Light selected' 3)) ''
-  Save-Screen 'theme-light.png'
   Select-Theme 'Dark'
   Add-Scenario 'Control: Dark theme toggle' ([bool](Wait-Named 'Dark selected' 3)) ''
   Save-Screen 'theme-dark.png'
+  $script:homeDark = Read-ThemeShot $hwnd 'theme-dark.png' 'Call Sessions'
   Select-Theme 'Light'
+  Add-Scenario 'Control: Light theme toggle' ([bool](Wait-Named 'Light selected' 3)) ''
+  Save-Screen 'theme-light.png'
+  $homeLight = Read-ThemeShot $hwnd 'theme-light.png' 'Call Sessions'
+  $darkHomeOk = $script:homeDark.Bytes -gt 15000 -and $script:homeDark.Spread -gt 8 -and $script:homeDark.Contrast -gt 20 -and $script:homeDark.TextLuma -gt ($script:homeDark.PanelLuma + 15)
+  $lightHomeOk = $homeLight.Bytes -gt 15000 -and $homeLight.Spread -gt 8 -and $homeLight.Contrast -gt 20 -and $homeLight.TextLuma -lt ($homeLight.PanelLuma - 15) -and (($homeLight.PanelLuma - $script:homeDark.PanelLuma) -gt 18)
+  Add-Scenario 'Home dark theme changes panel fill and text' ([bool]$darkHomeOk) "panel=$($script:homeDark.PanelLuma) text=$($script:homeDark.TextLuma) spread=$($script:homeDark.Spread) bytes=$($script:homeDark.Bytes)"
+  Add-Scenario 'Home light theme changes panel fill and text' ([bool]$lightHomeOk) "panel=$($homeLight.PanelLuma) text=$($homeLight.TextLuma) darkPanel=$($script:homeDark.PanelLuma) bytes=$($homeLight.Bytes)"
   Add-Scenario 'Theme light is applied' ([bool]((Wait-Named 'Theme light' 3) -and (Find-Exact 'Light selected'))) ''
 
   function Send-MockJson([string]$Json) {
@@ -831,6 +914,26 @@ try {
   $seeded = [bool]($counted -and (Wait-Named 'Cedar archive' 4) -and (Wait-Named 'Lattice resume' 2) -and (Wait-Named 'Orbit brief' 2) -and (Wait-Named 'Live desk' 2))
   Add-Scenario 'Library items are listed' $seeded $(if ($counted) { 'count=5' } else { 'session count did not reach 5' })
   if (-not $seeded) { throw 'Seeded sessions did not appear in the list.' }
+  function Test-NamedInside([string]$Name) {
+    $win = New-Object SonoraInput+RECT
+    [SonoraInput]::GetWindowRect($script:sonoraHwnd, [ref]$win) | Out-Null
+    $seen = 0
+    $bad = ''
+    foreach ($el in @(Find-All $Name)) {
+      if ($el.Current.Name -ne $Name -and $el.Current.Name -notlike "$Name *") { continue }
+      $r = $el.Current.BoundingRectangle
+      if ($r.Width -lt 8 -or $r.Height -lt 8) { continue }
+      if ($r.Bottom -lt $win.Top -or $r.Top -gt $win.Bottom) { continue }
+      $off = $false
+      try { $off = [bool]$el.Current.IsOffscreen } catch { $off = $true }
+      $seen++
+      $fits = -not $off -and $r.Left -ge ($win.Left - 1) -and $r.Right -le ($win.Right + 1) -and $r.Top -ge ($win.Top - 1) -and $r.Bottom -le ($win.Bottom + 1)
+      if (-not $fits) { $bad = "$($el.Current.Name) off=$off box=$([int]$r.Left),$([int]$r.Top)-$([int]$r.Right),$([int]$r.Bottom) win=$($win.Right)x$($win.Bottom)" }
+    }
+    return [pscustomobject]@{ Ok = ($seen -gt 0 -and -not $bad); Detail = $(if ($bad) { $bad } else { "visible=$seen" }) }
+  }
+  $deleteFit = Test-NamedInside 'Delete session'
+  Add-Scenario 'Delete control is fully inside the window' ([bool]$deleteFit.Ok) $deleteFit.Detail
   Click-Exact 'Delete session Cedar archive' | Out-Null
   $confirmSession = Wait-Named 'Confirm delete' 3
   Save-Screen 'delete-session-confirm.png'
@@ -840,6 +943,8 @@ try {
   Click-Exact 'Resumes' | Out-Null
   $resumeShown = Wait-Named 'Lattice resume body' 3
   if ($resumeShown) {
+    $resumeFit = Test-NamedInside 'Delete resume'
+    Add-Scenario 'Resume delete control is fully inside the window' ([bool]$resumeFit.Ok) $resumeFit.Detail
     Click-Exact 'Delete resume Lattice resume' | Out-Null
     Save-Screen 'delete-resume-confirm.png'
     Click-Exact 'Delete resume' | Out-Null
@@ -856,6 +961,8 @@ try {
   Click-Exact 'Documents' | Out-Null
   $docShown = Wait-Named 'Orbit brief body' 3
   if ($docShown) {
+    $documentFit = Test-NamedInside 'Delete document'
+    Add-Scenario 'Document delete control is fully inside the window' ([bool]$documentFit.Ok) $documentFit.Detail
     Click-Exact 'Delete document Orbit brief' | Out-Null
     Save-Screen 'delete-document-confirm.png'
     Click-Exact 'Delete document' | Out-Null
@@ -1009,6 +1116,8 @@ try {
   }
   Add-Scenario 'Control: Listen starts transcription' ([bool]($listening -and $enhanced)) "enhanced=$enhanced"
   Save-Screen 'theme-light-overlay.png'
+  $overlayLight = Read-ThemeShot $hwnd 'theme-light-overlay.png' 'No answer yet'
+  Add-Scenario 'Overlay light theme changes panel fill and text' ([bool]($overlayLight.Bytes -gt 15000 -and $overlayLight.Contrast -gt 15 -and $overlayLight.TextLuma -lt ($overlayLight.PanelLuma - 10))) "panel=$($overlayLight.PanelLuma) text=$($overlayLight.TextLuma) bytes=$($overlayLight.Bytes)"
   Click-Exact 'Pause' | Out-Null
   $pausedNote = Wait-Named 'Listening paused' 4
   $sessionStillOpen = [bool](Find-VisibleButton 'End session')
@@ -1256,9 +1365,18 @@ try {
   Click-Exact 'Back to sessions' | Out-Null
   $returned = Wait-Named 'Call Sessions' 4
   Add-Scenario 'Control: Back to sessions leaves without ending' ([bool]($returned -and (Find-Element 'Start') -and -not (Find-VisibleButton 'End session'))) ''
+  Select-Theme 'Dark'
+  $darkSelected = Wait-Named 'Dark selected' 3
   $startAgain = Find-Exact 'Start'
-  if ($startAgain) { Click-Element $startAgain; Start-Sleep -Milliseconds 500 }
-  Click-Exact 'End session' | Out-Null
+  if ($startAgain) { Click-Element $startAgain; Start-Sleep -Milliseconds 700 }
+  $overlayOpen = Wait-Named 'No answer yet' 6
+  if ($overlayOpen) {
+    Save-Screen 'overlay-dark-bands.png'
+    $overlayDark = Read-ThemeShot $hwnd 'overlay-dark-bands.png' 'No answer yet'
+  } else { $overlayDark = [pscustomobject]@{ PanelLuma = -1; TextLuma = -1; Contrast = 0; Bytes = 0 } }
+  $overlayDarkOk = [bool]$darkSelected -and $overlayDark.Bytes -gt 15000 -and $overlayDark.Contrast -gt 15 -and $overlayDark.TextLuma -gt ($overlayDark.PanelLuma + 10) -and ($overlayLight.PanelLuma - $overlayDark.PanelLuma) -gt 12
+  Add-Scenario 'Overlay dark theme changes panel fill and text' $overlayDarkOk "panel=$($overlayDark.PanelLuma) text=$($overlayDark.TextLuma) lightPanel=$($overlayLight.PanelLuma) bytes=$($overlayDark.Bytes)"
+  if (Find-Exact 'End session') { Click-Exact 'End session' | Out-Null } else { Click-Exact 'End session' | Out-Null }
   $endPosted = $false
   $leftSession = $false
   $endUntil = (Get-Date).AddSeconds(8)
@@ -1497,10 +1615,13 @@ try {
   $again = Start-Sonora @('--force-renderer-accessibility')
   Start-Sleep -Seconds 4
   $hwnd2 = $again.hwnd
+  $script:sonoraHwnd = $hwnd2
   if (Wait-Named 'Sign in' 12) { Click-Element (Find-Exact 'Sign in') | Out-Null }
   $backHome = Wait-Named 'Call Sessions' 12
-  Add-Scenario 'Theme persists after restart' ([bool]($backHome -and (Find-Exact 'Light selected') -and (Find-Exact 'Theme light'))) ''
-  Save-Screen 'theme-light-restart.png'
+  Save-Screen 'theme-dark-restart.png'
+  $restartDark = Read-ThemeShot $hwnd2 'theme-dark-restart.png' 'Call Sessions'
+  $persisted = [bool]($backHome -and (Find-Exact 'Dark selected') -and (Find-Exact 'Theme dark') -and $restartDark.Bytes -gt 15000 -and $restartDark.Contrast -gt 15 -and $restartDark.TextLuma -gt ($restartDark.PanelLuma + 10))
+  Add-Scenario 'Theme persists after restart' $persisted "panel=$($restartDark.PanelLuma) text=$($restartDark.TextLuma) bytes=$($restartDark.Bytes)"
   if ($backHome) { Click-Exact 'Resumes' | Out-Null }
   $resumeStillGone = -not (Find-Element 'Lattice resume body')
   if ($backHome) { Click-Exact 'Documents' | Out-Null }

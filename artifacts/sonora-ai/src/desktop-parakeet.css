@@ -76,10 +76,19 @@ html.sonora-desktop .sonora-workspace.dp-app {
   flex: 1; max-width: 320px; border: 1px solid rgba(255,255,255,.14); border-radius: 10px;
   background: rgba(255,255,255,.06); color: #fff; padding: 8px 10px; font: inherit;
 }
-.dp-table-wrap { flex: 1; min-height: 0; overflow: auto; }
-.dp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.dp-table th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .04em; color: rgba(255,255,255,.45); padding: 8px 10px; }
-.dp-table td { padding: 12px 10px; border-top: 1px solid rgba(255,255,255,.08); vertical-align: middle; }
+.dp-table-wrap { flex: 1; min-height: 0; min-width: 0; overflow-x: hidden; overflow-y: auto; }
+.dp-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 13px; }
+.dp-table th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .04em; color: rgba(255,255,255,.45); padding: 8px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dp-table td { padding: 8px 6px; border-top: 1px solid rgba(255,255,255,.08); vertical-align: middle; overflow: hidden; text-overflow: ellipsis; }
+.dp-table .dp-session { white-space: nowrap; }
+.dp-table .dp-session strong, .dp-table .dp-session div { display: block; overflow: hidden; text-overflow: ellipsis; }
+.dp-sub { color: rgba(255,255,255,.5); font-size: 12px; }
+.dp-table .is-narrow { width: 64px; }
+.dp-table .is-state { width: 58px; }
+.dp-table .is-actions { width: 96px; overflow: visible; text-overflow: clip; }
+.dp-actions { display: flex; flex-wrap: nowrap; gap: 4px; justify-content: flex-end; align-items: center; }
+.dp-row-icon { margin: 0; width: 28px; height: 28px; flex: none; display: inline-flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,.16); border-radius: 8px; background: transparent; color: inherit; padding: 0; cursor: pointer; }
+.dp-row-icon.is-text { width: auto; min-width: 28px; padding: 0 8px; font: inherit; }
 .dp-group td { padding-top: 18px; color: rgba(255,255,255,.45); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; border-top: 0; }
 .dp-chip { display: inline-flex; border-radius: 999px; padding: 2px 8px; font-size: 11px; border: 1px solid transparent; }
 .dp-chip.live { background: rgba(225,29,46,.18); color: #ffb4bc; }
@@ -87,8 +96,10 @@ html.sonora-desktop .sonora-workspace.dp-app {
 .dp-chip.ended { background: rgba(255,255,255,.08); color: rgba(255,255,255,.6); }
 .dp-row-btn { border: 1px solid rgba(255,255,255,.16); background: transparent; color: #fff; border-radius: 999px; padding: 5px 10px; cursor: pointer; font: inherit; }
 .dp-row-btn:hover { background: rgba(255,255,255,.08); }
-.dp-list { display: grid; gap: 8px; overflow: auto; }
-.dp-list article { padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,.1); }
+.dp-list { display: grid; gap: 8px; min-width: 0; overflow-x: hidden; overflow-y: auto; }
+.dp-list article { min-width: 0; padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,.1); }
+.dp-list-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dp-list-head strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dp-list p { margin: 6px 0 0; white-space: pre-wrap; color: rgba(255,255,255,.72); max-height: 140px; overflow: auto; }
 
 .dp-overlay { display: flex; flex-direction: column; gap: 10px; flex: 1; height: auto; min-height: 0; padding: 8px; box-sizing: border-box; overflow: hidden; background: transparent !important; }
@@ -207,6 +218,8 @@ html.sonora-desktop[data-sonora-theme="light"] .dp-icon-btn,
 html.sonora-desktop[data-sonora-theme="light"] .dp-table td,
 html.sonora-desktop[data-sonora-theme="light"] .dp-search,
 html.sonora-desktop[data-sonora-theme="light"] .dp-row-btn,
+html.sonora-desktop[data-sonora-theme="light"] .dp-row-icon,
+html.sonora-desktop[data-sonora-theme="light"] .dp-sub,
 html.sonora-desktop[data-sonora-theme="light"] .dp-menu-pop label,
 html.sonora-desktop[data-sonora-theme="light"] .sonora-window-drag-handle {
   color: var(--sonora-ink);

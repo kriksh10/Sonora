@@ -96,17 +96,19 @@ export default function DesktopSessions(props: {
 
   const row = (session: CallSession) => (
     <tr key={session.id}>
-      <td><strong>{session.title || "Untitled session"}</strong><div style={{ color: "rgba(255,255,255,.5)", fontSize: 12 }}>{session.company || "—"}</div></td>
+      <td className="dp-session"><strong>{session.title || "Untitled session"}</strong><div className="dp-sub">{session.company || "—"}</div></td>
       <td>{kind(session)}</td>
       <td>{lengthLabel(session, props.now)}</td>
       <td>{session.startedAt ? credits(session) : "—"}</td>
-      <td>{new Date(session.createdAt).toLocaleDateString()}</td>
+      <td>{new Date(session.createdAt).toLocaleDateString(undefined, { month: "numeric", day: "numeric" })}</td>
       <td><span className={`dp-chip ${session.status === "active" ? "live" : session.status === "ended" ? "ended" : "ready"}`} aria-label={session.status === "ended" ? "Session ended" : undefined}>{session.status === "active" ? "Live" : session.status === "ended" ? "Ended" : "Ready"}</span></td>
-      <td>
-        {session.status === "ended"
-          ? <button className="dp-row-btn" onClick={() => { props.onView(session); setPanel("transcript"); }}>View transcript</button>
-          : <button className="dp-row-btn" onClick={() => props.onJoin(session)}>{session.status === "active" ? "Join" : "Start"}</button>}
-        <button type="button" className="dp-row-btn" aria-label={`Delete session ${session.title || "Untitled session"}`} title="Delete session" onClick={() => askDelete("session", session)}><Trash2 size={14} /> Delete</button>
+      <td className="is-actions">
+        <div className="dp-actions">
+          {session.status === "ended"
+            ? <button type="button" className="dp-row-icon" aria-label="View transcript" title="View transcript" onClick={() => { props.onView(session); setPanel("transcript"); }}><FileText size={14} /></button>
+            : <button type="button" className="dp-row-icon is-text" onClick={() => props.onJoin(session)}>{session.status === "active" ? "Join" : "Start"}</button>}
+          <button type="button" className="dp-row-icon" aria-label={`Delete session ${session.title || "Untitled session"}`} title="Delete session" onClick={() => askDelete("session", session)}><Trash2 size={14} /></button>
+        </div>
       </td>
     </tr>
   );
@@ -145,9 +147,9 @@ export default function DesktopSessions(props: {
             <div className="dp-list">
               {(panel === "resumes" ? resumes : documents).map(session => (
                 <article key={session.id}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <strong style={{ flex: 1 }}>{session.title}</strong>
-                    <button type="button" className="dp-row-btn" aria-label={`Delete ${panel === "resumes" ? "resume" : "document"} ${session.title}`} title={panel === "resumes" ? "Delete resume" : "Delete document"} onClick={() => askDelete(panel === "resumes" ? "resume" : "document", session)}><Trash2 size={14} /> Delete</button>
+                  <div className="dp-list-head">
+                    <strong>{session.title}</strong>
+                    <button type="button" className="dp-row-icon" aria-label={`Delete ${panel === "resumes" ? "resume" : "document"} ${session.title}`} title={panel === "resumes" ? "Delete resume" : "Delete document"} onClick={() => askDelete(panel === "resumes" ? "resume" : "document", session)}><Trash2 size={14} /></button>
                   </div>
                   <p>{panel === "resumes" ? session.resumeText : session.documentsText}</p>
                 </article>
@@ -186,7 +188,7 @@ export default function DesktopSessions(props: {
             </div>
             <div className="dp-table-wrap">
               <table className="dp-table">
-                <thead><tr><th>Session</th><th>Mode</th><th>Duration</th><th>Credits used</th><th>Created</th><th>State</th><th></th></tr></thead>
+                <thead><tr><th>Session</th><th>Mode</th><th>Duration</th><th>Credits</th><th className="is-narrow">Created</th><th className="is-state">State</th><th className="is-actions"></th></tr></thead>
                 <tbody>
                   <tr className="dp-group"><td colSpan={7}>Active</td></tr>
                   {active.map(row)}
