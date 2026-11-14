@@ -197,15 +197,33 @@ function clearWindowPlate() {
   // The window plate and material are fixed at creation. Touching either
   // afterward paints an opaque white sheet on Windows.
 }
+function refreshHitTesting() {
+  if (!win || win.isDestroyed() || collapsed || clickThrough) return;
+  // Hide/show on a transparent frameless window leaves the Windows drag-region
+  // map covering the title-bar buttons. Toggling mouse capture and nudging the
+  // size forces Chromium to rebuild those rectangles.
+  if (typeof win.setIgnoreMouseEvents === 'function') {
+    try {
+      win.setIgnoreMouseEvents(true);
+      win.setIgnoreMouseEvents(false);
+      ignoringMouse = false;
+    } catch { /* the nudge below still rebuilds the drag map */ }
+  }
+  const box = win.getBounds();
+  try {
+    win.setBounds({ x: box.x, y: box.y, width: box.width, height: box.height + 1 });
+    win.setBounds(box);
+  } catch { /* the buttons stay clickable if the map was already current */ }
+}
 function show() {
   if (!win || win.isDestroyed()) return;
   clearWindowPlate();
   win.setSkipTaskbar?.(true);
   win.show();
   win.focus();
-  try { win.setIgnoreMouseEvents(false); ignoringMouse = false; } catch { /* mouse events stay as they were */ }
   win.setSkipTaskbar?.(true);
   if (alwaysOnTop) holdOnTop();
+  refreshHitTesting();
   syncTray();
   broadcast();
 }
@@ -447,10 +465,14 @@ function registerIpc() {
   handle('overlay:hide', () => { hide(); return state(); });
   handle('overlay:minimize', () => {
     const box = win?.getBounds?.() || { width: 0, height: 0 };
-    // A second toggle while the window is already the icon leaves the old page
-    // clipped in the 72px box. At that size the button always restores.
-    if (box.width <= COLLAPSED + 2 && box.height <= COLLAPSED + 2) expandFromIcon();
-    else setCollapsed(!collapsed);
+    const atIcon = box.width <= COLLAPSED + 2 && box.height <= COLLAPSED + 2;
+    if (atIcon) expandFromIcon();
+    else {
+      // A tray restore can leave the flag true while the window is still tall.
+      // Minimize always collapses that window; it does not toggle it open.
+      if (collapsed) collapsed = false;
+      setCollapsed(true);
+    }
     return state();
   });
   handle('overlay:move-collapsed', (dx, dy) => moveCollapsed(dx, dy));
