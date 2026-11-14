@@ -244,6 +244,16 @@ function show() {
   win.focus();
   win.setSkipTaskbar?.(true);
   finishPresent();
+  // A resize after the window is on screen rebuilds the title-bar hit target.
+  // Doing it during show, or toggling ignore-mouse, leaves that strip dead.
+  setTimeout(() => {
+    if (!win || win.isDestroyed() || collapsed) return;
+    const again = win.getBounds();
+    try {
+      win.setBounds({ x: again.x, y: again.y, width: again.width, height: again.height + 1 });
+      win.setBounds(again);
+    } catch { /* the click path still uses the button handler */ }
+  }, 200);
 }
 let enforcingCollapsed = false;
 function enforceCollapsedSize() {
