@@ -323,6 +323,9 @@ function watchTitleClicks() {
         if (line) bootLog(`title-click ${line}`);
         continue;
       }
+      // The hook sees the physical button, including a release outside the window
+      // or over a click-through region the page never hears.
+      notePrimaryButton(parts[0]);
       const dip = dipPoint(Number(parts[1]), Number(parts[2]));
       if (!win || win.isDestroyed() || !Number.isFinite(dip.x) || !Number.isFinite(dip.y)) continue;
       const box = win.getBounds();
@@ -535,43 +538,75 @@ function moveCollapsed(dx, dy) {
   placeCollapsed(box.x + dx, box.y + dy);
   return state();
 }
+// epoch changes on every physical left-button edge from the Windows hook.
+// A drag stores the epoch it started at. A later edge while the button is up
+// means the press ended, even if the page never sent "end".
+let primaryButton = { down: false, epoch: 0, watching: false };
+let windowDrag = null;
+function notePrimaryButton(kind) {
+  if (kind !== 'down' && kind !== 'up') return;
+  primaryButton = { down: kind === 'down', epoch: primaryButton.epoch + 1, watching: true };
+  if (kind === 'up') {
+    windowDrag = null;
+    collapsedDrag = null;
+  }
+}
+function buttonReleased(drag) {
+  return !!drag && !primaryButton.down && primaryButton.epoch !== drag.epoch;
+}
+function dragByCursor(phase, current, place) {
+  if (phase !== 'start' && phase !== 'move' && phase !== 'end') throw new Error('Expected a drag.');
+  if (buttonReleased(current)) current = null;
+  if (phase === 'end') return { drag: null, result: { moved: current?.moved === true } };
+  // A move with no preceding press must not arm a drag. That is a hover.
+  if (phase !== 'start' && !current) return { drag: null, result: { moved: false } };
+  const cursor = screen.getCursorScreenPoint();
+  if (phase === 'start') {
+    const box = win.getBounds();
+    // The watcher already saw the button come up. Ignore this press until a new
+    // down arrives, so a late "start" cannot keep a released drag alive.
+    const awaitingDown = primaryButton.watching && !primaryButton.down && primaryButton.epoch > 0;
+    return {
+      drag: {
+        grabX: cursor.x - box.x, grabY: cursor.y - box.y,
+        startX: cursor.x, startY: cursor.y, moved: false,
+        epoch: primaryButton.epoch, awaitingDown,
+      },
+      result: { moved: false },
+    };
+  }
+  if (current.awaitingDown) {
+    if (!primaryButton.down) return { drag: current, result: { moved: false } };
+    const box = win.getBounds();
+    current.awaitingDown = false;
+    current.grabX = cursor.x - box.x;
+    current.grabY = cursor.y - box.y;
+    current.startX = cursor.x;
+    current.startY = cursor.y;
+    current.epoch = primaryButton.epoch;
+    current.moved = false;
+  }
+  const distance = Math.hypot(cursor.x - current.startX, cursor.y - current.startY);
+  if (distance >= 4) current.moved = true;
+  if (current.moved) {
+    if (buttonReleased(current)) return { drag: null, result: { moved: false } };
+    place(cursor.x - current.grabX, cursor.y - current.grabY);
+  }
+  return { drag: current, result: { moved: current.moved === true } };
+}
 function dragCollapsed(phase) {
   if (!collapsed || !win || win.isDestroyed()) return { moved: false };
-  if (phase !== 'start' && phase !== 'move' && phase !== 'end') throw new Error('Expected a drag.');
-  const cursor = screen.getCursorScreenPoint();
-  if (phase === 'start' || !collapsedDrag) {
-    const box = win.getBounds();
-    collapsedDrag = {
-      grabX: cursor.x - box.x, grabY: cursor.y - box.y,
-      startX: cursor.x, startY: cursor.y, moved: false,
-    };
-    if (phase === 'start') return { moved: false };
-  }
-  const distance = Math.hypot(cursor.x - collapsedDrag.startX, cursor.y - collapsedDrag.startY);
-  if (distance >= 4) collapsedDrag.moved = true;
-  if (phase === 'move' && collapsedDrag.moved) placeCollapsed(cursor.x - collapsedDrag.grabX, cursor.y - collapsedDrag.grabY);
-  const moved = collapsedDrag.moved === true;
-  if (phase === 'end') collapsedDrag = null;
-  return { moved };
+  const step = dragByCursor(phase, collapsedDrag, (x, y) => placeCollapsed(x, y));
+  collapsedDrag = step.drag;
+  return step.result;
 }
-let windowDrag = null;
 function dragWindow(phase) {
   if (!win || win.isDestroyed() || collapsed) return { moved: false };
-  if (phase !== 'start' && phase !== 'move' && phase !== 'end') throw new Error('Expected a drag.');
-  const cursor = screen.getCursorScreenPoint();
-  if (phase === 'start' || !windowDrag) {
-    const box = win.getBounds();
-    windowDrag = { grabX: cursor.x - box.x, grabY: cursor.y - box.y, startX: cursor.x, startY: cursor.y, moved: false };
-    if (phase === 'start') return { moved: false };
-  }
-  const distance = Math.hypot(cursor.x - windowDrag.startX, cursor.y - windowDrag.startY);
-  if (distance >= 4) windowDrag.moved = true;
-  if (phase === 'move' && windowDrag.moved && typeof win.setPosition === 'function') {
-    win.setPosition(Math.round(cursor.x - windowDrag.grabX), Math.round(cursor.y - windowDrag.grabY));
-  }
-  const moved = windowDrag.moved === true;
-  if (phase === 'end') windowDrag = null;
-  return { moved };
+  const step = dragByCursor(phase, windowDrag, (x, y) => {
+    if (typeof win.setPosition === 'function') win.setPosition(Math.round(x), Math.round(y));
+  });
+  windowDrag = step.drag;
+  return step.result;
 }
 function destroyTray() {
   if (tray && !tray.isDestroyed?.()) tray.destroy?.();

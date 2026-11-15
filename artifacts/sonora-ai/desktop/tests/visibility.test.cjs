@@ -149,6 +149,65 @@ test('dragging the collapsed icon keeps the collapsed size and a click-sized nud
   assert.doesNotMatch(main, /setBounds\(\{ x: Math\.round\(box\.x \+ dx\)/);
 });
 
+test('hovering does not move the window, and a button release ends the drag', () => {
+  const f = fixture();
+  const origin = { ...f.window.bounds };
+  f.cursor.x = 400; f.cursor.y = 300;
+  assert.equal(vm.runInContext('dragWindow("move").moved', f.context), false);
+  f.cursor.x = 900; f.cursor.y = 700;
+  assert.equal(vm.runInContext('dragWindow("move").moved', f.context), false);
+  assert.deepEqual(f.window.bounds, origin);
+
+  vm.runInContext('dragWindow("start")', f.context);
+  f.cursor.x = 902; f.cursor.y = 701;
+  assert.equal(vm.runInContext('dragWindow("move").moved', f.context), false);
+  assert.equal(f.window.bounds.x, origin.x);
+  assert.equal(f.window.bounds.y, origin.y);
+  f.cursor.x = 1020; f.cursor.y = 760;
+  assert.equal(vm.runInContext('dragWindow("move").moved', f.context), true);
+  const dragged = { x: f.window.bounds.x, y: f.window.bounds.y };
+  assert.notDeepEqual(dragged, { x: origin.x, y: origin.y });
+  assert.equal(f.window.bounds.width, origin.width);
+  assert.equal(f.window.bounds.height, origin.height);
+
+  // Release outside the window. The page may never see this pointerup.
+  f.cursor.x = -2400; f.cursor.y = -1800;
+  vm.runInContext('notePrimaryButton("up")', f.context);
+  const parked = { x: f.window.bounds.x, y: f.window.bounds.y };
+  f.cursor.x = -1800; f.cursor.y = -1200;
+  assert.equal(vm.runInContext('dragWindow("move").moved', f.context), false);
+  assert.equal(vm.runInContext('dragWindow("move").moved', f.context), false);
+  assert.equal(f.window.bounds.x, parked.x);
+  assert.equal(f.window.bounds.y, parked.y);
+  assert.equal(vm.runInContext('dragWindow("end").moved', f.context), false);
+  // The press message arrived after the button was already up. Moving must not resume.
+  vm.runInContext('dragWindow("start")', f.context);
+  f.cursor.x = parked.x + 500; f.cursor.y = parked.y + 500;
+  assert.equal(vm.runInContext('dragWindow("move").moved', f.context), false);
+  assert.equal(vm.runInContext('dragWindow("move").moved', f.context), false);
+  assert.equal(f.window.bounds.x, parked.x);
+  assert.equal(f.window.bounds.y, parked.y);
+
+  // A later real press still drags, and "end" stops it even if the cursor stays outside.
+  f.cursor.x = 30; f.cursor.y = 40;
+  vm.runInContext('notePrimaryButton("down"); dragWindow("start")', f.context);
+  f.cursor.x = -3000; f.cursor.y = 800;
+  assert.equal(vm.runInContext('dragWindow("move").moved', f.context), true);
+  const outside = { x: f.window.bounds.x, y: f.window.bounds.y };
+  assert.equal(vm.runInContext('dragWindow("end").moved', f.context), true);
+  f.cursor.x = -200; f.cursor.y = 900;
+  assert.equal(vm.runInContext('dragWindow("move").moved', f.context), false);
+  assert.equal(f.window.bounds.x, outside.x);
+  assert.equal(f.window.bounds.y, outside.y);
+
+  vm.runInContext('setCollapsed(true)', f.context);
+  const icon = { x: f.window.bounds.x, y: f.window.bounds.y, width: f.window.bounds.width, height: f.window.bounds.height };
+  f.cursor.x = icon.x + 400; f.cursor.y = icon.y + 400;
+  assert.equal(vm.runInContext('dragCollapsed("move").moved', f.context), false);
+  assert.equal(vm.runInContext('dragCollapsed("move").moved', f.context), false);
+  assert.deepEqual({ x: f.window.bounds.x, y: f.window.bounds.y, width: f.window.bounds.width, height: f.window.bounds.height }, icon);
+});
+
 test('failed native protection change does not falsely update requested state', () => {
   const f = fixture();
   f.window.setContentProtection = () => { throw new Error('native failure'); };
