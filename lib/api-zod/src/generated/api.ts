@@ -320,6 +320,7 @@ export const RestartSessionResponse = zod.object({
 }).optional(),
   "model": zod.string(),
   "language": zod.string(),
+  "answerLanguage": zod.string().describe('Language of generated answers. Defaults to English and does not change live transcription.'),
   "autoAnswer": zod.boolean(),
   "saveTranscript": zod.boolean(),
   "status": zod.enum(['ready', 'active', 'ended']),
@@ -458,6 +459,7 @@ export const UpdateSessionPreferencesBody = zod.object({
   "instructions": zod.string().max(updateSessionPreferencesBodyInstructionsMax).optional(),
   "model": zod.enum(['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-3-flash-preview']).optional(),
   "language": zod.enum(['English', 'Spanish', 'French', 'German', 'Italian', 'Portuguese', 'Dutch', 'Polish', 'Russian', 'Ukrainian', 'Japanese', 'Korean', 'Mandarin', 'Arabic', 'Hindi', 'Turkish', 'Swedish', 'Danish', 'Norwegian', 'Finnish', 'Czech', 'Greek', 'Hebrew', 'Hungarian', 'Romanian', 'Indonesian', 'Malay', 'Vietnamese', 'Thai', 'Bulgarian', 'Catalan', 'Croatian', 'Slovak', 'Tamil', 'Urdu', 'Bengali', 'Punjabi', 'Gujarati', 'Marathi', 'Telugu', 'Kannada', 'Malayalam', 'Nepali', 'Sinhala', 'Persian', 'Swahili', 'Afrikaans', 'Filipino', 'Lithuanian', 'Latvian', 'Estonian', 'Slovenian', 'Serbian', 'Icelandic', 'Welsh']).optional(),
+  "answerLanguage": zod.enum(['English', 'Spanish', 'French', 'German', 'Italian', 'Portuguese', 'Dutch', 'Polish', 'Russian', 'Ukrainian', 'Japanese', 'Korean', 'Mandarin', 'Arabic', 'Hindi', 'Turkish', 'Swedish', 'Danish', 'Norwegian', 'Finnish', 'Czech', 'Greek', 'Hebrew', 'Hungarian', 'Romanian', 'Indonesian', 'Malay', 'Vietnamese', 'Thai', 'Bulgarian', 'Catalan', 'Croatian', 'Slovak', 'Tamil', 'Urdu', 'Bengali', 'Punjabi', 'Gujarati', 'Marathi', 'Telugu', 'Kannada', 'Malayalam', 'Nepali', 'Sinhala', 'Persian', 'Swahili', 'Afrikaans', 'Filipino', 'Lithuanian', 'Latvian', 'Estonian', 'Slovenian', 'Serbian', 'Icelandic', 'Welsh']).optional().describe('Language of generated answers. Independent of the call language used for transcription. Defaults to English.'),
   "autoAnswer": zod.boolean().optional(),
   "saveTranscript": zod.boolean().optional()
 })
@@ -492,6 +494,7 @@ export const UpdateSessionPreferencesResponse = zod.object({
 }).optional(),
   "model": zod.string(),
   "language": zod.string(),
+  "answerLanguage": zod.string().describe('Language of generated answers. Defaults to English and does not change live transcription.'),
   "autoAnswer": zod.boolean(),
   "saveTranscript": zod.boolean(),
   "status": zod.enum(['ready', 'active', 'ended']),
@@ -555,6 +558,7 @@ export const ListSessionsResponseItem = zod.object({
 }).optional(),
   "model": zod.string(),
   "language": zod.string(),
+  "answerLanguage": zod.string().describe('Language of generated answers. Defaults to English and does not change live transcription.'),
   "autoAnswer": zod.boolean(),
   "saveTranscript": zod.boolean(),
   "status": zod.enum(['ready', 'active', 'ended']),
@@ -609,6 +613,7 @@ export const CreateSessionBody = zod.object({
 }).optional(),
   "model": zod.enum(['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-3-flash-preview']).optional(),
   "language": zod.enum(['English', 'Spanish', 'French', 'German', 'Italian', 'Portuguese', 'Dutch', 'Polish', 'Russian', 'Ukrainian', 'Japanese', 'Korean', 'Mandarin', 'Arabic', 'Hindi', 'Turkish', 'Swedish', 'Danish', 'Norwegian', 'Finnish', 'Czech', 'Greek', 'Hebrew', 'Hungarian', 'Romanian', 'Indonesian', 'Malay', 'Vietnamese', 'Thai', 'Bulgarian', 'Catalan', 'Croatian', 'Slovak', 'Tamil', 'Urdu', 'Bengali', 'Punjabi', 'Gujarati', 'Marathi', 'Telugu', 'Kannada', 'Malayalam', 'Nepali', 'Sinhala', 'Persian', 'Swahili', 'Afrikaans', 'Filipino', 'Lithuanian', 'Latvian', 'Estonian', 'Slovenian', 'Serbian', 'Icelandic', 'Welsh']).optional(),
+  "answerLanguage": zod.enum(['English', 'Spanish', 'French', 'German', 'Italian', 'Portuguese', 'Dutch', 'Polish', 'Russian', 'Ukrainian', 'Japanese', 'Korean', 'Mandarin', 'Arabic', 'Hindi', 'Turkish', 'Swedish', 'Danish', 'Norwegian', 'Finnish', 'Czech', 'Greek', 'Hebrew', 'Hungarian', 'Romanian', 'Indonesian', 'Malay', 'Vietnamese', 'Thai', 'Bulgarian', 'Catalan', 'Croatian', 'Slovak', 'Tamil', 'Urdu', 'Bengali', 'Punjabi', 'Gujarati', 'Marathi', 'Telugu', 'Kannada', 'Malayalam', 'Nepali', 'Sinhala', 'Persian', 'Swahili', 'Afrikaans', 'Filipino', 'Lithuanian', 'Latvian', 'Estonian', 'Slovenian', 'Serbian', 'Icelandic', 'Welsh']).optional().describe('Language of generated answers. Independent of the call language used for transcription. Defaults to English.'),
   "autoAnswer": zod.boolean().optional(),
   "saveTranscript": zod.boolean().optional()
 })
@@ -643,6 +648,7 @@ export const CreateSessionResponse = zod.object({
 }).optional(),
   "model": zod.string(),
   "language": zod.string(),
+  "answerLanguage": zod.string().describe('Language of generated answers. Defaults to English and does not change live transcription.'),
   "autoAnswer": zod.boolean(),
   "saveTranscript": zod.boolean(),
   "status": zod.enum(['ready', 'active', 'ended']),
@@ -661,6 +667,121 @@ export const CreateSessionResponse = zod.object({
 })
 
 
+/**
+ * @summary Remove the resume text saved on a session the caller owns
+ */
+export const DeleteSessionResumeParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+
+
+
+
+
+export const DeleteSessionResumeResponse = zod.object({
+  "roundNumber": zod.number().int().min(1).optional(),
+  "rounds": zod.array(zod.object({
+  "number": zod.number().int().min(1),
+  "startedAt": zod.coerce.date().nullable(),
+  "endedAt": zod.coerce.date().nullable()
+})).optional(),
+  "id": zod.string().uuid(),
+  "sessionType": zod.enum(['interview', 'call', 'mock']),
+  "title": zod.string(),
+  "company": zod.string().nullable(),
+  "description": zod.string().nullable(),
+  "resumeText": zod.string(),
+  "documentsText": zod.string(),
+  "instructions": zod.string(),
+  "answerPreference": zod.string(),
+  "answerPreferences": zod.object({
+  "format": zod.enum(['full_script', 'script_bullets', 'bullet_points']),
+  "length": zod.enum(['short', 'balanced', 'long']),
+  "tone": zod.enum(['simple', 'formal']),
+  "starMethod": zod.boolean(),
+  "fillerWords": zod.boolean()
+}).optional(),
+  "model": zod.string(),
+  "language": zod.string(),
+  "answerLanguage": zod.string().describe('Language of generated answers. Defaults to English and does not change live transcription.'),
+  "autoAnswer": zod.boolean(),
+  "saveTranscript": zod.boolean(),
+  "status": zod.enum(['ready', 'active', 'ended']),
+  "transcript": zod.array(zod.object({
+  "roundNumber": zod.number().int().min(1).optional(),
+  "role": zod.enum(['user', 'assistant']),
+  "text": zod.string(),
+  "source": zod.enum(['typed', 'microphone', 'system', 'ai']),
+  "speaker": zod.enum(['candidate', 'interviewer', 'unknown']).optional(),
+  "capturedAt": zod.coerce.date().optional(),
+  "createdAt": zod.coerce.date()
+})),
+  "createdAt": zod.coerce.date(),
+  "startedAt": zod.coerce.date().nullable(),
+  "endedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * @summary Remove the document text saved on a session the caller owns
+ */
+export const DeleteSessionDocumentParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+
+
+
+
+
+export const DeleteSessionDocumentResponse = zod.object({
+  "roundNumber": zod.number().int().min(1).optional(),
+  "rounds": zod.array(zod.object({
+  "number": zod.number().int().min(1),
+  "startedAt": zod.coerce.date().nullable(),
+  "endedAt": zod.coerce.date().nullable()
+})).optional(),
+  "id": zod.string().uuid(),
+  "sessionType": zod.enum(['interview', 'call', 'mock']),
+  "title": zod.string(),
+  "company": zod.string().nullable(),
+  "description": zod.string().nullable(),
+  "resumeText": zod.string(),
+  "documentsText": zod.string(),
+  "instructions": zod.string(),
+  "answerPreference": zod.string(),
+  "answerPreferences": zod.object({
+  "format": zod.enum(['full_script', 'script_bullets', 'bullet_points']),
+  "length": zod.enum(['short', 'balanced', 'long']),
+  "tone": zod.enum(['simple', 'formal']),
+  "starMethod": zod.boolean(),
+  "fillerWords": zod.boolean()
+}).optional(),
+  "model": zod.string(),
+  "language": zod.string(),
+  "answerLanguage": zod.string().describe('Language of generated answers. Defaults to English and does not change live transcription.'),
+  "autoAnswer": zod.boolean(),
+  "saveTranscript": zod.boolean(),
+  "status": zod.enum(['ready', 'active', 'ended']),
+  "transcript": zod.array(zod.object({
+  "roundNumber": zod.number().int().min(1).optional(),
+  "role": zod.enum(['user', 'assistant']),
+  "text": zod.string(),
+  "source": zod.enum(['typed', 'microphone', 'system', 'ai']),
+  "speaker": zod.enum(['candidate', 'interviewer', 'unknown']).optional(),
+  "capturedAt": zod.coerce.date().optional(),
+  "createdAt": zod.coerce.date()
+})),
+  "createdAt": zod.coerce.date(),
+  "startedAt": zod.coerce.date().nullable(),
+  "endedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * @summary Delete a ready or ended session owned by the caller. A live session is rejected.
+ */
 export const DeleteSessionParams = zod.object({
   "id": zod.coerce.string().uuid()
 })
@@ -705,6 +826,7 @@ export const GetSessionResponse = zod.object({
 }).optional(),
   "model": zod.string(),
   "language": zod.string(),
+  "answerLanguage": zod.string().describe('Language of generated answers. Defaults to English and does not change live transcription.'),
   "autoAnswer": zod.boolean(),
   "saveTranscript": zod.boolean(),
   "status": zod.enum(['ready', 'active', 'ended']),
@@ -768,6 +890,7 @@ export const UpdateSessionResponse = zod.object({
 }).optional(),
   "model": zod.string(),
   "language": zod.string(),
+  "answerLanguage": zod.string().describe('Language of generated answers. Defaults to English and does not change live transcription.'),
   "autoAnswer": zod.boolean(),
   "saveTranscript": zod.boolean(),
   "status": zod.enum(['ready', 'active', 'ended']),
@@ -837,6 +960,7 @@ export const AppendTranscriptResponse = zod.object({
 }).optional(),
   "model": zod.string(),
   "language": zod.string(),
+  "answerLanguage": zod.string().describe('Language of generated answers. Defaults to English and does not change live transcription.'),
   "autoAnswer": zod.boolean(),
   "saveTranscript": zod.boolean(),
   "status": zod.enum(['ready', 'active', 'ended']),

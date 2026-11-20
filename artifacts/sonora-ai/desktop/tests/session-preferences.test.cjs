@@ -116,6 +116,7 @@ function fixture(options = {}) {
     if (name === '@workspace/db') return { db, callSessionsTable: sessionTable, answerDefaultsTable: defaultsTable };
     if (name === '@workspace/api-zod') return validators;
     if (name === '../lib/answer-preferences') return preferences;
+    if (name === '../lib/answer-language') return loadTs(path.join(serverRoot, 'lib/answer-language.ts'), require);
     if (name === '../lib/interview-answer-policy') return loadTs(path.join(serverRoot, 'lib/interview-answer-policy.ts'), require);
     if (name === '../lib/answer-context') return loadTs(path.join(serverRoot, 'lib/answer-context.ts'), require);
     if (name === '../lib/job-page') return loadTs(path.join(serverRoot, 'lib/job-page.ts'), require);
@@ -143,14 +144,29 @@ function fixture(options = {}) {
     };
     if (name === '@google/genai') return { GoogleGenAI: class {
       models = {
-        generateContent: async request => { requests.push(request); return { text: 'Test answer' }; },
+        generateContent: async request => {
+          requests.push(request);
+          if (!options.reply) return { text: 'Test answer' };
+          const produced = options.reply(request);
+          const text = typeof produced === 'string' ? produced : produced.text;
+          const reason = typeof produced === 'string' ? 'STOP' : produced.reason ?? 'STOP';
+          return { text, candidates: [{ finishReason: reason, content: { parts: [{ text }] } }] };
+        },
         generateContentStream: async request => {
           requests.push(request);
+          if (!options.reply) {
+            return (async function* () {
+              yield { text: 'Test ' };
+              options.betweenChunks?.();
+              if (options.failStream) throw new Error('Provider interrupted');
+              yield { text: 'answer' };
+            })();
+          }
+          const produced = options.reply(request);
+          const text = typeof produced === 'string' ? produced : produced.text;
+          const reason = typeof produced === 'string' ? 'STOP' : produced.reason ?? 'STOP';
           return (async function* () {
-            yield { text: 'Test ' };
-            options.betweenChunks?.();
-            if (options.failStream) throw new Error('Provider interrupted');
-            yield { text: 'answer' };
+            yield { text, candidates: [{ finishReason: reason, content: { parts: [{ text }] } }] };
           })();
         },
       };
@@ -296,6 +312,106 @@ test('Regular Call ignores hidden resume context and Gemini receives the saved p
   assert.ok(f.requests[0].config.systemInstruction.includes('opening line'));
   assert.ok(!f.requests[0].contents.includes('Must not leak'));
   assert.deepEqual(f.rows[0].transcript, []);
+});
+
+/**
+ * Not Gemini. If the system prompt does not pin an answer language, this stands in for the
+ * live-call failure: the reply follows the transcript. A pinned answer language returns that language.
+ */
+function mockedLiveAnswer(request) {
+  const system = String(request.config?.systemInstruction ?? '');
+  const contents = typeof request.contents === 'string' ? request.contents : JSON.stringify(request.contents);
+  const pinned = /Answer language: ([A-Za-z]+)/.exec(system);
+  const holds = pinned
+    && system.includes('Write every word of the answer')
+    && system.includes('do not change this')
+    && system.includes('Do not translate the transcript.');
+  if (!holds) {
+    if (/[\u4e00-\u9fff]/.test(contents)) return '这是中文回答。';
+    if (/[\u0900-\u097F]/.test(contents)) return 'यह हिंदी उत्तर है।';
+    if (/[¿áéíóúñ]/.test(contents)) return 'Esta es una respuesta en español.';
+    return 'Réponse en français parce que la consigne ne fixe pas la langue.';
+  }
+  if (pinned[1] === 'English') return 'Use a queue so each job runs once, in the order it arrived.';
+  if (pinned[1] === 'Spanish') return 'Usa una cola para que cada trabajo se ejecute una vez.';
+  return `Mocked ${pinned[1]} answer.`;
+}
+
+const ENGLISH_ANSWER = 'Use a queue so each job runs once, in the order it arrived.';
+const LIVE_CASES = [
+  ['Indian English', 'Can you walk me through how you are handling the concurrency? Matlab how does the queue work, क्या approach है?'],
+  ['Spanish-accented English', 'Can you explain me how the queue is working and why we are using it, ¿verdad?'],
+  ['Chinese English', 'Please tell me how this API is designed. 这个 cache 怎么 work?'],
+  ['a few non-English words', 'How does the cache work? We also say gracias and 谢谢 when the job finishes.'],
+];
+
+test('mocked live and auto answers stay in English for accented transcripts and a few other-language words', async () => {
+  for (const [label, heard] of LIVE_CASES) {
+    const f = fixture({ reply: mockedLiveAnswer });
+    f.rows.push({
+      id, userId: 'user-a', status: 'active', sessionType: 'call', title: 'Live customer call',
+      model: 'gemini-2.5-flash', language: 'Hindi', saveTranscript: true,
+      documentsText: 'The cache design is documented here. También describe la cola en español.',
+      instructions: 'Answer in Hindi.',
+      transcript: [{ role: 'user', speaker: 'interviewer', source: 'system', text: heard, createdAt: '2026-11-20T12:00:00.000Z' }],
+    });
+    const response = await f.call('post', '/sessions/:id/answer', { question: heard, stream: true });
+    assert.equal(response.code, 200, label);
+    const events = response.frames.map(frame => JSON.parse(frame.slice(6)));
+    assert.equal(events.at(-1).answer, ENGLISH_ANSWER, label);
+    const request = f.requests[0];
+    assert.match(request.config.systemInstruction, /Answer language: English/, label);
+    assert.doesNotMatch(request.config.systemInstruction, /Answer language: Hindi/, label);
+    assert.doesNotMatch(request.contents, /Respond in Hindi/, label);
+    assert.ok(request.contents.includes(heard), label);
+    assert.ok(request.contents.includes('También describe la cola'), label);
+    assert.ok(request.contents.includes('Answer in Hindi.'), label);
+    assert.ok(request.contents.includes('not applicable to Regular Call'), label);
+    assert.match(request.contents, /Answer language: English/, label);
+  }
+});
+
+test('mocked answers use the saved answer language and keep going in that language', async () => {
+  const f = fixture({ reply: request => {
+    const text = mockedLiveAnswer(request);
+    if (f.requests.length === 1) return { text, reason: 'MAX_TOKENS' };
+    assert.match(request.contents, /Continue the answer in Spanish/);
+    assert.match(request.config.systemInstruction, /Answer language: Spanish/);
+    return { text, reason: 'STOP' };
+  } });
+  f.rows.push({
+    id, userId: 'user-a', status: 'active', sessionType: 'call', title: 'Live customer call',
+    model: 'gemini-2.5-flash', language: 'English', answerLanguage: 'Spanish', saveTranscript: false,
+    transcript: [{ role: 'user', speaker: 'interviewer', source: 'system', text: 'What is a queue?', createdAt: '2026-11-20T12:00:00.000Z' }],
+  });
+  const response = await f.call('post', '/sessions/:id/answer', { question: 'What is a queue?', stream: true });
+  assert.equal(response.code, 200);
+  assert.equal(f.requests.length, 2);
+  const events = response.frames.map(frame => JSON.parse(frame.slice(6)));
+  assert.equal(events.at(-1).answer, 'Usa una cola para que cada trabajo se ejecute una vez.'.repeat(2));
+  const manual = fixture({ reply: mockedLiveAnswer });
+  manual.rows.push({
+    id, userId: 'user-a', status: 'active', sessionType: 'call', title: 'Live customer call',
+    model: 'gemini-2.5-pro', language: 'English', answerLanguage: 'English', saveTranscript: false, transcript: [],
+  });
+  const shortened = await manual.call('post', '/sessions/:id/answer', {
+    question: 'Can you explain me the queue, ¿verdad?', action: 'shorten', previousAnswer: ENGLISH_ANSWER,
+  });
+  assert.equal(shortened.code, 200);
+  assert.equal(shortened.body.answer, ENGLISH_ANSWER);
+  assert.match(manual.requests[0].config.systemInstruction, /Answer language: English/);
+});
+
+test('a new session defaults the answer language to English without changing the call language', async () => {
+  const f = fixture();
+  const created = await f.call('post', '/sessions', { sessionType: 'call', title: 'Live call', language: 'Hindi' });
+  assert.equal(created.code, 201);
+  assert.equal(created.body.language, 'Hindi');
+  assert.equal(created.body.answerLanguage, 'English');
+  assert.equal((await f.call('post', '/sessions', { sessionType: 'call', answerLanguage: 'Klingon' })).code, 400);
+  const saved = await f.call('patch', '/sessions/:id/preferences', { answerLanguage: 'Spanish' });
+  assert.equal(saved.body.answerLanguage, 'Spanish');
+  assert.equal(saved.body.language, 'Hindi');
 });
 
 test('Save Transcript off prevents transcript append, including at the SQL write boundary', async () => {

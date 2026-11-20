@@ -40,6 +40,8 @@ export const callSessionsTable = pgTable("call_sessions", {
   answerPreferences: jsonb("answer_preferences").$type<AnswerPreferences>(),
   model: text("model").notNull().default("gemini-2.5-flash"),
   language: text("language").notNull().default("English"),
+  /** Output language for answers. Independent of `language`, which is only for transcription. */
+  answerLanguage: text("answer_language").notNull().default("English"),
   autoAnswer: boolean("auto_answer").notNull().default(false),
   saveTranscript: boolean("save_transcript").notNull().default(true),
   status: text("status").notNull().default("ready"),

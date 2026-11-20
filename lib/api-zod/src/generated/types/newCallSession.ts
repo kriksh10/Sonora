@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AnswerPreferences } from './answerPreferences';
+import type { NewCallSessionAnswerLanguage } from './newCallSessionAnswerLanguage';
 import type { NewCallSessionAnswerPreference } from './newCallSessionAnswerPreference';
 import type { NewCallSessionLanguage } from './newCallSessionLanguage';
 import type { NewCallSessionModel } from './newCallSessionModel';
@@ -29,6 +30,8 @@ export interface NewCallSession {
   answerPreferences?: AnswerPreferences;
   model?: NewCallSessionModel;
   language?: NewCallSessionLanguage;
+  /** Language of generated answers. Independent of the call language used for transcription. Defaults to English. */
+  answerLanguage?: NewCallSessionAnswerLanguage;
   autoAnswer?: boolean;
   saveTranscript?: boolean;
 }

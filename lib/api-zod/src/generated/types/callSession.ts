@@ -29,6 +29,8 @@ export interface CallSession {
   answerPreferences?: AnswerPreferences;
   model: string;
   language: string;
+  /** Language of generated answers. Defaults to English and does not change live transcription. */
+  answerLanguage: string;
   autoAnswer: boolean;
   saveTranscript: boolean;
   status: CallSessionStatus;

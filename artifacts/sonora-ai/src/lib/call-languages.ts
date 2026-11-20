@@ -61,3 +61,8 @@ export type CallLanguage = (typeof CALL_LANGUAGES)[number]["name"];
 export function browserLanguage(language: string | undefined) {
   return CALL_LANGUAGES.find(item => item.name === language)?.browser ?? "en-US";
 }
+
+/** Answer language is separate from the spoken call language. Missing values stay English. */
+export function answerLanguageName(language: string | null | undefined): CallLanguage {
+  return CALL_LANGUAGES.find(item => item.name === language)?.name ?? "English";
+}

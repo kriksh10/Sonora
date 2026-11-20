@@ -13,7 +13,7 @@ type Mode = "ok" | "401" | "500" | "timeout" | "offline" | "speechmatics";
 function blank(partial: Partial<CallSession> & Pick<CallSession, "id" | "title">): CallSession {
   return {
     sessionType: "interview", company: partial.company ?? null, description: "", resumeText: "", documentsText: "",
-    instructions: "", answerPreference: "balanced", model: "e2e", language: "English", autoAnswer: true,
+    instructions: "", answerPreference: "balanced", model: "e2e", language: "English", answerLanguage: "English", autoAnswer: true,
     saveTranscript: true, status: "ready", transcript: [], createdAt: new Date().toISOString(),
     startedAt: null, endedAt: null, ...partial,
   };

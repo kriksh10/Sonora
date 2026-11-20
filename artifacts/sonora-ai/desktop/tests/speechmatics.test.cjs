@@ -87,6 +87,7 @@ test('StartRecognition carries operating_point enhanced for microphone, call aud
     assert.equal(message.transcription_config.operating_point, 'enhanced');
     assert.equal(message.transcription_config.model, 'enhanced');
     assert.equal(message.transcription_config.language, 'en');
+    assert.equal(message.transcription_config.language_identification, undefined);
   }
   for (const stream of streams) stream.close();
 });

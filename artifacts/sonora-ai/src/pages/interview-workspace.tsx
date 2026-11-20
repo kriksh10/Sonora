@@ -27,7 +27,7 @@ import DesktopLiveOverlay from "@/components/desktop-live-overlay";
 import { applySonoraTheme, readSonoraTheme, type SonoraTheme } from "@/lib/theme";
 import { createDesktopAudio, createAudioGroup, serverSttAvailable, type AudioCapture } from "@/lib/desktop-audio";
 import type { CaptureDiagnostic } from "@/lib/continuous-audio";
-import { browserLanguage } from "@/lib/call-languages";
+import { answerLanguageName, browserLanguage } from "@/lib/call-languages";
 import { createInterviewerQuestions } from "@/lib/interviewer-questions";
 import { createPhraseBuffer } from "@/lib/phrase-buffer";
 import { clearVoicePrint, loadVoicePrint, recordVoicePrint, rememberSamples, saveVoicePrint, voiceMatches } from "@/lib/voice-profile";
@@ -1407,7 +1407,7 @@ export default function InterviewWorkspace() {
                         />
                         <button disabled={busy || !answerInput.trim()} aria-label="Ask Gemini" className="self-end rounded-lg bg-[#257c3c] p-3 text-white disabled:cursor-not-allowed disabled:opacity-40"><Send size={17} /></button>
                       </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-white/40"><Sparkles size={12} /> {selected.model} · {summarizePreferences(sessionPreferences(selected))} · {selected.language} <button type="button" data-testid="button-edit-preferences" onClick={() => setEditOpen(true)} className="ml-2 rounded-md border border-white/10 px-2 py-1 text-white/70 hover:bg-white/5">Edit preferences</button></div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-white/40"><Sparkles size={12} /> {selected.model} · {summarizePreferences(sessionPreferences(selected))} · {selected.language} call · answers in {answerLanguageName(selected.answerLanguage)} <button type="button" data-testid="button-edit-preferences" onClick={() => setEditOpen(true)} className="ml-2 rounded-md border border-white/10 px-2 py-1 text-white/70 hover:bg-white/5">Edit preferences</button></div>
                       {currentEntries.some((entry) => entry.source === "microphone") && <button type="button" onClick={() => setAnswerInput([...currentEntries].reverse().find((entry) => entry.source === "microphone")?.text ?? "")} className="mt-3 text-xs font-medium text-emerald-300 hover:text-emerald-200">Use latest microphone transcript as the question</button>}
                     </form>
                     <label className="flex gap-2 text-sm"><input type="checkbox" checked={microphoneAuto} onChange={e => setMicrophoneAuto(e.target.checked)} />Also auto-answer microphone questions (may include your own speech)</label>

@@ -5,7 +5,7 @@ import Modal from "@/components/modal";
 import AnswerPreferencesEditor from "@/components/answer-preferences-editor";
 import { SwitchRow } from "@/components/session-wizard";
 import { apiRequest, sessionPreferences, summarizePreferences } from "@/lib/answer-preferences";
-import { CALL_LANGUAGES, type CallLanguage } from "@/lib/call-languages";
+import { CALL_LANGUAGES, answerLanguageName, type CallLanguage } from "@/lib/call-languages";
 import { GEMINI_MODELS, resolveGeminiModel } from "@/lib/pricing";
 import { ShellSelect } from "@/components/desktop-select";
 
@@ -18,6 +18,7 @@ export default function SessionPreferencesDialog({ session, onClose, onSaved }: 
   const [instructions, setInstructions] = useState(session.instructions);
   const [model, setModel] = useState(resolveGeminiModel(session.model));
   const [language, setLanguage] = useState<CallLanguage>(CALL_LANGUAGES.find((item) => item.name === session.language)?.name ?? "English");
+  const [answerLanguage, setAnswerLanguage] = useState<CallLanguage>(answerLanguageName(session.answerLanguage));
   const [autoAnswer, setAutoAnswer] = useState(session.autoAnswer);
   const [saveTranscript, setSaveTranscript] = useState(session.saveTranscript);
   const [prefs, setPrefs] = useState<AnswerPreferences>(() => sessionPreferences(session));
@@ -28,7 +29,7 @@ export default function SessionPreferencesDialog({ session, onClose, onSaved }: 
   const save = async () => {
     if (saving) return;
     setSaving(true); setError("");
-    const body: SessionPreferencesInput = { answerPreferences: prefs, instructions, model, language, autoAnswer, saveTranscript };
+    const body: SessionPreferencesInput = { answerPreferences: prefs, instructions, model, language, answerLanguage, autoAnswer, saveTranscript };
     try {
       const updated = await apiRequest<CallSession>(`/sessions/${session.id}/preferences`, { method: "PATCH", body: JSON.stringify(body) });
       onSaved(updated);
@@ -50,7 +51,13 @@ export default function SessionPreferencesDialog({ session, onClose, onSaved }: 
             <div className="text-xs text-white/45"><span className="block">Call language</span>
               <ShellSelect label="Call language" value={language} scroll className={`${field} mt-1.5`}
                 options={LANGS.map(name => ({ value: name, label: name }))}
-                onChange={value => setLanguage(value as typeof language)} /></div>
+                onChange={value => setLanguage(value as typeof language)} />
+              <span className="mt-1 block">Spoken language for live transcription. An accent does not switch this.</span></div>
+            <div className="text-xs text-white/45"><span className="block">Answer language</span>
+              <ShellSelect label="Answer language" value={answerLanguage} scroll className={`${field} mt-1.5`}
+                options={LANGS.map(name => ({ value: name, label: name }))}
+                onChange={value => setAnswerLanguage(answerLanguageName(value))} />
+              <span className="mt-1 block">Live, auto, and manual answers use this. Default is English.</span></div>
             <div className="text-xs text-white/45"><span className="block">Gemini model</span>
               <ShellSelect label="Gemini model" value={model} scroll className={`${field} mt-1.5`}
                 options={GEMINI_MODELS.map(item => ({ value: item.id, label: item.label }))}

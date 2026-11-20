@@ -9,6 +9,8 @@ const LANGUAGES: Record<string, string> = {
 
 export function speechmaticsLanguage(language: string) {
   const value = language.trim().toLowerCase();
+  // The call language is explicit. "auto" would treat an accent as another language.
+  if (!value || value === "auto" || value === "multi") return "en";
   return LANGUAGES[value] ?? (value.length === 2 ? value : "en");
 }
 
@@ -107,6 +109,7 @@ export async function openSpeechStream(language: string, terms: string[]): Promi
         audio_format: { type: "raw", encoding: "pcm_s16le", sample_rate: 16000 },
         transcription_config: {
           language: speechmaticsLanguage(language),
+          // Accented speech stays on this language's model. The language is never detected.
           // Realtime Enhanced is $0.80 per audio hour. Both mode opens one stream per source.
           operating_point: "enhanced",
           model: "enhanced",

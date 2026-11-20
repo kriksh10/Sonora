@@ -5,6 +5,7 @@ import { WebSocketServer } from "ws";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { bootstrapConfiguredAccess } from "./lib/bootstrap-access";
+import { ensureAnswerLanguageColumn } from "./lib/ensure-answer-language";
 import { bindLiveSocket } from "./routes/live-audio";
 
 function loadLocalSpeechmaticsKey() {
@@ -57,6 +58,9 @@ server.on("error", err => {
 });
 server.listen(port, () => {
   logger.info({ port }, "Server listening");
+  void ensureAnswerLanguageColumn().catch(error => {
+    logger.warn({ err: error }, "Answer language column was not added. Session reads need call_sessions.answer_language.");
+  });
   void bootstrapConfiguredAccess().catch(() => {
     logger.warn("Access bootstrap could not complete. Verified configured accounts can retry through sign-in; other users remain gated.");
   });

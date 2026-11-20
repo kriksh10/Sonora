@@ -648,7 +648,7 @@ const marketingFeatures = [
   { icon: Command, title: 'Screenshot, then ask', body: 'Capture what is on your screen, a slide, a chart, a code snippet, and have Sonora explain or analyze it without leaving the call.' },
   { icon: Sparkles, title: 'Chat on the side', body: 'Type a quick question mid-meeting. Sonora answers with the conversation and your context already in view.' },
   { icon: FileAudio, title: 'Bring your context', body: 'Add a resume, a brief, or reference documents before you start so suggestions sound like you and fit the room.' },
-  { icon: Headphones, title: 'Many call languages', body: 'Choose the language of the conversation. Sonora transcribes and responds across multiple call languages.' },
+  { icon: Headphones, title: 'Many call languages', body: 'Choose the spoken language for live transcription. Accents stay on that language. Answers stay in English unless you pick another answer language.' },
 ];
 
 const overlayPoints = [
@@ -659,7 +659,7 @@ const overlayPoints = [
 ];
 
 const howSteps = [
-  ['Set up the session', 'Name it, add any documents or a resume, pick the call language, and decide whether the transcript is saved.'],
+  ['Set up the session', 'Name it, add any documents or a resume, pick the spoken language and the answer language, and decide whether the transcript is saved.'],
   ['Choose what Sonora hears', 'Microphone, call audio, or both. Nothing joins your meeting as a participant; Sonora listens on your device.'],
   ['Ask when you need it', 'Ctrl+Enter for an answer, a screenshot for something visual, or chat for anything else. Then get back to the conversation.'],
 ];
