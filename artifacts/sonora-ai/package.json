@@ -1,6 +1,6 @@
 {
   "name": "@workspace/sonora-ai",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "private": true,
   "type": "module",
   "main": "desktop/main.cjs",
