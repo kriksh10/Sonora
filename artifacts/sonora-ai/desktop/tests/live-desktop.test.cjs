@@ -277,7 +277,7 @@ test('continuous six-second remote chunks cannot postpone automatic answers fore
   assert.equal(isInterviewQuestion('Then you give me brief about your experience.'), true);
   assert.equal(isInterviewQuestion('Okay, can you hear me?'), false);
   const workspace = fs.readFileSync(path.resolve(__dirname, '../../src/pages/interview-workspace.tsx'), 'utf8');
-  assert.match(workspace, /if \(answerInFlightRef\.current\) return;/);
+  assert.match(workspace, /if \(answerInFlightRef\.current\) return "busy";/);
   assert.match(workspace, /while \(answerInFlightRef\.current \|\| settingsBusyRef\.current\)/);
 });
 
@@ -288,9 +288,12 @@ test('busy answers retain bounded follow-up questions and surface overflow expli
     q.router.push(text, 'interviewer'); q.flush();
   }
   assert.deepEqual(q.sent, ['How one?']);
-  assert.ok(q.notices.some(text => /Two questions/.test(text)));
+  assert.ok(q.notices.some(text => /queued while the current answer finishes/.test(text)));
+  assert.equal(q.notices.some(text => /already queued/.test(text)), false);
   release(); await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(q.sent, ['How one?', 'Why two?']);
+  release(); await new Promise(resolve => setImmediate(resolve));
+  release(); await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(q.sent, ['How one?', 'Why two?', 'What three?', 'Where four?']);
   q.router.reset(); release();
 });
 

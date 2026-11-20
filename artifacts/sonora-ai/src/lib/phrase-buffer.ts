@@ -57,7 +57,7 @@ export function createPhraseBuffer(options: {
         timer,
       });
       options.preview?.(next);
-      if (next.length > 700) flush(key);
+      if (next.length > 8000) flush(key);
     },
     flush() {
       for (const key of [...pending.keys()]) flush(key);

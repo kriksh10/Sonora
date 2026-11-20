@@ -374,6 +374,37 @@ test('Speechmatics primary streams native PCM, pushes partials without polling a
   capture.stop();
 });
 
+test('a Speechmatics disconnect keeps the unfinished question and joins the mocked Gemini recovery', async () => {
+  const texts = [];
+  let ws;
+  class Socket {
+    static OPEN = 1;
+    readyState = 1; bufferedAmount = 0;
+    constructor() { ws = this; setImmediate(() => this.onmessage?.({ data: '{"ready":true}' })); }
+    send() {}
+    close() { this.readyState = 3; this.onclose?.(); }
+  }
+  const f = nativeHarness({
+    WebSocket: Socket, URL,
+    fetch: async url => ({ ok: true, status: 200, json: async () => url.endsWith('/live-audio') ? { ticket: 'test' } : { text: 'and a thread.' } }),
+  });
+  f.harness.context.window.location = { href: 'http://test/' };
+  const capture = f.harness.context.subject.createDesktopAudio({
+    source: 'system', sessionId: 'reconnect', onNotice() {}, onError(error) { throw error; },
+    onText: text => texts.push(text),
+  });
+  await capture.start();
+  const frame = Buffer.alloc(640);
+  for (let i = 0; i < 320; i++) frame.writeInt16LE(3200, i * 2);
+  for (let i = 0; i < 50; i++) f.emit({ type: 'pcm', audio: frame.toString('base64') });
+  ws.onmessage({ data: JSON.stringify({ partial: 'What is the difference between a process' }) });
+  ws.close();
+  for (let i = 0; i < 400; i++) f.emit({ type: 'pcm', audio: frame.toString('base64') });
+  for (let i = 0; i < 20; i++) await new Promise(setImmediate);
+  assert.ok(texts.some(text => text.includes('What is the difference between a process') && text.includes('and a thread.')), texts.join(' | '));
+  capture.stop();
+});
+
 const SPOKEN = 'What is the difference between a process and a thread';
 
 function speechCapture(handlers) {
@@ -406,8 +437,24 @@ test('the same spoken line is kept when only a partial arrives before the turn e
   session.ws.onmessage({ data: JSON.stringify({ partial: 'What is the difference' }) });
   session.ws.onmessage({ data: JSON.stringify({ partial: SPOKEN }) });
   session.ws.onmessage({ data: '{"endOfTurn":true}' });
+  await new Promise(resolve => setTimeout(resolve, 450));
   assert.deepEqual(texts, [SPOKEN]);
   assert.equal(partials.at(-1), '');
+  session.capture.stop();
+});
+
+test('a final that arrives after end of utterance replaces the partial before the question is committed', async () => {
+  const texts = [];
+  const session = speechCapture({ onText: text => texts.push(text), onPartial() {}, onNotice() {} });
+  await session.capture.start();
+  session.f.emit({ type: 'pcm', audio: Buffer.alloc(640).toString('base64') });
+  session.ws.onmessage({ data: JSON.stringify({ partial: 'What is the difference' }) });
+  session.ws.onmessage({ data: '{"endOfTurn":true}' });
+  await new Promise(resolve => setTimeout(resolve, 80));
+  assert.equal(texts.length, 0);
+  session.ws.onmessage({ data: JSON.stringify({ final: true, text: SPOKEN, partial: '' }) });
+  await new Promise(resolve => setTimeout(resolve, 150));
+  assert.deepEqual(texts, [SPOKEN]);
   session.capture.stop();
 });
 

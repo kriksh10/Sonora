@@ -55,7 +55,7 @@ export function createTranscriptSentences() {
     seed(text: string) { pending = `${pending} ${text}`.replace(/\s+/g, " ").trim(); },
     push(text: string, endOfTurn: boolean) {
       pending = `${pending} ${text}`.replace(/\s+/g, " ").trim();
-      if (!pending || (!endOfTurn && !/[.!?]["')\]]?$/.test(pending) && pending.length < 700)) return "";
+      if (!pending || (!endOfTurn && !/[.!?]["')\]]?$/.test(pending) && pending.length < 8000)) return "";
       const complete = pending;
       pending = "";
       return complete;

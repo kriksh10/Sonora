@@ -357,7 +357,7 @@ export default function InterviewWorkspace() {
       if (selected.status === "ended") { setError("This session has ended. Create a new session to ask questions."); return; }
       const cleanQuestion = question.trim();
       if (!cleanQuestion || !/[\p{L}\p{N}]/u.test(cleanQuestion)) return;
-      if (answerInFlightRef.current) return;
+      if (answerInFlightRef.current) return "busy";
       if (settingsBusyRef.current) { setNotice("Wait for answer settings to finish saving, then ask again."); return; }
       if (!stayInWorkspace) setLiveMode(true);
       setAnswerCleared(false);
@@ -477,17 +477,21 @@ export default function InterviewWorkspace() {
       const permitted = () => inputRef.current.mode === "phone" ? inputRef.current.phoneAuto : selectedSessionRef.current?.autoAnswer;
       if (!session || !permitted() || session.status === "ended") return;
       const token = captureTokenRef.current;
-      // A manual answer can also occupy the provider lane.
-      while (answerInFlightRef.current || settingsBusyRef.current) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        if (captureTokenRef.current !== token || !isCurrent()) return;
+      // A manual answer can also occupy the provider lane. Retry if that lane
+      // was taken between the wait and the request, instead of dropping the question.
+      for (;;) {
+        while (answerInFlightRef.current || settingsBusyRef.current) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+          if (captureTokenRef.current !== token || !isCurrent()) return;
+        }
+        if (!isCurrent() || selectedSessionRef.current?.id !== session.id || !permitted() || selectedSessionRef.current.status === "ended") return;
+        if (inputRef.current.mode === "phone") {
+          recentPhoneRef.current.clear();
+          setRecentPhoneText("");
+        }
+        const result = await askRef.current(text, inputRef.current.mode === "phone" ? "microphone" : "system", false, "answer", undefined, receivedAt);
+        if (result !== "busy") return;
       }
-      if (!isCurrent() || selectedSessionRef.current?.id !== session.id || !permitted() || selectedSessionRef.current.status === "ended") return;
-      if (inputRef.current.mode === "phone") {
-        recentPhoneRef.current.clear();
-        setRecentPhoneText("");
-      }
-      await askRef.current(text, inputRef.current.mode === "phone" ? "microphone" : "system", false, "answer", undefined, receivedAt);
     },
     notice: setNotice,
   });

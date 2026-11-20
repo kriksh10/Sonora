@@ -36,7 +36,7 @@ export function relevantDocuments(documents: string | null | undefined, question
 
 /** Interviewer lines are the question. Candidate lines are already spoken and are not a new question. */
 export function transcriptForAnswer(entries: Heard[]) {
-  const recent = entries.filter(entry => entry.text?.trim()).slice(-12);
+  const recent = entries.filter(entry => entry.text?.trim()).slice(-24);
   if (!recent.length) return "none";
   return recent.map(entry => {
     const who = entry.role === "assistant"

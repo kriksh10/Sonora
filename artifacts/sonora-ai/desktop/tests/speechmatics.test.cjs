@@ -32,7 +32,7 @@ test('provider pushes partials/finals/EOU without another audio send and uses ac
   assert.equal(config.transcription_config.operating_point, 'enhanced');
   assert.equal(config.transcription_config.model, 'enhanced');
   assert.equal(config.transcription_config.max_delay, .7);
-  assert.equal(config.transcription_config.conversation_config.end_of_utterance_silence_trigger, .6);
+  assert.equal(config.transcription_config.conversation_config.end_of_utterance_silence_trigger, 1.2);
   assert.equal(config.transcription_config.additional_vocab[0].content, 'SQL');
   const updates = [];
   stream.subscribe(update => updates.push(update));
