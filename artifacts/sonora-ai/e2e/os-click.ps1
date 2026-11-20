@@ -238,7 +238,7 @@ public static class SonoraInput {
     down[0].type = 0; down[0].mi.dx = ax; down[0].mi.dy = ay; down[0].mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
     down[1].type = 0; down[1].mi.dx = ax; down[1].mi.dy = ay; down[1].mi.dwFlags = MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_ABSOLUTE;
     if (SendInput(2, down, Marshal.SizeOf(typeof(INPUT))) != 2) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
-    System.Threading.Thread.Sleep(50);
+    System.Threading.Thread.Sleep(120);
     for (int i = 1; i <= steps; i++) {
       int x = x1 + ((x2 - x1) * i / steps);
       int y = y1 + ((y2 - y1) * i / steps);
@@ -1212,6 +1212,34 @@ try {
     [SonoraInput]::GetWindowRect($handle, [ref]$box) | Out-Null
     return [pscustomobject]@{ X = [int]$box.Left; Y = [int]$box.Top; W = [int]($box.Right - $box.Left); H = [int]($box.Bottom - $box.Top) }
   }
+  function Invoke-ExpandedDrag([IntPtr]$handle, [string]$label) {
+    # Park on the primary screen, then drag the real title handle with the left button held.
+    [SonoraInput]::SetWindowPos($handle, [IntPtr]::Zero, 70, 36, 0, 0, 0x0041) | Out-Null
+    Start-Sleep -Milliseconds 300
+    $before = Get-WindowBox $handle
+    if ($before.W -lt 200 -or $before.H -lt 200) {
+      Add-Scenario "Expanded drag $label keeps size" $false "window not expanded $($before.W)x$($before.H)"
+      return $false
+    }
+    $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+    $x1 = [int]($before.X + 80)
+    $y1 = [int]($before.Y + 16)
+    $x2 = [Math]::Min($screen.Right - 40, $x1 + 380)
+    $y2 = [Math]::Min($screen.Bottom - 80, $y1 + 160)
+    if (($x2 - $x1) -lt 200) { $x2 = [Math]::Max($screen.Left + 40, $x1 - 380) }
+    [SonoraInput]::DragSteps($x1, $y1, $x2, $y2, 60)
+    Start-Sleep -Milliseconds 400
+    $after = Get-WindowBox $handle
+    $moved = ([Math]::Abs($after.X - $before.X) -ge 120) -or ([Math]::Abs($after.Y - $before.Y) -ge 80)
+    $same = ($after.W -eq $before.W) -and ($after.H -eq $before.H)
+    [SonoraInput]::Move([Math]::Min($screen.Right - 20, $after.X + $after.W + 90), [Math]::Min($screen.Bottom - 20, $after.Y + 220))
+    Start-Sleep -Milliseconds 300
+    $parked = Get-WindowBox $handle
+    $stayed = ($parked.W -eq $after.W) -and ($parked.H -eq $after.H) -and ($parked.X -eq $after.X) -and ($parked.Y -eq $after.Y)
+    $ok = [bool]($moved -and $same -and $stayed -and [SonoraInput]::IsWindowVisible($handle))
+    Add-Scenario "Expanded drag $label keeps size" $ok "before=$($before.W)x$($before.H)@$($before.X),$($before.Y) after=$($after.W)x$($after.H)@$($after.X),$($after.Y) parked=$($parked.W)x$($parked.H)@$($parked.X),$($parked.Y)"
+    return $ok
+  }
   function Invoke-IconDrag([IntPtr]$handle, [int]$dx, [int]$dy, [string]$label) {
     $before = Get-WindowBox $handle
     $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
@@ -1799,6 +1827,23 @@ try {
   }
   $scaledRestored = Get-WindowHeight $scaleHwnd
   Add-Scenario 'Clicking the 150% icon restores the overlay' ($scaledRestored -gt 240) "height=$scaledRestored before=$($scaledBefore.W)x$($scaledBefore.H)"
+
+  foreach ($scale in @(1, 1.25, 1.5, 1.75)) {
+    Stop-Sonora
+    Start-Sleep -Seconds 1
+    $percent = [int][math]::Round($scale * 100)
+    $launchedScale = Start-Sonora @('--force-renderer-accessibility', "--force-device-scale-factor=$scale")
+    $scaleHwndN = $launchedScale.hwnd
+    $script:sonoraHwnd = $scaleHwndN
+    $label = ''
+    $until = (Get-Date).AddSeconds(12)
+    while ((Get-Date) -lt $until -and $label -ne "Display scale $percent") {
+      $node = Find-Element 'Display scale'
+      if ($node) { $label = $node.Current.Name } else { Start-Sleep -Milliseconds 250 }
+    }
+    Add-Scenario "Expanded drag scale $percent is active" ($label -eq "Display scale $percent") $label
+    Invoke-ExpandedDrag $scaleHwndN "$percent%" | Out-Null
+  }
 }
 finally {
   $failed = @($scenarios | Where-Object { -not $_.pass })

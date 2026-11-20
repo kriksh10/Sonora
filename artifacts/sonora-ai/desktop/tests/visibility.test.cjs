@@ -214,3 +214,104 @@ test('failed native protection change does not falsely update requested state', 
   assert.throws(() => vm.runInContext('setContentProtection(false)', f.context), /native failure/);
   assert.equal(vm.runInContext('state().contentProtection', f.context), true);
 });
+
+function growingPosition(window, scale) {
+  window.scale = scale;
+  window.positionCalls = 0;
+  window.setPosition = (x, y) => {
+    window.positionCalls += 1;
+    // Electron implements setPosition as setBounds(position, getSize()).
+    // At a fractional scale that read-back rounds up, so every call grows.
+    const bump = scale === 1 ? 0 : 1;
+    window.bounds = { x, y, width: window.bounds.width + bump, height: window.bounds.height + bump };
+  };
+}
+
+test('many drag moves keep the expanded and collapsed size at every display scale', () => {
+  const main = fs.readFileSync(path.resolve(__dirname, '../main.cjs'), 'utf8');
+  assert.doesNotMatch(main, /setPosition\s*\(/);
+  for (const scale of [1, 1.25, 1.5, 1.75]) {
+    const expanded = fixture();
+    growingPosition(expanded.window, scale);
+    const before = { width: expanded.window.bounds.width, height: expanded.window.bounds.height };
+    vm.runInContext('dragWindow("start")', expanded.context);
+    for (let step = 0; step < 40; step += 1) {
+      expanded.cursor.x += 17;
+      expanded.cursor.y += 5;
+      vm.runInContext('dragWindow("move")', expanded.context);
+    }
+    assert.equal(expanded.window.positionCalls, 0, `expanded setPosition at ${scale}`);
+    assert.equal(expanded.window.bounds.width, before.width, `expanded width at ${scale}`);
+    assert.equal(expanded.window.bounds.height, before.height, `expanded height at ${scale}`);
+    assert.notEqual(expanded.window.bounds.x, 10, `expanded moved at ${scale}`);
+    vm.runInContext('dragWindow("end")', expanded.context);
+    expanded.cursor.x += 80;
+    assert.equal(vm.runInContext('dragWindow("move").moved', expanded.context), false);
+    assert.equal(expanded.window.bounds.width, before.width);
+    assert.equal(expanded.window.bounds.height, before.height);
+
+    const collapsed = fixture();
+    growingPosition(collapsed.window, scale);
+    vm.runInContext('setCollapsed(true)', collapsed.context);
+    const icon = { x: collapsed.window.bounds.x, y: collapsed.window.bounds.y, width: collapsed.window.bounds.width, height: collapsed.window.bounds.height };
+    assert.equal(icon.width, 72);
+    assert.equal(icon.height, 72);
+    vm.runInContext('dragCollapsed("start")', collapsed.context);
+    for (let step = 0; step < 40; step += 1) {
+      collapsed.cursor.x += 15;
+      collapsed.cursor.y += 4;
+      vm.runInContext('dragCollapsed("move")', collapsed.context);
+    }
+    assert.equal(collapsed.window.positionCalls, 0, `collapsed setPosition at ${scale}`);
+    assert.equal(collapsed.window.bounds.width, 72, `collapsed width at ${scale}`);
+    assert.equal(collapsed.window.bounds.height, 72, `collapsed height at ${scale}`);
+    assert.notEqual(collapsed.window.bounds.x, icon.x, `collapsed moved at ${scale}`);
+    vm.runInContext('notePrimaryButton("up")', collapsed.context);
+    const parked = { x: collapsed.window.bounds.x, y: collapsed.window.bounds.y };
+    collapsed.cursor.x += 200;
+    assert.equal(vm.runInContext('dragCollapsed("move").moved', collapsed.context), false);
+    assert.equal(collapsed.window.bounds.x, parked.x);
+    assert.equal(collapsed.window.bounds.width, 72);
+    assert.equal(collapsed.window.bounds.height, 72);
+  }
+});
+
+test('windows drags move through the watcher and never rewrite the size', () => {
+  const scales = [1, 1.25, 1.5, 1.75];
+  for (const scale of scales) {
+    const f = fixture();
+    f.context.nativeLines = [];
+    f.window.getNativeWindowHandle = () => {
+      const raw = Buffer.alloc(8);
+      raw.writeBigUInt64LE(0x1234n);
+      return raw;
+    };
+    f.window.setPosition = () => { throw new Error(`setPosition grew the window at ${scale}`); };
+    const writes = [];
+    const assign = f.window.setBounds.bind(f.window);
+    f.window.setBounds = next => { writes.push(next); assign(next); };
+    vm.runInContext(`titleClickWatcher = {
+      killed: false,
+      stdin: { destroyed: false, writable: true, write(line) { nativeLines.push(line); return true; } },
+    };`, f.context);
+    const before = { ...f.window.bounds };
+    vm.runInContext('dragWindow("start")', f.context);
+    for (let step = 0; step < 30; step += 1) {
+      f.cursor.x += 20;
+      f.cursor.y += 6;
+      vm.runInContext('dragWindow("move")', f.context);
+    }
+    assert.deepEqual(f.window.bounds, before, `watcher drag left bounds alone at ${scale}`);
+    assert.deepEqual(writes, [], `watcher drag did not setBounds at ${scale}`);
+    const lines = vm.runInContext('nativeLines.join("|")', f.context);
+    assert.match(lines, /drag-start 4660/);
+    assert.match(lines, /drag-on/);
+    vm.runInContext('notePrimaryButton("up")', f.context);
+    f.cursor.x += 300;
+    assert.equal(vm.runInContext('dragWindow("move").moved', f.context), false);
+    const afterRelease = vm.runInContext('nativeLines.join("|")', f.context);
+    assert.match(afterRelease, /drag-end/);
+    assert.equal(afterRelease.match(/drag-on/g).length, 1, `one apply at ${scale}`);
+    assert.deepEqual(f.window.bounds, before);
+  }
+});

@@ -307,8 +307,9 @@ function watchTitleClicks() {
   // The visible render-widget child receives the press and does not deliver it
   // to the page or to the parent window procedure. A low-level hook sees it anyway.
   if (process.platform !== 'win32' || titleClickWatcher) return;
-  const child = spawn(renderWidgetHelper(), ['--watch'], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(renderWidgetHelper(), ['--watch'], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
   titleClickWatcher = child;
+  child.stdin?.on?.('error', () => { nativeDrag = { armed: false, applying: false }; });
   let pending = '';
   let pressed = null;
   child.stdout?.setEncoding?.('utf8');
@@ -412,9 +413,8 @@ function placeCollapsed(x, y) {
   if (!win || win.isDestroyed()) return;
   const nextX = Math.round(x);
   const nextY = Math.round(y);
-  // setPosition leaves the size alone. setBounds with a stored width is what grew the icon.
-  if (typeof win.setPosition === 'function') win.setPosition(nextX, nextY);
-  else win.setBounds({ x: nextX, y: nextY, width: COLLAPSED, height: COLLAPSED });
+  // Always write the icon size. setPosition would read the size back and round it up.
+  win.setBounds({ x: nextX, y: nextY, width: COLLAPSED, height: COLLAPSED });
   enforceCollapsedSize();
 }
 function setCollapsed(value) {
@@ -425,6 +425,7 @@ function setCollapsed(value) {
   // Flip first so a resize event during the bounds change cannot restore the tall size.
   collapsed = next;
   collapsedDrag = null;
+  endNativeDrag();
   if (next) {
     expandedBounds = win.getBounds();
     try { expandedMinimum = win.getMinimumSize?.() || [390, 620]; } catch { expandedMinimum = [390, 620]; }
@@ -462,6 +463,7 @@ function expandFromIcon() {
   const minimum = expandedMinimum || [390, 620];
   collapsed = false;
   collapsedDrag = null;
+  endNativeDrag();
   win.setResizable?.(true);
   win.setMaximumSize?.(10000, 10000);
   win.setMinimumSize?.(minimum[0], minimum[1]);
@@ -543,12 +545,65 @@ function moveCollapsed(dx, dy) {
 // means the press ended, even if the page never sent "end".
 let primaryButton = { down: false, epoch: 0, watching: false };
 let windowDrag = null;
+let nativeDrag = { armed: false, applying: false };
+function watcherStdin() {
+  const child = titleClickWatcher;
+  if (!child || child.killed || child.exitCode != null) return null;
+  const stdin = child.stdin;
+  if (!stdin || stdin.destroyed || stdin.writable === false) return null;
+  return stdin;
+}
+function writeNative(line) {
+  const stdin = watcherStdin();
+  if (!stdin) return false;
+  try {
+    stdin.write(line);
+    return true;
+  } catch {
+    nativeDrag = { armed: false, applying: false };
+    return false;
+  }
+}
+function hwndString() {
+  try {
+    if (!win || win.isDestroyed() || typeof win.getNativeWindowHandle !== 'function') return '';
+    const raw = win.getNativeWindowHandle();
+    if (!raw || typeof raw.length !== 'number' || raw.length < 4) return '';
+    const value = raw.length >= 8 ? raw.readBigUInt64LE(0) : BigInt(raw.readUInt32LE(0));
+    if (value <= 0n) return '';
+    return value.toString();
+  } catch { return ''; }
+}
+function beginNativeDrag() {
+  nativeDrag = { armed: false, applying: false };
+  if (process.platform !== 'win32') return false;
+  const hwnd = hwndString();
+  if (!hwnd || !writeNative(`drag-start ${hwnd}\n`)) return false;
+  nativeDrag.armed = true;
+  return true;
+}
+function applyNativeDrag() {
+  if (!nativeDrag.armed) return false;
+  if (nativeDrag.applying) return true;
+  if (!writeNative('drag-on\n')) {
+    nativeDrag = { armed: false, applying: false };
+    return false;
+  }
+  nativeDrag.applying = true;
+  return true;
+}
+function endNativeDrag() {
+  if (!nativeDrag.armed && !nativeDrag.applying) return;
+  writeNative('drag-end\n');
+  nativeDrag = { armed: false, applying: false };
+}
 function notePrimaryButton(kind) {
   if (kind !== 'down' && kind !== 'up') return;
   primaryButton = { down: kind === 'down', epoch: primaryButton.epoch + 1, watching: true };
   if (kind === 'up') {
     windowDrag = null;
     collapsedDrag = null;
+    endNativeDrag();
   }
 }
 function buttonReleased(drag) {
@@ -556,8 +611,14 @@ function buttonReleased(drag) {
 }
 function dragByCursor(phase, current, place) {
   if (phase !== 'start' && phase !== 'move' && phase !== 'end') throw new Error('Expected a drag.');
-  if (buttonReleased(current)) current = null;
-  if (phase === 'end') return { drag: null, result: { moved: current?.moved === true } };
+  if (buttonReleased(current)) {
+    endNativeDrag();
+    current = null;
+  }
+  if (phase === 'end') {
+    endNativeDrag();
+    return { drag: null, result: { moved: current?.moved === true } };
+  }
   // A move with no preceding press must not arm a drag. That is a hover.
   if (phase !== 'start' && !current) return { drag: null, result: { moved: false } };
   const cursor = screen.getCursorScreenPoint();
@@ -571,6 +632,10 @@ function dragByCursor(phase, current, place) {
         grabX: cursor.x - box.x, grabY: cursor.y - box.y,
         startX: cursor.x, startY: cursor.y, moved: false,
         epoch: primaryButton.epoch, awaitingDown,
+        width: box.width, height: box.height,
+        // Ask the watcher to follow the cursor. It repositions with SWP_NOSIZE,
+        // so the size captured here is never written back on each move.
+        native: awaitingDown ? false : beginNativeDrag(),
       },
       result: { moved: false },
     };
@@ -585,12 +650,23 @@ function dragByCursor(phase, current, place) {
     current.startY = cursor.y;
     current.epoch = primaryButton.epoch;
     current.moved = false;
+    current.width = box.width;
+    current.height = box.height;
+    if (!current.native) current.native = beginNativeDrag();
   }
   const distance = Math.hypot(cursor.x - current.startX, cursor.y - current.startY);
   if (distance >= 4) current.moved = true;
   if (current.moved) {
-    if (buttonReleased(current)) return { drag: null, result: { moved: false } };
-    place(cursor.x - current.grabX, cursor.y - current.grabY);
+    if (buttonReleased(current)) {
+      endNativeDrag();
+      return { drag: null, result: { moved: false } };
+    }
+    // The watcher follows the physical cursor from the button-down grab.
+    // Falling back reads the size captured at press time, never getBounds() again.
+    if (!(current.native && applyNativeDrag())) {
+      current.native = false;
+      place(cursor.x - current.grabX, cursor.y - current.grabY, current);
+    }
   }
   return { drag: current, result: { moved: current.moved === true } };
 }
@@ -602,8 +678,13 @@ function dragCollapsed(phase) {
 }
 function dragWindow(phase) {
   if (!win || win.isDestroyed() || collapsed) return { moved: false };
-  const step = dragByCursor(phase, windowDrag, (x, y) => {
-    if (typeof win.setPosition === 'function') win.setPosition(Math.round(x), Math.round(y));
+  const step = dragByCursor(phase, windowDrag, (x, y, drag) => {
+    const width = drag?.width;
+    const height = drag?.height;
+    if (!width || !height) return;
+    // setPosition is implemented as setBounds(position, getSize()). getSize()
+    // rounds up at 125/150/175%, so calling it on every move grows the window.
+    win.setBounds({ x: Math.round(x), y: Math.round(y), width, height });
   });
   windowDrag = step.drag;
   return step.result;
