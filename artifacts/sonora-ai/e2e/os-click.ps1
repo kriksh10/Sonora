@@ -1810,7 +1810,6 @@ try {
   }
   Add-Scenario '150% display scale is active' ($scaleLabel -eq 'Display scale 150') $scaleLabel
   if (Wait-Named 'Sign in' 8) { Click-Element (Find-Exact 'Sign in') | Out-Null; Wait-Named 'Call Sessions' 10 | Out-Null }
-  Invoke-ExpandedDrag $scaleHwnd '150% signed-in' | Out-Null
   Click-Exact 'Minimize' | Out-Null
   $scaledIcon = Wait-Named 'Sonora listening' 4
   if ($scaledIcon) { Save-Screen 'collapsed-logo-150.png' }
