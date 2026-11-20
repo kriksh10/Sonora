@@ -11,10 +11,11 @@ new Function("module", "exports", "require", buildSync({
   bundle: true, write: false, platform: "node", format: "cjs",
 }).outputFiles[0].text)(validatorsModule, validatorsModule.exports, require);
 
-function fixture(configured = true) {
+function fixture(configured = true, language = "English") {
   let handler, approved = true, ended = false, controller, closed = 0, currentSource = "", authorize;
   const sent = [];
   const opened = [];
+  const languages = [];
   const streams = {
     send: value => sent.push(value),
     takeFinal: () => ({ text: "Explain the design", speaker: "S1" }),
@@ -36,7 +37,7 @@ function fixture(configured = true) {
         callSessionsTable: { id: "id", userId: "userId" },
         db: { select: () => ({ from: () => ({ where: query => ({ limit: async () =>
           query.some(item => item.key === "userId" && item.value === "owner")
-            ? [{ id: "session", userId: "owner", language: "English", roundNumber: 2, status: ended ? "ended" : "active" }] : [],
+            ? [{ id: "session", userId: "owner", language, answerLanguage: "English", roundNumber: 2, status: ended ? "ended" : "active" }] : [],
         }) }) }) },
       };
       if (name === "../lib/session-lifecycle") return {
@@ -44,7 +45,7 @@ function fixture(configured = true) {
         sessionStillUsable: async () => approved && !ended,
         watchSession: (_id, _user, _round, value) => { controller = value; return () => {}; },
       };
-      if (name === "../lib/speechmatics") return { speechmaticsTerms: () => [], openSpeechStream: async () => { opened.push(currentSource); return streams; } };
+      if (name === "../lib/speechmatics") return { speechmaticsTerms: () => [], openSpeechStream: async (spoken) => { opened.push(currentSource); languages.push(spoken); return streams; } };
       return require(name);
     },
   };
@@ -52,7 +53,7 @@ function fixture(configured = true) {
     loader: "ts", format: "cjs",
   }).code, scope);
   return {
-    sent, opened, get closed() { return closed; },
+    sent, opened, languages, get closed() { return closed; },
     revoke() { approved = false; controller?.abort(); return authorize?.(); },
     end() { ended = true; },
     bind: scope.module.exports.bindLiveSocket,
@@ -80,6 +81,10 @@ test("microphone, call audio, and both each open their own enhanced stream", asy
   assert.equal((await f.request({ source: "microphone", open: true, roundNumber: 2 })).code, 200);
   assert.equal((await f.request({ source: "system", open: true, roundNumber: 2 })).code, 200);
   assert.deepEqual(f.opened, ["microphone", "system"]);
+  assert.deepEqual(f.languages, ["English", "English"]);
+  const hindi = fixture(true, "Hindi");
+  assert.equal((await hindi.request({ source: "system", open: true, roundNumber: 2 })).code, 200);
+  assert.deepEqual(hindi.languages, ["Hindi"]);
   const speech = fs.readFileSync(path.join(__dirname, "../src/lib/speechmatics.ts"), "utf8");
   const config = speech.slice(speech.indexOf("transcription_config"), speech.indexOf("enable_partials"));
   assert.match(config, /operating_point: "enhanced"/);
@@ -87,6 +92,8 @@ test("microphone, call audio, and both each open their own enhanced stream", asy
   assert.match(config, /\$0\.80 per audio hour/);
   assert.doesNotMatch(speech, /model: "standard"/);
   assert.doesNotMatch(speech, /operating_point: "standard"/);
+  assert.doesNotMatch(speech, /language_identification/);
+  assert.doesNotMatch(speech, /language:\s*"auto"/);
 });
 
 test("missing optional live provider returns an explicit Gemini fallback signal", async () => {

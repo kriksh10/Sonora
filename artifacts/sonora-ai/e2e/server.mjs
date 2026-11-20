@@ -43,7 +43,7 @@ function makeSession(body) {
     id: body.id || `s${sessions.length + 1}`, sessionType: body.sessionType || 'interview', title: body.title || 'Untitled',
     company: body.company || null, description: body.description || '', resumeText: body.resumeText || '',
     documentsText: body.documentsText || '', instructions: '', answerPreference: 'balanced', model: 'e2e',
-    language: 'English', autoAnswer: true, saveTranscript: true, status, transcript: [],
+    language: body.language || 'English', answerLanguage: body.answerLanguage || 'English', autoAnswer: true, saveTranscript: true, status, transcript: [],
     createdAt: new Date().toISOString(),
     startedAt: status === 'active' ? new Date().toISOString() : null,
     endedAt: status === 'ended' ? new Date().toISOString() : null,

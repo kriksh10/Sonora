@@ -844,6 +844,10 @@ components:
         language:
           type: string
           enum: [English, Spanish, French, German, Italian, Portuguese, Dutch, Polish, Russian, Ukrainian, Japanese, Korean, Mandarin, Arabic, Hindi, Turkish, Swedish, Danish, Norwegian, Finnish, Czech, Greek, Hebrew, Hungarian, Romanian, Indonesian, Malay, Vietnamese, Thai, Bulgarian, Catalan, Croatian, Slovak, Tamil, Urdu, Bengali, Punjabi, Gujarati, Marathi, Telugu, Kannada, Malayalam, Nepali, Sinhala, Persian, Swahili, Afrikaans, Filipino, Lithuanian, Latvian, Estonian, Slovenian, Serbian, Icelandic, Welsh]
+        answerLanguage:
+          type: string
+          description: Language of generated answers. Independent of the call language used for transcription. Defaults to English.
+          enum: [English, Spanish, French, German, Italian, Portuguese, Dutch, Polish, Russian, Ukrainian, Japanese, Korean, Mandarin, Arabic, Hindi, Turkish, Swedish, Danish, Norwegian, Finnish, Czech, Greek, Hebrew, Hungarian, Romanian, Indonesian, Malay, Vietnamese, Thai, Bulgarian, Catalan, Croatian, Slovak, Tamil, Urdu, Bengali, Punjabi, Gujarati, Marathi, Telugu, Kannada, Malayalam, Nepali, Sinhala, Persian, Swahili, Afrikaans, Filipino, Lithuanian, Latvian, Estonian, Slovenian, Serbian, Icelandic, Welsh]
         autoAnswer:
           type: boolean
         saveTranscript:
@@ -957,6 +961,10 @@ components:
         language:
           type: string
           enum: [English, Spanish, French, German, Italian, Portuguese, Dutch, Polish, Russian, Ukrainian, Japanese, Korean, Mandarin, Arabic, Hindi, Turkish, Swedish, Danish, Norwegian, Finnish, Czech, Greek, Hebrew, Hungarian, Romanian, Indonesian, Malay, Vietnamese, Thai, Bulgarian, Catalan, Croatian, Slovak, Tamil, Urdu, Bengali, Punjabi, Gujarati, Marathi, Telugu, Kannada, Malayalam, Nepali, Sinhala, Persian, Swahili, Afrikaans, Filipino, Lithuanian, Latvian, Estonian, Slovenian, Serbian, Icelandic, Welsh]
+        answerLanguage:
+          type: string
+          description: Language of generated answers. Independent of the call language used for transcription. Defaults to English.
+          enum: [English, Spanish, French, German, Italian, Portuguese, Dutch, Polish, Russian, Ukrainian, Japanese, Korean, Mandarin, Arabic, Hindi, Turkish, Swedish, Danish, Norwegian, Finnish, Czech, Greek, Hebrew, Hungarian, Romanian, Indonesian, Malay, Vietnamese, Thai, Bulgarian, Catalan, Croatian, Slovak, Tamil, Urdu, Bengali, Punjabi, Gujarati, Marathi, Telugu, Kannada, Malayalam, Nepali, Sinhala, Persian, Swahili, Afrikaans, Filipino, Lithuanian, Latvian, Estonian, Slovenian, Serbian, Icelandic, Welsh]
         autoAnswer:
           type: boolean
         saveTranscript:
@@ -985,7 +993,7 @@ components:
           format: date-time
     CallSession:
       type: object
-      required: [id, sessionType, title, company, description, resumeText, documentsText, instructions, answerPreference, model, language, autoAnswer, saveTranscript, status, transcript, createdAt, startedAt, endedAt]
+      required: [id, sessionType, title, company, description, resumeText, documentsText, instructions, answerPreference, model, language, answerLanguage, autoAnswer, saveTranscript, status, transcript, createdAt, startedAt, endedAt]
       properties:
         roundNumber: { type: integer, minimum: 1 }
         rounds:
@@ -1018,6 +1026,9 @@ components:
           type: string
         language:
           type: string
+        answerLanguage:
+          type: string
+          description: Language of generated answers. Defaults to English and does not change live transcription.
         autoAnswer:
           type: boolean
         saveTranscript:

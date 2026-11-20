@@ -5,7 +5,7 @@ import Modal from "@/components/modal";
 import AnswerPreferencesEditor from "@/components/answer-preferences-editor";
 import { apiRequest, fetchDefaultPreferences, summarizePreferences } from "@/lib/answer-preferences";
 import { extractFileText } from "@/lib/extract-file-text";
-import { CALL_LANGUAGES, type CallLanguage } from "@/lib/call-languages";
+import { CALL_LANGUAGES, answerLanguageName, type CallLanguage } from "@/lib/call-languages";
 import { GEMINI_MODELS, type GeminiModelId } from "@/lib/pricing";
 import { ShellSelect } from "@/components/desktop-select";
 import { saveAutoExtend } from "@/lib/session-tools";
@@ -13,12 +13,12 @@ import { saveAutoExtend } from "@/lib/session-tools";
 type Draft = {
   sessionType: "interview" | "call" | "mock"; company: string; role: string; description: string; title: string;
   resumeText: string; documentsText: string; instructions: string;
-  model: GeminiModelId; language: CallLanguage;
+  model: GeminiModelId; language: CallLanguage; answerLanguage: CallLanguage;
   autoAnswer: boolean; saveTranscript: boolean; autoExtend: boolean;
 };
 const emptyDraft: Draft = {
   sessionType: "interview", company: "", role: "", description: "", title: "", resumeText: "", documentsText: "",
-  instructions: "", model: "gemini-2.5-flash", language: "English", autoAnswer: true, saveTranscript: true, autoExtend: false,
+  instructions: "", model: "gemini-2.5-flash", language: "English", answerLanguage: "English", autoAnswer: true, saveTranscript: true, autoExtend: false,
 };
 
 function interviewTitle(role: string, company: string) {
@@ -152,7 +152,7 @@ export default function SessionWizard({ onClose, onCreated, initialType = "inter
       documentsText: draft.documentsText,
       instructions: draft.instructions,
       answerPreferences: prefs,
-      model: draft.model, language: draft.language,
+      model: draft.model, language: draft.language, answerLanguage: draft.answerLanguage,
       autoAnswer: draft.autoAnswer, saveTranscript: draft.saveTranscript,
       ...(interview ? { resumeText: draft.resumeText } : {}),
     };
@@ -268,7 +268,13 @@ export default function SessionWizard({ onClose, onCreated, initialType = "inter
               <div className="text-xs text-white/45"><span className="block">Call language</span>
                 <ShellSelect label="Call language" value={draft.language} scroll className={`${field} mt-1.5`}
                   options={CALL_LANGUAGES.map(language => ({ value: language.name, label: language.name }))}
-                  onChange={value => set("language", value as Draft["language"])} /></div>
+                  onChange={value => set("language", value as Draft["language"])} />
+                <span className="mt-1 block">Spoken language for live transcription. Accents stay on this language.</span></div>
+              <div className="text-xs text-white/45"><span className="block">Answer language</span>
+                <ShellSelect label="Answer language" value={draft.answerLanguage} scroll className={`${field} mt-1.5`}
+                  options={CALL_LANGUAGES.map(language => ({ value: language.name, label: language.name }))}
+                  onChange={value => set("answerLanguage", answerLanguageName(value))} />
+                <span className="mt-1 block">Answers use this language. It defaults to English and does not follow the transcript.</span></div>
               <div className="text-xs text-white/45"><span className="block">Gemini model</span>
                 <ShellSelect label="Gemini model" value={draft.model} scroll className={`${field} mt-1.5`}
                   options={GEMINI_MODELS.map(model => ({ value: model.id, label: model.label }))}
