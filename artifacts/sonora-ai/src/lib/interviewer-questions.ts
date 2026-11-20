@@ -32,6 +32,13 @@ export function isPausedInterviewerTurn(text: string) {
   return preparedTurn(text).split(/\s+/).filter(Boolean).length >= 4;
 }
 
+/** A short pause can be the speaker taking a breath. Wait before treating the turn as finished. */
+const TURN_GAP_MS = 1_200;
+/** No new words for this long means the turn is stuck, not that the speaker is still going. */
+const STUCK_TURN_MS = 15_000;
+const QUESTION_LIMIT = 8_000;
+const QUEUE_LIMIT = 12;
+
 /** Source-based routing, not speaker recognition. State lives only for this capture. */
 export function createInterviewerQuestions({
   answer, notice, setTimer = setTimeout, clearTimer = clearTimeout, clock = Date.now,
@@ -81,9 +88,10 @@ export function createInterviewerQuestions({
       notice("Repeated question ignored. Select it manually to ask again.");
       return;
     }
-    // Backpressure is visible; never silently discard an arriving question.
-    if (pending.length >= 2) {
-      notice("Two questions are already queued. The latest remains in the transcript; select it manually.");
+    // A question that arrives while an answer is running stays queued. Only a very
+    // long backlog is left in the transcript instead of being dropped silently.
+    if (pending.length >= QUEUE_LIMIT) {
+      notice("Several questions are already queued. The latest remains in the transcript; select it manually.");
       return;
     }
     seen.push({ key, time: clock() });
@@ -97,22 +105,27 @@ export function createInterviewerQuestions({
       const token = generation;
       if (!fragments) receivedAt = endedAt ?? (typeof performance === "undefined" ? clock() : performance.now());
       fragments = `${fragments} ${text}`.trim();
-      turnEnded = endOfTurn;
-      // Chunk delivery is not silence: a bounded turn deadline must survive
-      // subsequent chunks, otherwise later arrivals reset the 3-second quiet timer forever.
-      if (deadline === undefined) deadline = setTimer(() => { if (generation === token) flush(); }, 15_000);
-      if (fragments.length > 8000) {
-        fragments = "";
-        clearTimer(timer);
-        clearTimer(deadline);
-        deadline = undefined;
-        notice("Remote turn exceeded the automatic question limit. Select the relevant transcript text manually.");
-        return;
+      turnEnded = endOfTurn || turnEnded;
+      // The stuck-turn timer follows the latest words. Continuous speech must not
+      // be cut off because the first fragment was fifteen seconds ago.
+      clearTimer(deadline);
+      deadline = setTimer(() => { if (generation === token) flush(); }, STUCK_TURN_MS);
+      if (fragments.length > QUESTION_LIMIT) {
+        const whole = fragments;
+        const head = whole.slice(0, QUESTION_LIMIT).trim();
+        const overflow = whole.slice(QUESTION_LIMIT).trim();
+        fragments = head;
+        turnEnded = true;
+        notice("This interviewer turn is longer than one automatic question. The first part is answered and the rest stays with the following speech.");
+        flush();
+        fragments = overflow;
+        receivedAt = endedAt ?? clock();
+        if (!fragments) return;
       }
       clearTimer(timer);
-      // A pause or a punctuated question can be used quickly. Speech that is
-      // still arriving gets one more chunk interval to collect its continuation.
-      timer = setTimer(() => { if (generation === token) flush(); }, endOfTurn ? 0 : 3000);
+      // End of utterance still waits briefly so a second part spoken after a
+      // breath is the same question. Speech with no end marker waits for quiet.
+      timer = setTimer(() => { if (generation === token) flush(); }, endOfTurn ? TURN_GAP_MS : 3000);
   };
   const pause = () => {
     if (!fragments.trim()) return;

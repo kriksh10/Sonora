@@ -27,7 +27,7 @@ import DesktopLiveOverlay from "@/components/desktop-live-overlay";
 import { applySonoraTheme, readSonoraTheme, type SonoraTheme } from "@/lib/theme";
 import { createDesktopAudio, createAudioGroup, serverSttAvailable, type AudioCapture } from "@/lib/desktop-audio";
 import type { CaptureDiagnostic } from "@/lib/continuous-audio";
-import { browserLanguage } from "@/lib/call-languages";
+import { answerLanguageName, browserLanguage } from "@/lib/call-languages";
 import { createInterviewerQuestions } from "@/lib/interviewer-questions";
 import { createPhraseBuffer } from "@/lib/phrase-buffer";
 import { clearVoicePrint, loadVoicePrint, recordVoicePrint, rememberSamples, saveVoicePrint, voiceMatches } from "@/lib/voice-profile";
@@ -357,7 +357,7 @@ export default function InterviewWorkspace() {
       if (selected.status === "ended") { setError("This session has ended. Create a new session to ask questions."); return; }
       const cleanQuestion = question.trim();
       if (!cleanQuestion || !/[\p{L}\p{N}]/u.test(cleanQuestion)) return;
-      if (answerInFlightRef.current) return;
+      if (answerInFlightRef.current) return "busy";
       if (settingsBusyRef.current) { setNotice("Wait for answer settings to finish saving, then ask again."); return; }
       if (!stayInWorkspace) setLiveMode(true);
       setAnswerCleared(false);
@@ -477,17 +477,21 @@ export default function InterviewWorkspace() {
       const permitted = () => inputRef.current.mode === "phone" ? inputRef.current.phoneAuto : selectedSessionRef.current?.autoAnswer;
       if (!session || !permitted() || session.status === "ended") return;
       const token = captureTokenRef.current;
-      // A manual answer can also occupy the provider lane.
-      while (answerInFlightRef.current || settingsBusyRef.current) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        if (captureTokenRef.current !== token || !isCurrent()) return;
+      // A manual answer can also occupy the provider lane. Retry if that lane
+      // was taken between the wait and the request, instead of dropping the question.
+      for (;;) {
+        while (answerInFlightRef.current || settingsBusyRef.current) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+          if (captureTokenRef.current !== token || !isCurrent()) return;
+        }
+        if (!isCurrent() || selectedSessionRef.current?.id !== session.id || !permitted() || selectedSessionRef.current.status === "ended") return;
+        if (inputRef.current.mode === "phone") {
+          recentPhoneRef.current.clear();
+          setRecentPhoneText("");
+        }
+        const result = await askRef.current(text, inputRef.current.mode === "phone" ? "microphone" : "system", false, "answer", undefined, receivedAt);
+        if (result !== "busy") return;
       }
-      if (!isCurrent() || selectedSessionRef.current?.id !== session.id || !permitted() || selectedSessionRef.current.status === "ended") return;
-      if (inputRef.current.mode === "phone") {
-        recentPhoneRef.current.clear();
-        setRecentPhoneText("");
-      }
-      await askRef.current(text, inputRef.current.mode === "phone" ? "microphone" : "system", false, "answer", undefined, receivedAt);
     },
     notice: setNotice,
   });
@@ -1407,7 +1411,7 @@ export default function InterviewWorkspace() {
                         />
                         <button disabled={busy || !answerInput.trim()} aria-label="Ask Gemini" className="self-end rounded-lg bg-[#257c3c] p-3 text-white disabled:cursor-not-allowed disabled:opacity-40"><Send size={17} /></button>
                       </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-white/40"><Sparkles size={12} /> {selected.model} · {summarizePreferences(sessionPreferences(selected))} · {selected.language} <button type="button" data-testid="button-edit-preferences" onClick={() => setEditOpen(true)} className="ml-2 rounded-md border border-white/10 px-2 py-1 text-white/70 hover:bg-white/5">Edit preferences</button></div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-white/40"><Sparkles size={12} /> {selected.model} · {summarizePreferences(sessionPreferences(selected))} · {selected.language} call · answers in {answerLanguageName(selected.answerLanguage)} <button type="button" data-testid="button-edit-preferences" onClick={() => setEditOpen(true)} className="ml-2 rounded-md border border-white/10 px-2 py-1 text-white/70 hover:bg-white/5">Edit preferences</button></div>
                       {currentEntries.some((entry) => entry.source === "microphone") && <button type="button" onClick={() => setAnswerInput([...currentEntries].reverse().find((entry) => entry.source === "microphone")?.text ?? "")} className="mt-3 text-xs font-medium text-emerald-300 hover:text-emerald-200">Use latest microphone transcript as the question</button>}
                     </form>
                     <label className="flex gap-2 text-sm"><input type="checkbox" checked={microphoneAuto} onChange={e => setMicrophoneAuto(e.target.checked)} />Also auto-answer microphone questions (may include your own speech)</label>

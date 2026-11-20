@@ -332,12 +332,78 @@ export const SessionPreferencesInputLanguage = {
   Welsh: 'Welsh',
 } as const;
 
+/**
+ * Language of generated answers. Independent of the call language used for transcription. Defaults to English.
+ */
+export type SessionPreferencesInputAnswerLanguage = typeof SessionPreferencesInputAnswerLanguage[keyof typeof SessionPreferencesInputAnswerLanguage];
+
+
+export const SessionPreferencesInputAnswerLanguage = {
+  English: 'English',
+  Spanish: 'Spanish',
+  French: 'French',
+  German: 'German',
+  Italian: 'Italian',
+  Portuguese: 'Portuguese',
+  Dutch: 'Dutch',
+  Polish: 'Polish',
+  Russian: 'Russian',
+  Ukrainian: 'Ukrainian',
+  Japanese: 'Japanese',
+  Korean: 'Korean',
+  Mandarin: 'Mandarin',
+  Arabic: 'Arabic',
+  Hindi: 'Hindi',
+  Turkish: 'Turkish',
+  Swedish: 'Swedish',
+  Danish: 'Danish',
+  Norwegian: 'Norwegian',
+  Finnish: 'Finnish',
+  Czech: 'Czech',
+  Greek: 'Greek',
+  Hebrew: 'Hebrew',
+  Hungarian: 'Hungarian',
+  Romanian: 'Romanian',
+  Indonesian: 'Indonesian',
+  Malay: 'Malay',
+  Vietnamese: 'Vietnamese',
+  Thai: 'Thai',
+  Bulgarian: 'Bulgarian',
+  Catalan: 'Catalan',
+  Croatian: 'Croatian',
+  Slovak: 'Slovak',
+  Tamil: 'Tamil',
+  Urdu: 'Urdu',
+  Bengali: 'Bengali',
+  Punjabi: 'Punjabi',
+  Gujarati: 'Gujarati',
+  Marathi: 'Marathi',
+  Telugu: 'Telugu',
+  Kannada: 'Kannada',
+  Malayalam: 'Malayalam',
+  Nepali: 'Nepali',
+  Sinhala: 'Sinhala',
+  Persian: 'Persian',
+  Swahili: 'Swahili',
+  Afrikaans: 'Afrikaans',
+  Filipino: 'Filipino',
+  Lithuanian: 'Lithuanian',
+  Latvian: 'Latvian',
+  Estonian: 'Estonian',
+  Slovenian: 'Slovenian',
+  Serbian: 'Serbian',
+  Icelandic: 'Icelandic',
+  Welsh: 'Welsh',
+} as const;
+
 export interface SessionPreferencesInput {
   answerPreferences?: AnswerPreferences;
   /** @maxLength 8000 */
   instructions?: string;
   model?: SessionPreferencesInputModel;
   language?: SessionPreferencesInputLanguage;
+  /** Language of generated answers. Independent of the call language used for transcription. Defaults to English. */
+  answerLanguage?: SessionPreferencesInputAnswerLanguage;
   autoAnswer?: boolean;
   saveTranscript?: boolean;
 }
@@ -548,6 +614,70 @@ export const NewCallSessionLanguage = {
   Welsh: 'Welsh',
 } as const;
 
+/**
+ * Language of generated answers. Independent of the call language used for transcription. Defaults to English.
+ */
+export type NewCallSessionAnswerLanguage = typeof NewCallSessionAnswerLanguage[keyof typeof NewCallSessionAnswerLanguage];
+
+
+export const NewCallSessionAnswerLanguage = {
+  English: 'English',
+  Spanish: 'Spanish',
+  French: 'French',
+  German: 'German',
+  Italian: 'Italian',
+  Portuguese: 'Portuguese',
+  Dutch: 'Dutch',
+  Polish: 'Polish',
+  Russian: 'Russian',
+  Ukrainian: 'Ukrainian',
+  Japanese: 'Japanese',
+  Korean: 'Korean',
+  Mandarin: 'Mandarin',
+  Arabic: 'Arabic',
+  Hindi: 'Hindi',
+  Turkish: 'Turkish',
+  Swedish: 'Swedish',
+  Danish: 'Danish',
+  Norwegian: 'Norwegian',
+  Finnish: 'Finnish',
+  Czech: 'Czech',
+  Greek: 'Greek',
+  Hebrew: 'Hebrew',
+  Hungarian: 'Hungarian',
+  Romanian: 'Romanian',
+  Indonesian: 'Indonesian',
+  Malay: 'Malay',
+  Vietnamese: 'Vietnamese',
+  Thai: 'Thai',
+  Bulgarian: 'Bulgarian',
+  Catalan: 'Catalan',
+  Croatian: 'Croatian',
+  Slovak: 'Slovak',
+  Tamil: 'Tamil',
+  Urdu: 'Urdu',
+  Bengali: 'Bengali',
+  Punjabi: 'Punjabi',
+  Gujarati: 'Gujarati',
+  Marathi: 'Marathi',
+  Telugu: 'Telugu',
+  Kannada: 'Kannada',
+  Malayalam: 'Malayalam',
+  Nepali: 'Nepali',
+  Sinhala: 'Sinhala',
+  Persian: 'Persian',
+  Swahili: 'Swahili',
+  Afrikaans: 'Afrikaans',
+  Filipino: 'Filipino',
+  Lithuanian: 'Lithuanian',
+  Latvian: 'Latvian',
+  Estonian: 'Estonian',
+  Slovenian: 'Slovenian',
+  Serbian: 'Serbian',
+  Icelandic: 'Icelandic',
+  Welsh: 'Welsh',
+} as const;
+
 export interface NewCallSession {
   sessionType: NewCallSessionSessionType;
   /** @maxLength 200 */
@@ -566,6 +696,8 @@ export interface NewCallSession {
   answerPreferences?: AnswerPreferences;
   model?: NewCallSessionModel;
   language?: NewCallSessionLanguage;
+  /** Language of generated answers. Independent of the call language used for transcription. Defaults to English. */
+  answerLanguage?: NewCallSessionAnswerLanguage;
   autoAnswer?: boolean;
   saveTranscript?: boolean;
 }
@@ -644,6 +776,8 @@ export interface CallSession {
   answerPreferences?: AnswerPreferences;
   model: string;
   language: string;
+  /** Language of generated answers. Defaults to English and does not change live transcription. */
+  answerLanguage: string;
   autoAnswer: boolean;
   saveTranscript: boolean;
   status: CallSessionStatus;

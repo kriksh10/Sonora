@@ -9,6 +9,8 @@ const LANGUAGES: Record<string, string> = {
 
 export function speechmaticsLanguage(language: string) {
   const value = language.trim().toLowerCase();
+  // The call language is explicit. "auto" would treat an accent as another language.
+  if (!value || value === "auto" || value === "multi") return "en";
   return LANGUAGES[value] ?? (value.length === 2 ? value : "en");
 }
 
@@ -107,6 +109,7 @@ export async function openSpeechStream(language: string, terms: string[]): Promi
         audio_format: { type: "raw", encoding: "pcm_s16le", sample_rate: 16000 },
         transcription_config: {
           language: speechmaticsLanguage(language),
+          // Accented speech stays on this language's model. The language is never detected.
           // Realtime Enhanced is $0.80 per audio hour. Both mode opens one stream per source.
           operating_point: "enhanced",
           model: "enhanced",
@@ -116,7 +119,8 @@ export async function openSpeechStream(language: string, terms: string[]): Promi
           max_delay_mode: "fixed",
           diarization: "speaker",
           speaker_diarization_config: { max_speakers: 2 },
-          conversation_config: { end_of_utterance_silence_trigger: 0.6 },
+          // 1.2s so a breath in the middle of a question is not a new utterance.
+          conversation_config: { end_of_utterance_silence_trigger: 1.2 },
           ...(terms.length ? { additional_vocab: terms.map(content => ({ content })) } : {}),
         },
       }));
@@ -133,10 +137,10 @@ export async function openSpeechStream(language: string, terms: string[]): Promi
         sendQueued();
         resolve();
       } else if (message.message === "AddPartialTranscript") {
-        partial = message.metadata?.transcript?.trim().slice(0, 4_000) ?? "";
+        partial = message.metadata?.transcript?.trim().slice(0, 8_000) ?? "";
         publish({ partial });
       } else if (message.message === "AddTranscript") {
-        const text = message.metadata?.transcript?.trim().slice(0, 4_000) ?? "";
+        const text = message.metadata?.transcript?.trim().slice(0, 8_000) ?? "";
         if (text) {
           const final = { text, speaker: dominantSpeaker(message.results) };
           finals.push(final);

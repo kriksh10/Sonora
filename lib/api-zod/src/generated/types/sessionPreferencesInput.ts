@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AnswerPreferences } from './answerPreferences';
+import type { SessionPreferencesInputAnswerLanguage } from './sessionPreferencesInputAnswerLanguage';
 import type { SessionPreferencesInputLanguage } from './sessionPreferencesInputLanguage';
 import type { SessionPreferencesInputModel } from './sessionPreferencesInputModel';
 
@@ -15,6 +16,8 @@ export interface SessionPreferencesInput {
   instructions?: string;
   model?: SessionPreferencesInputModel;
   language?: SessionPreferencesInputLanguage;
+  /** Language of generated answers. Independent of the call language used for transcription. Defaults to English. */
+  answerLanguage?: SessionPreferencesInputAnswerLanguage;
   autoAnswer?: boolean;
   saveTranscript?: boolean;
 }

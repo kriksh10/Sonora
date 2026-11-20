@@ -40,7 +40,8 @@ export function createRecentUtterance(clock = Date.now) {
     append(fragment: string) {
       const now = clock();
       if (now - last > 12_000) text = "";
-      text = `${text} ${fragment.trim()}`.trim().slice(-8000);
+      const combined = `${text} ${fragment.trim()}`.trim();
+      text = combined.length > 8000 ? combined.slice(0, 8000) : combined;
       last = now;
       return text;
     },

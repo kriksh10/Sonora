@@ -63,7 +63,7 @@ test('mixed-audio automation requires opt-in, silence speeds complete questions,
   q.push('Explain SQL', 'candidate', true);
   assert.equal(timers.size, 0);
   q.pushMixed('Explain SQL indexes', true, true);
-  const ready = [...timers.values()].find(t => t.ms === 0);
+  const ready = [...timers.values()].find(t => t.ms === 1200);
   assert.ok(ready);
   ready.fn();
   q.reset();
@@ -71,7 +71,7 @@ test('mixed-audio automation requires opt-in, silence speeds complete questions,
   await new Promise(setImmediate);
   assert.deepEqual(answers, []);
   q.pushMixed('Explain ETL pipelines', true, true);
-  [...timers.values()].find(t => t.ms === 0).fn();
+  [...timers.values()].find(t => t.ms === 1200).fn();
   waits.shift()();
   await new Promise(setImmediate);
   assert.deepEqual(answers, ['Explain ETL pipelines']);

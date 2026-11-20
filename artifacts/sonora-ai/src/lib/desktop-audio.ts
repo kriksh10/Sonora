@@ -98,6 +98,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
   const ring = new Float32Array(128000);
   let ringUsed = 0, ringCursor = 0, totalSamples = 0, finalizedSamples = 0;
   let liveText = "", lastPartial = "", liveSpeaker = "", firstWordAt = 0, questionEndAt = 0;
+  let utteranceEnded = false;
   let commitTimer: ReturnType<typeof setTimeout> | undefined;
   const shownText = () => {
     const base = liveText.trim();
@@ -126,7 +127,7 @@ export function createDesktopAudio(options: Options): AudioCapture {
     options.onQuestionEnd?.(ended);
     diagnose("latency", `Speechmatics · question end → first transcript word: ${Math.round(firstWordAt - ended)}ms (negative means live words arrived before question end).`);
     options.onText(text, { source: options.source, capturedAt: new Date().toISOString(), endOfTurn: true, ...(liveSpeaker ? { speakerLabel: liveSpeaker } : {}) });
-    liveText = ""; lastPartial = ""; liveSpeaker = ""; firstWordAt = 0;
+    liveText = ""; lastPartial = ""; liveSpeaker = ""; firstWordAt = 0; utteranceEnded = false;
     options.onPartial?.("");
   };
   const commitIfStillOpen = () => { if (!stopped && !fallback && shownText()) finishLiveTurn(); };
@@ -143,12 +144,18 @@ export function createDesktopAudio(options: Options): AudioCapture {
         lastPartial = "";
         liveSpeaker = update.speaker || liveSpeaker;
         if (typeof update.endTime === "number") finalizedSamples = Math.max(finalizedSamples, Math.round(update.endTime * 16000));
-        if (questionEndAt && !speechSeen) {
+        if (utteranceEnded || (questionEndAt && !speechSeen)) {
           clearTimeout(turnTimer); turnTimer = setTimeout(finishLiveTurn, 100);
         }
       }
       if (update.partial !== undefined || update.text) options.onPartial?.(shownText());
-      if (update.endOfTurn) finishLiveTurn();
+      if (update.endOfTurn) {
+        utteranceEnded = true;
+        clearTimeout(turnTimer);
+        // A partial can still be revised by the final that follows end-of-utterance.
+        if (lastPartial.trim()) turnTimer = setTimeout(finishLiveTurn, 400);
+        else finishLiveTurn();
+      }
     },
     onFallback(reason) {
       if (stopped || fallback) return;
@@ -159,11 +166,11 @@ export function createDesktopAudio(options: Options): AudioCapture {
       diagnose("path", `Gemini clip fallback · ${reason}. Continuous capture retained.`);
       options.onNotice("Live transcription unavailable; using overlapping Gemini clips. Answers may take longer.");
       options.onPartial?.("");
-      if (liveText) {
-        // Preserve already-finalized prefix words without treating a provider
-        // failure as a real question boundary.
-        sentences.seed(liveText);
-        liveText = "";
+      const recognized = shownText();
+      if (recognized) {
+        // Keep the partial as well as finalized words. A reconnect is not a question boundary.
+        sentences.seed(recognized);
+        liveText = ""; lastPartial = ""; utteranceEnded = false;
       }
       const buffered = new Float32Array(ringUsed);
       const oldest = (ringCursor - ringUsed + ring.length) % ring.length;
@@ -193,10 +200,10 @@ export function createDesktopAudio(options: Options): AudioCapture {
         if (Math.sqrt(energy / analyzed) >= .003) { speechSeen = true; quietSamples = 0; questionEndAt = 0; lastVoiceAt = performance.now(); clearTimeout(turnTimer); }
         else if (speechSeen) {
           quietSamples += analyzed;
-            if (quietSamples >= 9600) {
-            speechSeen = false; questionEndAt = performance.now() - 600;
+            if (quietSamples >= 19200) {
+            speechSeen = false; questionEndAt = performance.now() - 1200;
             options.onQuestionEnd?.(questionEndAt);
-            diagnose("question-end", "600ms of quiet; requesting a finalized Speechmatics utterance.");
+            diagnose("question-end", "1.2s of quiet; requesting a finalized Speechmatics utterance without cutting a shorter breath.");
             live.endTurn();
             clearTimeout(commitTimer);
             commitTimer = setTimeout(commitIfStillOpen, 800);

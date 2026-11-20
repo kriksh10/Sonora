@@ -2080,6 +2080,148 @@ export const useCreateSession = <TError = ErrorType<SessionErrorResponse>,
       return useMutation(getCreateSessionMutationOptions(options));
     }
 
+export const getDeleteSessionResumeUrl = (id: string,) => {
+
+
+
+
+  return `/api/sessions/${id}/resume`
+}
+
+/**
+ * @summary Remove the resume text saved on a session the caller owns
+ */
+export const deleteSessionResume = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<CallSession> => {
+
+  return customFetch<CallSession>(getDeleteSessionResumeUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteSessionResumeMutationOptions = <TError = ErrorType<SessionErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSessionResume>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteSessionResume>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['deleteSessionResume'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteSessionResume>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteSessionResume(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteSessionResumeMutationResult = NonNullable<Awaited<ReturnType<typeof deleteSessionResume>>>
+
+    export type DeleteSessionResumeMutationError = ErrorType<SessionErrorResponse>
+
+    /**
+ * @summary Remove the resume text saved on a session the caller owns
+ */
+export const useDeleteSessionResume = <TError = ErrorType<SessionErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSessionResume>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteSessionResume>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getDeleteSessionResumeMutationOptions(options));
+    }
+
+export const getDeleteSessionDocumentUrl = (id: string,) => {
+
+
+
+
+  return `/api/sessions/${id}/documents`
+}
+
+/**
+ * @summary Remove the document text saved on a session the caller owns
+ */
+export const deleteSessionDocument = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<CallSession> => {
+
+  return customFetch<CallSession>(getDeleteSessionDocumentUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteSessionDocumentMutationOptions = <TError = ErrorType<SessionErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSessionDocument>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteSessionDocument>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['deleteSessionDocument'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteSessionDocument>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteSessionDocument(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteSessionDocumentMutationResult = NonNullable<Awaited<ReturnType<typeof deleteSessionDocument>>>
+
+    export type DeleteSessionDocumentMutationError = ErrorType<SessionErrorResponse>
+
+    /**
+ * @summary Remove the document text saved on a session the caller owns
+ */
+export const useDeleteSessionDocument = <TError = ErrorType<SessionErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSessionDocument>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteSessionDocument>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getDeleteSessionDocumentMutationOptions(options));
+    }
+
 export const getDeleteSessionUrl = (id: string,) => {
 
 
@@ -2088,6 +2230,9 @@ export const getDeleteSessionUrl = (id: string,) => {
   return `/api/sessions/${id}`
 }
 
+/**
+ * @summary Delete a ready or ended session owned by the caller. A live session is rejected.
+ */
 export const deleteSession = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
 
   return customFetch<void>(getDeleteSessionUrl(id),
@@ -2103,7 +2248,7 @@ export const deleteSession = async (id: string, options?: Parameters<typeof cust
 
 
 
-export const getDeleteSessionMutationOptions = <TError = ErrorType<unknown>,
+export const getDeleteSessionMutationOptions = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSession>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof deleteSession>>, TError,{id: string}, TContext> => {
 
@@ -2132,9 +2277,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type DeleteSessionMutationResult = NonNullable<Awaited<ReturnType<typeof deleteSession>>>
 
-    export type DeleteSessionMutationError = ErrorType<unknown>
+    export type DeleteSessionMutationError = ErrorType<void>
 
-    export const useDeleteSession = <TError = ErrorType<unknown>,
+    /**
+ * @summary Delete a ready or ended session owned by the caller. A live session is rejected.
+ */
+export const useDeleteSession = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSession>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof deleteSession>>,
